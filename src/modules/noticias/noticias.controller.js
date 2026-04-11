@@ -1,3 +1,4 @@
+import { createNoticiaSchema, updateNoticiaSchema } from './noticias.schema.js';
 import * as noticiaService from './noticias.service.js';
 
 export async function index(req, res, next) {
@@ -10,13 +11,16 @@ export async function show(req, res, next) {
 
 export async function store(req, res, next) {
   try {
-    res.status(201).json(await noticiaService.create(req.body, req.user.id));
+    const data = createNoticiaSchema.parse(req.body);
+    res.status(201).json(await noticiaService.create(data, req.user.id));
   } catch (err) { next(err); }
 }
 
 export async function update(req, res, next) {
-  try { res.json(await noticiaService.update(req.params.id, req.body)); }
-  catch (err) { next(err); }
+  try {
+    const data = updateNoticiaSchema.parse(req.body);
+    res.json(await noticiaService.update(req.params.id, data));
+  } catch (err) { next(err); }
 }
 
 export async function destroy(req, res, next) {

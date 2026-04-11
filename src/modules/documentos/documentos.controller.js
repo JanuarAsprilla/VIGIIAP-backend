@@ -1,3 +1,4 @@
+import { createDocumentoSchema } from './documentos.schema.js';
 import * as docService from './documentos.service.js';
 
 export async function index(req, res, next) {
@@ -10,7 +11,8 @@ export async function show(req, res, next) {
 
 export async function store(req, res, next) {
   try {
-    res.status(201).json(await docService.create(req.body, req.user.id));
+    const data = createDocumentoSchema.parse(req.body);
+    res.status(201).json(await docService.create(data, req.user.id));
   } catch (err) { next(err); }
 }
 
