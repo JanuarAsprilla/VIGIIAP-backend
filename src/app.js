@@ -14,6 +14,7 @@ import documentosRoutes from './modules/documentos/documentos.routes.js';
 import noticiasRoutes from './modules/noticias/noticias.routes.js';
 import solicitudesRoutes from './modules/solicitudes/solicitudes.routes.js';
 import usuariosRoutes from './modules/usuarios/usuarios.routes.js';
+import adminRoutes from './modules/admin/admin.routes.js';
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/documentos', documentosRoutes);
 app.use('/api/noticias', noticiasRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ─── Manejo de errores ────────────────────────────────────────────────────────
 app.use(notFound);
