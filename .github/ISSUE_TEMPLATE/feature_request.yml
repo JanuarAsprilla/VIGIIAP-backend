@@ -1,0 +1,38 @@
+name: Feature Request
+description: Proponer una nueva funcionalidad o mejora
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema que resuelve
+      description: Qué necesidad o limitación actual soluciona esta feature
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solución propuesta
+      description: Endpoint, comportamiento o flujo sugerido
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Módulo afectado
+      options:
+        - auth
+        - mapas
+        - documentos
+        - noticias
+        - solicitudes
+        - usuarios
+        - infraestructura / CI
+        - otro

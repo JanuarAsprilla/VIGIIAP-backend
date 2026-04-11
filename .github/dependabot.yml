@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Lima
+    open-pull-requests-limit: 5
+    reviewers:
+      - JanuarAsprilla
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
+    # Solo actualizar patch y minor automáticamente
+    # Major requiere revisión manual
+    groups:
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch

@@ -1,0 +1,58 @@
+name: Bug Report
+description: Reportar un error en la API
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por reportar el bug. Completa todos los campos para que podamos reproducirlo.
+
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint afectado
+      placeholder: "POST /api/auth/login"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Descripción
+      description: Qué ocurre vs. qué debería ocurrir
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Pasos para reproducir
+      placeholder: |
+        1. Enviar request con body { ... }
+        2. Obtener respuesta 500
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamiento esperado
+    validations:
+      required: true
+
+  - type: textarea
+    id: request
+    attributes:
+      label: Request / Response de ejemplo
+      render: json
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Entorno
+      options:
+        - development
+        - staging
+        - production
+    validations:
+      required: true

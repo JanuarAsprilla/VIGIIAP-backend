@@ -1,0 +1,10 @@
+# Todo el repositorio requiere revisión del owner
+*                       @JanuarAsprilla
+
+# Cambios en CI/deploy requieren revisión explícita
+.github/               @JanuarAsprilla
+Dockerfile             @JanuarAsprilla
+railway.json           @JanuarAsprilla
+
+# Migraciones de BD — revisión obligatoria antes de merge
+db/migrations/         @JanuarAsprilla
