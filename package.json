@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate": "node db/migrate.js",
+    "create-admin": "node scripts/create-admin.js",
     "test": "vitest run --config vitest.config.js",
     "test:watch": "vitest --config vitest.config.js",
     "test:coverage": "vitest run --coverage --config vitest.config.js",
