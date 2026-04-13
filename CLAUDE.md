@@ -70,6 +70,34 @@ server.js                   # Entry point
 | GET | /api/usuarios | admin_sig |
 | PATCH | /api/usuarios/:id/rol | admin_sig |
 | PATCH | /api/usuarios/me/password | JWT |
+| POST | /api/auth/visitante | — |
+| GET | /api/admin/usuarios | admin_sig |
+| POST | /api/admin/usuarios | admin_sig |
+| PATCH | /api/admin/usuarios/:id | admin_sig |
+| GET | /api/admin/audit | admin_sig |
+
+## Roles
+- `admin_sig` — acceso total
+- `investigador` — puede subir documentos, ver todo
+- `publico` — solo lectura de recursos públicos (registro externo pendiente de activación)
+- `visitante` — token temporal 8h, solo lectura pública, sin registro en usuarios
+
+## Login dual
+- **Institucional/Externo**: `POST /api/auth/login` con email + password
+- **Visitante**: `POST /api/auth/visitante` con nombre opcional — genera token 8h y registra en tabla `visitantes` para trazabilidad
+
+## Email notifications
+`src/utils/mailer.js` — nodemailer SMTP:
+- Registro → usuario recibe confirmación + admins reciben aviso
+- Activación/desactivación → usuario recibe email
+- Creación por admin → usuario recibe email con contraseña temporal
+- Solicitud cambia estado → usuario recibe email con resultado
+- Nueva solicitud → admins reciben aviso
+
+## Auditoría
+`src/utils/auditLog.js` → tabla `audit_log` — registra:
+login, registro, login_visitante, create_usuario, update_usuario, update_rol,
+change_password, create_solicitud, update_solicitud_estado
 
 ## Reglas de Desarrollo
 1. Patrón por módulo: `routes → controller → service → DB`
@@ -78,16 +106,17 @@ server.js                   # Entry point
 4. Siempre usar `query()` de `config/database.js` — nunca pg directo
 5. Paginación con helper `paginate()` de `utils/paginate.js`
 6. Archivos: subir a R2 con `uploadFile()` de `config/r2.js`
-7. Commits convencionales: `feat:`, `fix:`, `refactor:`
-8. Ramas de feature: `feat/nombre-tarea`
+7. Emails: usar funciones de `utils/mailer.js` — nunca nodemailer directo
+8. Auditoría: llamar `registrarAuditoria()` en toda acción crítica
+9. Commits convencionales: `feat:`, `fix:`, `refactor:`
 
 ## Setup inicial
 ```bash
 cp .env.example .env   # Llenar credenciales
 npm install
-npm run migrate        # Crear tablas en Supabase
+npm run migrate        # Crear tablas en Supabase (correr 003_audit_notifications.sql también)
 npm run dev            # Servidor en puerto 4000
 ```
 
 ## Variables de entorno requeridas
-Ver `.env.example` — las críticas son `DB_*`, `JWT_SECRET`, `R2_*`.
+Ver `.env.example` — las críticas son `DB_*`, `JWT_SECRET`, `R2_*`, `MAIL_*`, `FRONTEND_URL`.
