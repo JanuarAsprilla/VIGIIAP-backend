@@ -36,7 +36,8 @@ export async function listarUsuarios(reqQuery) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, nombre, email, rol, institucion, tipo_acceso, activo, creado_en, actualizado_en
+      `SELECT id, nombre, email, rol, institucion, tipo_acceso, activo,
+              email_verified, motivo_acceso, creado_en, actualizado_en
        FROM usuarios ${where}
        ORDER BY creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,

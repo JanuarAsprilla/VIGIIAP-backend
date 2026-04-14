@@ -82,7 +82,8 @@ export async function verifyEmail(req, res, next) {
       const activationUrl = `${process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co'}/admin/usuarios`;
 
       // 1. Confirmar al usuario que su correo fue verificado y que espere activación
-      notifyRegistroRecibido({ email: result.email, nombre: result.nombre });
+      notifyRegistroRecibido({ email: result.email, nombre: result.nombre })
+        .catch((err) => logger.error(`[auth] Error email registro recibido a ${result.email}:`, err.message));
 
       // 2. Notificar a todos los admins con botón de activación directa
       getAdminEmails().then((adminEmails) => {
@@ -92,9 +93,9 @@ export async function verifyEmail(req, res, next) {
             nombre:        result.nombre,
             email:         result.email,
             activationUrl,
-          })
+          }).catch((err) => logger.error(`[auth] Error email admin verificado a ${adminEmail}:`, err.message))
         );
-      });
+      }).catch((err) => logger.error(`[auth] Error obteniendo emails admin (verifyEmail):`, err.message));
     }
 
     res.json({

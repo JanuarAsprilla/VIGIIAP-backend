@@ -17,7 +17,8 @@ export const registerSchema = z.object({
   email:       z.string().email('Email inválido'),
   password:    strongPassword,
   institucion: z.string().optional(),
-  motivo:      z.string().min(10, 'Describe el motivo de acceso (mín. 10 caracteres)'),
+  motivo:      z.string().optional(),
+  perfil:      z.enum(['investigador', 'tecnico', 'institucional', 'publico']).optional(),
   tipoAcceso:  z.enum(['institucional', 'externo']).optional().default('externo'),
 });
 

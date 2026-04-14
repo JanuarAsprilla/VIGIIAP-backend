@@ -99,14 +99,21 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
 }
 
 // ─── Registro ─────────────────────────────────────────────────────────────────
+// Map perfil solicitado → rol inicial en BD
+function perfilToRol(perfil) {
+  if (['investigador', 'tecnico', 'institucional'].includes(perfil)) return 'investigador';
+  return 'publico';
+}
+
 export async function register(data) {
-  const { nombre, email, password, institucion, motivo, tipoAcceso } = data;
+  const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
   const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
   if (exists.rows.length) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
   }
 
+  const rolInicial = perfilToRol(perfil);
   const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
   const verificationToken = generateSecureToken();
   const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
@@ -115,14 +122,15 @@ export async function register(data) {
     `INSERT INTO usuarios
        (nombre, email, password_hash, institucion, motivo_acceso, rol, tipo_acceso, activo,
         email_verified, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, 'publico', $6, false, false, $7, $8)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, false, false, $8, $9)
      RETURNING id, nombre, email, rol`,
     [
       nombre,
       email.toLowerCase(),
       password_hash,
       institucion ?? null,
-      motivo,
+      motivo ?? null,
+      rolInicial,
       tipoAcceso ?? 'externo',
       verificationToken,
       verificationExpires,
