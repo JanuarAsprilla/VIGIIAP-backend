@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog } from './admin.controller.js';
+import {
+  stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog,
+  getConfiguracion, setConfiguracion,
+} from './admin.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 
 const router = Router();
@@ -13,5 +16,7 @@ router.post('/usuarios',        crearUsuario);
 router.patch('/usuarios/:id',   actualizarUsuario);
 router.delete('/usuarios/:id',  eliminarUsuario);
 router.get('/audit',            auditLog);
+router.get('/configuracion',    getConfiguracion);
+router.put('/configuracion',    setConfiguracion);
 
 export default router;

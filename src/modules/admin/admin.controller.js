@@ -1,6 +1,24 @@
 import { query } from '../../config/database.js';
 import * as adminService from './admin.service.js';
 
+/** GET /api/admin/configuracion */
+export async function getConfiguracion(req, res, next) {
+  try {
+    res.json(await adminService.getConfiguracion());
+  } catch (err) { next(err); }
+}
+
+/** PUT /api/admin/configuracion */
+export async function setConfiguracion(req, res, next) {
+  try {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ message: 'Body debe ser un objeto clave→valor' });
+    }
+    await adminService.setConfiguracion(req.body, req.user.id, req.user.email);
+    res.json({ message: 'Configuración guardada' });
+  } catch (err) { next(err); }
+}
+
 /** GET /api/admin/stats */
 export async function stats(req, res, next) {
   try {

@@ -7,7 +7,14 @@ export const updateRolSchema = z.object({
   activo: z.boolean().optional().default(true),
 });
 
+const strongPassword = z
+  .string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres')
+  .refine((v) => /[A-Z]/.test(v), 'Debe incluir al menos una letra mayúscula')
+  .refine((v) => /[a-z]/.test(v), 'Debe incluir al menos una letra minúscula')
+  .refine((v) => /[\d\W_]/.test(v), 'Debe incluir al menos un número o símbolo');
+
 export const updatePasswordSchema = z.object({
-  currentPassword: z.string().min(6, 'Contraseña actual requerida'),
-  newPassword:     z.string().min(8, 'Nueva contraseña mínimo 8 caracteres'),
+  currentPassword: z.string().min(1, 'Contraseña actual requerida'),
+  newPassword:     strongPassword,
 });

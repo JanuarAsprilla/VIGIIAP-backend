@@ -162,6 +162,32 @@ export async function eliminarUsuario({ id, adminId, adminEmail }) {
   return rows[0];
 }
 
+/** Lee la configuración del sistema completa */
+export async function getConfiguracion() {
+  const { rows } = await query('SELECT clave, valor FROM configuracion ORDER BY clave');
+  return Object.fromEntries(rows.map((r) => [r.clave, r.valor]));
+}
+
+/** Guarda (upsert) un mapa clave→valor en configuracion */
+export async function setConfiguracion(config, adminId, adminEmail) {
+  for (const [clave, valor] of Object.entries(config)) {
+    await query(
+      `INSERT INTO configuracion (clave, valor, actualizado_en)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_en = NOW()`,
+      [clave, String(valor)]
+    );
+  }
+
+  registrarAuditoria({
+    accion:      'update_configuracion',
+    modulo:      'admin',
+    descripcion: `Configuración del sistema actualizada (${Object.keys(config).length} campos)`,
+    usuarioId:   adminId,
+    usuarioEmail: adminEmail,
+  });
+}
+
 /** Obtiene los admins para enviar notificaciones */
 export async function getAdminEmails() {
   const { rows } = await query(
