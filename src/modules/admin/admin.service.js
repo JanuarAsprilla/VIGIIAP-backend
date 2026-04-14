@@ -136,6 +136,31 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminEmail }
   return usuario;
 }
 
+/** Elimina un usuario del sistema */
+export async function eliminarUsuario({ id, adminId, adminEmail }) {
+  // No permitir que el admin se elimine a sí mismo
+  if (id === adminId) {
+    throw Object.assign(new Error('No puedes eliminar tu propia cuenta'), { status: 400 });
+  }
+
+  const { rows } = await query(
+    'DELETE FROM usuarios WHERE id = $1 RETURNING id, nombre, email',
+    [id]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+
+  registrarAuditoria({
+    accion: 'delete_usuario',
+    modulo: 'admin',
+    entidadId: id,
+    descripcion: `Admin eliminó usuario ${rows[0].email}`,
+    usuarioId: adminId,
+    usuarioEmail: adminEmail,
+  });
+
+  return rows[0];
+}
+
 /** Obtiene los admins para enviar notificaciones */
 export async function getAdminEmails() {
   const { rows } = await query(

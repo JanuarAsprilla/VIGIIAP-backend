@@ -73,6 +73,20 @@ export async function actualizarUsuario(req, res, next) {
   }
 }
 
+/** DELETE /api/admin/usuarios/:id */
+export async function eliminarUsuario(req, res, next) {
+  try {
+    await adminService.eliminarUsuario({
+      id:         req.params.id,
+      adminId:    req.user.id,
+      adminEmail: req.user.email,
+    });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** GET /api/admin/audit */
 export async function auditLog(req, res, next) {
   try {

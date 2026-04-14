@@ -207,6 +207,73 @@ export async function notifySolicitudEstado({ email, nombre, tipo, estado, nota 
   });
 }
 
+/** Envía el email de verificación de correo al registrarse */
+export async function notifyVerificacionEmail({ email, nombre, verificationToken }) {
+  const verifyUrl = `${BASE_URL}/verificar-email/${verificationToken}`;
+  await send({
+    to: email,
+    subject: '[VIGIIAP] Verifica tu correo electrónico',
+    html: baseTemplate('Verifica tu correo', `
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Hola <strong>${nombre}</strong>,
+      </p>
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Gracias por registrarte en VIGIIAP. Para completar tu solicitud de acceso, debes verificar
+        tu dirección de correo electrónico haciendo clic en el botón a continuación:
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${verifyUrl}"
+           style="display:inline-block;background:#1B4332;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">
+          Verificar mi correo
+        </a>
+      </div>
+      <div style="background:#f4f7f4;border-left:4px solid #1B4332;padding:12px 16px;border-radius:4px;margin:16px 0;">
+        <p style="margin:0;font-size:12px;color:#6B7280;">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:
+        </p>
+        <p style="margin:6px 0 0;font-size:12px;color:#1B4332;word-break:break-all;">${verifyUrl}</p>
+      </div>
+      <p style="color:#6B7280;font-size:12px;margin-top:16px;">
+        Este enlace expira en <strong>24 horas</strong>. Si no te registraste en VIGIIAP, ignora este correo.
+      </p>
+    `),
+  });
+}
+
+/** Envía email con enlace para recuperar contraseña */
+export async function notifyRecuperarPassword({ email, nombre, resetToken }) {
+  const resetUrl = `${BASE_URL}/reset-password/${resetToken}`;
+  await send({
+    to: email,
+    subject: '[VIGIIAP] Recuperación de contraseña',
+    html: baseTemplate('Recuperar contraseña', `
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Hola <strong>${nombre}</strong>,
+      </p>
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Recibimos una solicitud para restablecer la contraseña de tu cuenta en VIGIIAP.
+        Haz clic en el botón a continuación para crear una nueva contraseña:
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${resetUrl}"
+           style="display:inline-block;background:#1B4332;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">
+          Restablecer contraseña
+        </a>
+      </div>
+      <div style="background:#f4f7f4;border-left:4px solid #1B4332;padding:12px 16px;border-radius:4px;margin:16px 0;">
+        <p style="margin:0;font-size:12px;color:#6B7280;">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:
+        </p>
+        <p style="margin:6px 0 0;font-size:12px;color:#1B4332;word-break:break-all;">${resetUrl}</p>
+      </div>
+      <p style="color:#6B7280;font-size:12px;margin-top:16px;">
+        Este enlace expira en <strong>30 minutos</strong>.
+        Si no solicitaste este cambio, ignora este correo — tu contraseña no será modificada.
+      </p>
+    `),
+  });
+}
+
 /** Notifica al usuario que su solicitud de registro fue recibida */
 export async function notifyRegistroRecibido({ email, nombre }) {
   await send({

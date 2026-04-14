@@ -1,14 +1,19 @@
-import { loginSchema, registerSchema } from './auth.schema.js';
+import { loginSchema, registerSchema, recoverSchema, resetPasswordSchema } from './auth.schema.js';
 import * as authService from './auth.service.js';
-import { notifyRegistroRecibido, notifyAdminNewRegistro } from '../../utils/mailer.js';
+import {
+  notifyVerificacionEmail,
+  notifyRegistroRecibido,
+  notifyAdminNewRegistro,
+  notifyRecuperarPassword,
+} from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 
 export async function login(req, res, next) {
   try {
-    const data = loginSchema.parse(req.body);
+    const data      = loginSchema.parse(req.body);
     const ip        = req.ip || req.headers['x-forwarded-for'];
     const userAgent = req.headers['user-agent'];
-    const result = await authService.login(data.email, data.password, ip, userAgent);
+    const result    = await authService.login(data.email, data.password, ip, userAgent);
     res.json(result);
   } catch (err) {
     next(err);
@@ -21,7 +26,7 @@ export async function visitante(req, res, next) {
     const { nombre } = req.body ?? {};
     const ip        = req.ip || req.headers['x-forwarded-for'];
     const userAgent = req.headers['user-agent'];
-    const result = await authService.loginVisitante({ nombre, ip, userAgent });
+    const result    = await authService.loginVisitante({ nombre, ip, userAgent });
     res.json(result);
   } catch (err) {
     next(err);
@@ -33,10 +38,14 @@ export async function register(req, res, next) {
     const data = registerSchema.parse(req.body);
     const user = await authService.register(data);
 
-    // Notificar al usuario que su solicitud fue recibida
-    notifyRegistroRecibido({ email: user.email, nombre: user.nombre });
+    // Enviar email de verificación (prioritario — sin esto no puede ingresar)
+    notifyVerificacionEmail({
+      email:             user.email,
+      nombre:            user.nombre,
+      verificationToken: user.verificationToken,
+    });
 
-    // Notificar a todos los admins del nuevo registro
+    // Notificar a todos los admins del nuevo registro (no bloqueante)
     getAdminEmails().then((adminEmails) => {
       adminEmails.forEach((adminEmail) =>
         notifyAdminNewRegistro({
@@ -50,9 +59,98 @@ export async function register(req, res, next) {
     });
 
     res.status(201).json({
-      message: 'Solicitud enviada. Un administrador revisará tu acceso.',
-      user,
+      message: 'Revisa tu correo electrónico para verificar tu cuenta.',
+      user: { id: user.id, nombre: user.nombre, email: user.email },
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /api/auth/verificar-email/:token */
+export async function verifyEmail(req, res, next) {
+  try {
+    const result = await authService.verifyEmail(req.params.token);
+
+    // Notificar al usuario que su solicitud fue recibida (solo si es verificación nueva)
+    if (!result.alreadyVerified) {
+      notifyRegistroRecibido({ email: req.params.token, nombre: result.nombre });
+      // Notificar admins
+      getAdminEmails().then((adminEmails) => {
+        adminEmails.forEach((adminEmail) =>
+          notifyAdminNewRegistro({
+            adminEmail,
+            nombre: result.nombre,
+            email:  result.email ?? '',
+            institucion: '',
+            motivo: 'Verificación completada',
+          })
+        );
+      });
+    }
+
+    res.json({
+      message: result.alreadyVerified
+        ? 'Tu correo ya estaba verificado.'
+        : 'Correo verificado correctamente. Un administrador revisará tu acceso.',
+      alreadyVerified: result.alreadyVerified,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/auth/reenviar-verificacion */
+export async function reenviarVerificacion(req, res, next) {
+  try {
+    const { email } = req.body ?? {};
+    if (!email) return res.status(400).json({ message: 'Email requerido' });
+
+    const result = await authService.reenviarVerificacion(email);
+
+    // Si hay resultado, enviar email (si no, respuesta genérica)
+    if (result) {
+      notifyVerificacionEmail({
+        email:             result.email,
+        nombre:            result.nombre,
+        verificationToken: result.verificationToken,
+      });
+    }
+
+    // Respuesta genérica para no revelar si el email existe
+    res.json({ message: 'Si el correo existe y no está verificado, recibirás un enlace.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/auth/recuperar-password */
+export async function recuperarPassword(req, res, next) {
+  try {
+    const { email } = recoverSchema.parse(req.body);
+    const result    = await authService.solicitarRecuperacion(email);
+
+    if (result) {
+      notifyRecuperarPassword({
+        email:      result.email,
+        nombre:     result.nombre,
+        resetToken: result.resetToken,
+      });
+    }
+
+    // Respuesta genérica para no revelar si el email existe
+    res.json({ message: 'Si el correo está registrado, recibirás las instrucciones.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/auth/reset-password */
+export async function resetPassword(req, res, next) {
+  try {
+    const { token, password } = resetPasswordSchema.parse(req.body);
+    await authService.resetPassword(token, password);
+    res.json({ message: 'Contraseña actualizada correctamente.' });
   } catch (err) {
     next(err);
   }
@@ -60,7 +158,6 @@ export async function register(req, res, next) {
 
 export async function me(req, res, next) {
   try {
-    // Visitantes no tienen perfil en la tabla usuarios
     if (req.user?.tipo === 'visitante') {
       return res.json({
         id:     req.user.visitanteId,
