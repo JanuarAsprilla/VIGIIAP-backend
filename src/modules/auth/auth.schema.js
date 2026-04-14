@@ -5,10 +5,17 @@ export const loginSchema = z.object({
   password: z.string().min(6, 'Contraseña mínimo 6 caracteres'),
 });
 
+const strongPassword = z
+  .string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres')
+  .refine((v) => /[A-Z]/.test(v), 'Debe incluir al menos una letra mayúscula')
+  .refine((v) => /[a-z]/.test(v), 'Debe incluir al menos una letra minúscula')
+  .refine((v) => /[\d\W_]/.test(v), 'Debe incluir al menos un número o símbolo');
+
 export const registerSchema = z.object({
   nombre:      z.string().min(2, 'Nombre requerido'),
   email:       z.string().email('Email inválido'),
-  password:    z.string().min(8, 'Contraseña mínimo 8 caracteres'),
+  password:    strongPassword,
   institucion: z.string().optional(),
   motivo:      z.string().min(10, 'Describe el motivo de acceso (mín. 10 caracteres)'),
   tipoAcceso:  z.enum(['institucional', 'externo']).optional().default('externo'),

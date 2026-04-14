@@ -3,10 +3,12 @@ import * as authService from './auth.service.js';
 import {
   notifyVerificacionEmail,
   notifyRegistroRecibido,
+  notifyAdminNewRegistro,
   notifyAdminUsuarioVerificado,
   notifyRecuperarPassword,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
+import logger from '../../utils/logger.js';
 
 export async function login(req, res, next) {
   try {
@@ -38,14 +40,21 @@ export async function register(req, res, next) {
     const data = registerSchema.parse(req.body);
     const user = await authService.register(data);
 
-    // Enviar email de verificación (prioritario — sin esto no puede ingresar)
+    // Responder al cliente antes de los emails (no bloquear la respuesta)
+    res.status(201).json({
+      message: 'Revisa tu correo electrónico para verificar tu cuenta.',
+      user: { id: user.id, nombre: user.nombre, email: user.email },
+    });
+
+    // Enviar email de verificación al usuario (fuera del try del response)
+    logger.info(`[auth] Enviando email de verificación a ${user.email}`);
     notifyVerificacionEmail({
       email:             user.email,
       nombre:            user.nombre,
       verificationToken: user.verificationToken,
-    });
+    }).catch((err) => logger.error(`[auth] Error email verificación a ${user.email}:`, err.message));
 
-    // Notificar a todos los admins del nuevo registro (no bloqueante)
+    // Notificar a los admins del nuevo registro
     getAdminEmails().then((adminEmails) => {
       adminEmails.forEach((adminEmail) =>
         notifyAdminNewRegistro({
@@ -54,14 +63,10 @@ export async function register(req, res, next) {
           email:       user.email,
           institucion: data.institucion,
           motivo:      data.motivo,
-        })
+        }).catch((err) => logger.error(`[auth] Error email admin registro:`, err.message))
       );
-    });
+    }).catch((err) => logger.error(`[auth] Error obteniendo emails admin:`, err.message));
 
-    res.status(201).json({
-      message: 'Revisa tu correo electrónico para verificar tu cuenta.',
-      user: { id: user.id, nombre: user.nombre, email: user.email },
-    });
   } catch (err) {
     next(err);
   }
