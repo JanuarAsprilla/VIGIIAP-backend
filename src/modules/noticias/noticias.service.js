@@ -4,8 +4,10 @@ import { slugify } from '../../utils/slugify.js';
 
 export async function getAll(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
-  const { categoria, q } = reqQuery;
-  const conditions = ['n.publicado = true'];
+  const { categoria, q, admin } = reqQuery;
+
+  // admin=true bypasses publicado filter so the admin panel can see drafts too
+  const conditions = admin === 'true' ? [] : ['n.publicado = true'];
   const params = [];
 
   if (categoria) { params.push(categoria); conditions.push(`n.categoria = $${params.length}`); }
@@ -14,18 +16,18 @@ export async function getAll(reqQuery) {
     conditions.push(`(n.titulo ILIKE $${params.length} OR n.resumen ILIKE $${params.length})`);
   }
 
-  const where = conditions.join(' AND ');
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, titulo, slug, categoria, resumen, imagen_url, publicado_en
-       FROM noticias n WHERE ${where}
-       ORDER BY n.publicado_en DESC
+      `SELECT id, titulo, slug, categoria, resumen, imagen_url, publicado, publicado_en, creado_en
+       FROM noticias n ${where}
+       ORDER BY COALESCE(n.publicado_en, n.creado_en) DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     ),
-    query(`SELECT COUNT(*) FROM noticias n WHERE ${where}`, params.slice(0, -2)),
+    query(`SELECT COUNT(*) FROM noticias n ${where}`, params.slice(0, -2)),
   ]);
 
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };

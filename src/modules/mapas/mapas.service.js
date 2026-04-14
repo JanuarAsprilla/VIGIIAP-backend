@@ -4,9 +4,10 @@ import { slugify } from '../../utils/slugify.js';
 
 export async function getAll(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
-  const { categoria, q } = reqQuery;
+  const { categoria, q, admin } = reqQuery;
 
-  const conditions = ['m.activo = true'];
+  // admin=true bypasses activo filter so the admin panel can see all records
+  const conditions = admin === 'true' ? [] : ['m.activo = true'];
   const params = [];
 
   if (categoria) {
@@ -18,20 +19,21 @@ export async function getAll(reqQuery) {
     conditions.push(`(m.titulo ILIKE $${params.length} OR m.descripcion ILIKE $${params.length})`);
   }
 
-  const where = conditions.join(' AND ');
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit, offset);
 
   const [dataRes, countRes] = await Promise.all([
     query(
       `SELECT m.id, m.titulo, m.slug, m.categoria, m.anio, m.descripcion,
-              m.thumbnail_url, m.geovisor_url, m.creado_en
+              m.thumbnail_url, m.archivo_pdf_url, m.archivo_img_url, m.geovisor_url,
+              m.activo, m.creado_en
        FROM mapas m
-       WHERE ${where}
+       ${where}
        ORDER BY m.creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     ),
-    query(`SELECT COUNT(*) FROM mapas m WHERE ${where}`, params.slice(0, -2)),
+    query(`SELECT COUNT(*) FROM mapas m ${where}`, params.slice(0, -2)),
   ]);
 
   return { data: dataRes.rows, meta: meta(Number(countRes.rows[0].count)) };

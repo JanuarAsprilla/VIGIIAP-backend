@@ -3,7 +3,7 @@ import * as authService from './auth.service.js';
 import {
   notifyVerificacionEmail,
   notifyRegistroRecibido,
-  notifyAdminNewRegistro,
+  notifyAdminUsuarioVerificado,
   notifyRecuperarPassword,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
@@ -72,18 +72,21 @@ export async function verifyEmail(req, res, next) {
   try {
     const result = await authService.verifyEmail(req.params.token);
 
-    // Notificar al usuario que su solicitud fue recibida (solo si es verificación nueva)
+    // Notificar solo si es verificación nueva (no si ya estaba verificado)
     if (!result.alreadyVerified) {
-      notifyRegistroRecibido({ email: req.params.token, nombre: result.nombre });
-      // Notificar admins
+      const activationUrl = `${process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co'}/admin/usuarios`;
+
+      // 1. Confirmar al usuario que su correo fue verificado y que espere activación
+      notifyRegistroRecibido({ email: result.email, nombre: result.nombre });
+
+      // 2. Notificar a todos los admins con botón de activación directa
       getAdminEmails().then((adminEmails) => {
         adminEmails.forEach((adminEmail) =>
-          notifyAdminNewRegistro({
+          notifyAdminUsuarioVerificado({
             adminEmail,
-            nombre: result.nombre,
-            email:  result.email ?? '',
-            institucion: '',
-            motivo: 'Verificación completada',
+            nombre:        result.nombre,
+            email:         result.email,
+            activationUrl,
           })
         );
       });

@@ -165,7 +165,7 @@ export async function verifyEmail(token) {
     [user.id]
   );
 
-  return { alreadyVerified: false, nombre: user.nombre };
+  return { alreadyVerified: false, nombre: user.nombre, email: user.email };
 }
 
 // ─── Reenviar email de verificación ──────────────────────────────────────────

@@ -294,6 +294,58 @@ export async function notifyRegistroRecibido({ email, nombre }) {
   });
 }
 
+/** Notifica a los admins que un usuario verificó su correo y está listo para ser activado */
+export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, activationUrl }) {
+  await send({
+    to: adminEmail,
+    subject: `[VIGIIAP] ✅ Usuario listo para activar: ${nombre}`,
+    html: baseTemplate('Usuario verificado — pendiente de activación', `
+      <div style="background:#ECFDF5;border-left:4px solid #059669;padding:14px 18px;border-radius:4px;margin-bottom:20px;">
+        <p style="margin:0;font-size:14px;color:#065F46;font-weight:600;">
+          ✅ Un usuario ha verificado su correo electrónico
+        </p>
+        <p style="margin:6px 0 0;font-size:13px;color:#047857;">
+          Su cuenta está pendiente de aprobación y requiere activación manual.
+        </p>
+      </div>
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        El siguiente usuario completó la verificación de su correo y está esperando que un administrador active su acceso a VIGIIAP:
+      </p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
+        <tr style="background:#f4f7f4;">
+          <td style="padding:10px 14px;font-weight:600;color:#1B4332;width:120px;">Nombre</td>
+          <td style="padding:10px 14px;color:#374151;">${nombre}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;font-weight:600;color:#1B4332;">Correo</td>
+          <td style="padding:10px 14px;color:#374151;">${email}</td>
+        </tr>
+        <tr style="background:#f4f7f4;">
+          <td style="padding:10px 14px;font-weight:600;color:#1B4332;">Estado</td>
+          <td style="padding:10px 14px;">
+            <span style="background:#FEF3C7;color:#92400E;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">
+              Pendiente de activación
+            </span>
+          </td>
+        </tr>
+      </table>
+      <p style="color:#374151;font-size:13px;line-height:1.6;">
+        Haz clic en el botón a continuación para ir al panel de gestión de usuarios y activar la cuenta:
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${activationUrl}"
+           style="display:inline-block;background:#1B4332;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">
+          Activar usuario en el panel
+        </a>
+      </div>
+      <p style="color:#9CA3AF;font-size:11px;text-align:center;margin-top:16px;">
+        Si no puedes hacer clic en el botón, visita: <br>
+        <a href="${activationUrl}" style="color:#1B4332;">${activationUrl}</a>
+      </p>
+    `),
+  });
+}
+
 /** Notifica nueva solicitud creada al admin */
 export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email, tipo, descripcion }) {
   await send({
