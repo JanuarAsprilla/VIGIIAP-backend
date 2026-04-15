@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { index, show, store, destroy } from './documentos.controller.js';
+import { index, show, store, update, destroy } from './documentos.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 
@@ -13,6 +13,13 @@ router.post(
   authorize('admin_sig', 'investigador'),
   uploadSingle('archivo', 'documentos'),
   store,
+);
+router.put(
+  '/:id',
+  authenticate,
+  authorize('admin_sig'),
+  uploadSingle('archivo', 'documentos'),
+  update,
 );
 router.delete('/:id', authenticate, authorize('admin_sig'), destroy);
 

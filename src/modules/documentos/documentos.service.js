@@ -50,6 +50,33 @@ export async function create(data, userId) {
   return rows[0];
 }
 
+export async function update(id, data) {
+  const COLS = ['titulo', 'tipo', 'anio', 'autores', 'resumen', 'archivo_url'];
+  const updates = [];
+  const params  = [];
+
+  for (const col of COLS) {
+    if (data[col] !== undefined) {
+      params.push(data[col]);
+      updates.push(`${col} = $${params.length}`);
+    }
+  }
+
+  if (updates.length === 0) {
+    throw Object.assign(new Error('Sin campos para actualizar'), { status: 400 });
+  }
+
+  updates.push('actualizado_en = NOW()');
+  params.push(id);
+
+  const { rows } = await query(
+    `UPDATE documentos SET ${updates.join(', ')} WHERE id = $${params.length} AND activo = true RETURNING *`,
+    params,
+  );
+  if (!rows[0]) throw Object.assign(new Error('Documento no encontrado'), { status: 404 });
+  return rows[0];
+}
+
 export async function remove(id) {
   await query('UPDATE documentos SET activo=false WHERE id=$1', [id]);
 }
