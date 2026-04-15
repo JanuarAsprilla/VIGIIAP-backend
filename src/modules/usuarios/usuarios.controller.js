@@ -1,4 +1,4 @@
-import { updateRolSchema, updatePasswordSchema } from './usuarios.schema.js';
+import { updateRolSchema, updatePasswordSchema, updatePerfilSchema } from './usuarios.schema.js';
 import * as userService from './usuarios.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
@@ -15,6 +15,23 @@ export async function updateRol(req, res, next) {
       modulo:      'usuarios',
       entidadId:   req.params.id,
       descripcion: `Rol actualizado a "${rol}", activo=${activo}`,
+      usuarioId:   req.user.id,
+      usuarioEmail: req.user.email,
+      ip:          req.ip,
+    });
+    res.json(usuario);
+  } catch (err) { next(err); }
+}
+
+export async function updateMe(req, res, next) {
+  try {
+    const data    = updatePerfilSchema.parse(req.body);
+    const usuario = await userService.updatePerfil(req.user.id, data);
+    registrarAuditoria({
+      accion:      'update_perfil',
+      modulo:      'usuarios',
+      entidadId:   req.user.id,
+      descripcion: `Usuario actualizó su perfil`,
       usuarioId:   req.user.id,
       usuarioEmail: req.user.email,
       ip:          req.ip,

@@ -40,6 +40,24 @@ export async function updateRol(id, rol, activo) {
   return rows[0];
 }
 
+export async function updatePerfil(userId, { nombre, institucion }) {
+  const updates = [];
+  const params  = [];
+
+  if (nombre      !== undefined) { params.push(nombre);      updates.push(`nombre = $${params.length}`); }
+  if (institucion !== undefined) { params.push(institucion); updates.push(`institucion = $${params.length}`); }
+  updates.push('actualizado_en = NOW()');
+  params.push(userId);
+
+  const { rows } = await query(
+    `UPDATE usuarios SET ${updates.join(', ')} WHERE id = $${params.length}
+     RETURNING id, nombre, email, rol, institucion, activo`,
+    params
+  );
+  if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  return rows[0];
+}
+
 export async function updatePassword(userId, currentPassword, newPassword) {
   const { rows } = await query('SELECT password_hash FROM usuarios WHERE id=$1', [userId]);
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
