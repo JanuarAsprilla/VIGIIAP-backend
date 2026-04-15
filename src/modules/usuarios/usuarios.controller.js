@@ -2,6 +2,10 @@ import { updateRolSchema, updatePasswordSchema, updatePerfilSchema } from './usu
 import * as userService from './usuarios.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
+export async function getMe(req, res, next) {
+  try { res.json(await userService.getProfile(req.user.id)); } catch (err) { next(err); }
+}
+
 export async function index(req, res, next) {
   try { res.json(await userService.getAll(req.query)); } catch (err) { next(err); }
 }

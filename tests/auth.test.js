@@ -72,7 +72,7 @@ describe('POST /api/auth/registro', () => {
       .send({
         nombre: 'Usuario Nuevo',
         email: 'nuevo@iiap.gob.pe',
-        password: 'password123',
+        password: 'Segura123!',   // strongPassword: mayúscula + minúscula + número/símbolo
         motivo: 'Investigación sobre flora amazónica',
       });
 
@@ -80,18 +80,17 @@ describe('POST /api/auth/registro', () => {
     expect(res.body).toHaveProperty('message');
   });
 
-  it('retorna 422 si el motivo es demasiado corto', async () => {
+  it('retorna 422 si la contraseña es débil (sin mayúsculas)', async () => {
     const res = await request(app)
       .post('/api/auth/registro')
       .send({
         nombre: 'Test',
         email: 'test@iiap.gob.pe',
-        password: 'password123',
-        motivo: 'corto',
+        password: 'password123',  // sin mayúscula — falla strongPassword
       });
 
     expect(res.status).toBe(422);
-    expect(res.body.fields.some(f => f.field === 'motivo')).toBe(true);
+    expect(res.body.fields.some(f => f.field === 'password')).toBe(true);
   });
 });
 

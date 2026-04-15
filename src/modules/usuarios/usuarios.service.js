@@ -4,6 +4,15 @@ import { paginate } from '../../utils/paginate.js';
 
 const ROLES = ['admin_sig', 'investigador', 'publico'];
 
+export async function getProfile(userId) {
+  const { rows } = await query(
+    'SELECT id, nombre, email, rol, institucion, activo, creado_en FROM usuarios WHERE id=$1',
+    [userId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  return rows[0];
+}
+
 export async function getAll(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rol, activo } = reqQuery;
