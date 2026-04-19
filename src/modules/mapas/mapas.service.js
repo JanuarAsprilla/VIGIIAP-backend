@@ -1,6 +1,7 @@
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
+import { deleteFile } from '../../config/r2.js';
 
 function visibilidadPermitida(user) {
   if (!user || user.rol === 'visitante') return ['publico'];
@@ -120,6 +121,18 @@ export async function setActivo(id, activo) {
   return rows[0];
 }
 
+function extractKey(url) {
+  if (!url) return null;
+  const publicUrl = process.env.R2_PUBLIC_URL;
+  if (publicUrl && url.startsWith(publicUrl)) return url.slice(publicUrl.length + 1);
+  return url.split('/').slice(-1)[0];
+}
+
 export async function remove(id) {
-  await query('UPDATE mapas SET activo=false WHERE id=$1', [id]);
+  const { rows } = await query('SELECT archivo_pdf_url, archivo_img_url, thumbnail_url FROM mapas WHERE id=$1', [id]);
+  if (!rows[0]) return;
+  await query('DELETE FROM mapas WHERE id=$1', [id]);
+  const keys = [rows[0].archivo_pdf_url, rows[0].archivo_img_url, rows[0].thumbnail_url]
+    .map(extractKey).filter(Boolean);
+  await Promise.allSettled(keys.map(k => deleteFile(k)));
 }
