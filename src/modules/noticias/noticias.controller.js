@@ -3,11 +3,11 @@ import * as noticiaService from './noticias.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 export async function index(req, res, next) {
-  try { res.json(await noticiaService.getAll(req.query)); } catch (err) { next(err); }
+  try { res.json(await noticiaService.getAll(req.query, req.user)); } catch (err) { next(err); }
 }
 
 export async function show(req, res, next) {
-  try { res.json(await noticiaService.getBySlug(req.params.slug)); } catch (err) { next(err); }
+  try { res.json(await noticiaService.getBySlug(req.params.slug, req.user)); } catch (err) { next(err); }
 }
 
 export async function store(req, res, next) {

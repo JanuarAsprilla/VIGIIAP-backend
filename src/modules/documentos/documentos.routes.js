@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { index, show, store, update, destroy } from './documentos.controller.js';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 
 const router = Router();
 
-router.get('/', index);
-router.get('/:slug', show);
+router.get('/',     optionalAuthenticate, index);
+router.get('/:slug', optionalAuthenticate, show);
 router.post(
   '/',
   authenticate,

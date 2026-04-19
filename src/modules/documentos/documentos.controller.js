@@ -3,11 +3,11 @@ import * as docService from './documentos.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 export async function index(req, res, next) {
-  try { res.json(await docService.getAll(req.query)); } catch (err) { next(err); }
+  try { res.json(await docService.getAll(req.query, req.user)); } catch (err) { next(err); }
 }
 
 export async function show(req, res, next) {
-  try { res.json(await docService.getBySlug(req.params.slug)); } catch (err) { next(err); }
+  try { res.json(await docService.getBySlug(req.params.slug, req.user)); } catch (err) { next(err); }
 }
 
 export async function store(req, res, next) {
