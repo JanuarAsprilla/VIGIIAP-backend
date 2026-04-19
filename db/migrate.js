@@ -1,7 +1,3 @@
-/**
- * Ejecuta todas las migraciones en orden.
- * Uso: node db/migrate.js
- */
 import 'dotenv/config';
 import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -11,9 +7,7 @@ import logger from '../src/utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-async function migrate() {
-  await connectDB();
-
+export async function runMigrations() {
   await query(`
     CREATE TABLE IF NOT EXISTS _migraciones (
       id        SERIAL PRIMARY KEY,
@@ -26,24 +20,26 @@ async function migrate() {
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
+  let ran = 0;
   for (const file of files) {
     const { rows } = await query('SELECT id FROM _migraciones WHERE nombre=$1', [file]);
-    if (rows.length) {
-      logger.info(`[skip] ${file}`);
-      continue;
-    }
+    if (rows.length) continue;
 
     const sql = readFileSync(join(__dirname, 'migrations', file), 'utf8');
     await query(sql);
     await query('INSERT INTO _migraciones (nombre) VALUES ($1)', [file]);
-    logger.info(`[ok]   ${file}`);
+    logger.info(`[migration] ${file}`);
+    ran++;
   }
 
-  logger.info('Migraciones completadas.');
-  process.exit(0);
+  if (ran > 0) logger.info(`${ran} migracion(es) aplicada(s).`);
 }
 
-migrate().catch((err) => {
-  logger.error('Error en migraciones:', err);
-  process.exit(1);
-});
+// CLI entrypoint: node db/migrate.js
+const isCLI = process.argv[1] && fileURLToPath(import.meta.url).endsWith(process.argv[1].split('/').pop());
+if (isCLI) {
+  connectDB()
+    .then(runMigrations)
+    .then(() => { logger.info('Migraciones completadas.'); process.exit(0); })
+    .catch((err) => { logger.error('Error en migraciones:', err); process.exit(1); });
+}
