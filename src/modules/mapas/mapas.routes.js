@@ -8,7 +8,7 @@ const router = Router();
 const mapaUpload = uploadFields([
   { name: 'archivo_pdf', folder: 'mapas/pdf', maxSizeMB: 50 },
   { name: 'archivo_img', folder: 'mapas/img', maxSizeMB: 10 },
-  { name: 'thumbnail',   folder: 'mapas/thumbnails', maxSizeMB: 5 },
+  { name: 'thumbnail',   folder: 'mapas/thumbnails', maxSizeMB: 50 },
 ]);
 
 router.get('/', optionalAuthenticate, index);
