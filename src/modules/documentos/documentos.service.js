@@ -37,7 +37,7 @@ export async function getAll(reqQuery, user) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, titulo, slug, tipo, anio, autores, resumen, archivo_url, visibilidad, creado_en
+      `SELECT id, titulo, slug, tipo, anio, autores, resumen, archivo_url, tamano_bytes, visibilidad, creado_en
        FROM documentos d WHERE ${where}
        ORDER BY d.anio DESC, d.creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -70,16 +70,18 @@ export async function getBySlug(slug, user) {
 export async function create(data, userId) {
   const slug = slugify(data.titulo);
   const { rows } = await query(
-    `INSERT INTO documentos (titulo, slug, tipo, anio, autores, resumen, archivo_url, visibilidad, creado_por)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    `INSERT INTO documentos (titulo, slug, tipo, anio, autores, resumen, archivo_url, tamano_bytes, visibilidad, creado_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [data.titulo, slug, data.tipo, data.anio, data.autores, data.resumen,
-     data.archivo_url, data.visibilidad ?? 'publico', userId],
+     data.archivo_url, data.archivo_tamano_bytes ?? null,
+     data.visibilidad ?? 'publico', userId],
   );
   return rows[0];
 }
 
 export async function update(id, data) {
-  const COLS = ['titulo', 'tipo', 'anio', 'autores', 'resumen', 'archivo_url', 'visibilidad'];
+  const COLS = ['titulo', 'tipo', 'anio', 'autores', 'resumen', 'archivo_url', 'tamano_bytes', 'visibilidad'];
+  if (data.archivo_tamano_bytes !== undefined) data.tamano_bytes = data.archivo_tamano_bytes;
   const updates = [];
   const params  = [];
 

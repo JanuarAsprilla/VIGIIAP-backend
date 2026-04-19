@@ -1,0 +1,1 @@
+ALTER TABLE documentos ADD COLUMN IF NOT EXISTS tamano_bytes BIGINT;

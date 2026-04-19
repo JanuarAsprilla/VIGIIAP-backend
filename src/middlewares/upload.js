@@ -41,7 +41,8 @@ export function uploadFields(fields) {
           const key = `${field.folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
           const url = await uploadFile(key, file.buffer, file.mimetype);
-          req.body[`${field.name}_url`] = url;
+          req.body[`${field.name}_url`]         = url;
+          req.body[`${field.name}_tamano_bytes`] = file.size;
         }
         next();
       } catch (err) {
