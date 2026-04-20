@@ -1,6 +1,13 @@
 import { query } from '../../config/database.js';
 import * as adminService from './admin.service.js';
 
+/** GET /api/admin/notificaciones */
+export async function notificaciones(req, res, next) {
+  try {
+    res.json(await adminService.getNotificaciones());
+  } catch (err) { next(err); }
+}
+
 /** GET /api/admin/configuracion */
 export async function getConfiguracion(req, res, next) {
   try {

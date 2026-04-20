@@ -193,7 +193,71 @@ export async function getAdminEmails() {
   const { rows } = await query(
     "SELECT email FROM usuarios WHERE rol = 'admin_sig' AND activo = true"
   );
-  return rows.map((r) => r.email);
+  const dbEmails = rows.map((r) => r.email);
+  // Fallback: ADMIN_EMAIL env var (separado por comas) — cubre el caso donde el
+  // email del admin en BD no es un dominio válido o aún no hay admins en BD.
+  const envEmails = process.env.ADMIN_EMAIL
+    ? process.env.ADMIN_EMAIL.split(',').map((e) => e.trim()).filter(Boolean)
+    : [];
+  return [...new Set([...dbEmails, ...envEmails])];
+}
+
+/** Devuelve notificaciones recientes para el panel del admin */
+export async function getNotificaciones() {
+  const [usuariosRes, solicitudesRes, noticiasRes] = await Promise.all([
+    query(`
+      SELECT id, nombre, email, creado_en
+      FROM usuarios
+      WHERE activo = false AND email_verified = true
+      ORDER BY creado_en DESC LIMIT 5
+    `),
+    query(`
+      SELECT s.id, s.tipo, s.estado, s.creado_en, u.nombre AS solicitante
+      FROM solicitudes s
+      LEFT JOIN usuarios u ON u.id = s.usuario_id
+      WHERE s.estado IN ('pendiente', 'en_revision')
+      ORDER BY s.creado_en DESC LIMIT 5
+    `),
+    query(`
+      SELECT id, titulo, slug, creado_en
+      FROM noticias
+      WHERE publicado = true
+      ORDER BY creado_en DESC LIMIT 3
+    `),
+  ]);
+
+  const items = [
+    ...usuariosRes.rows.map((u) => ({
+      id:    `user-${u.id}`,
+      type:  'usuario',
+      tag:   'Nuevo usuario',
+      title: u.nombre,
+      meta:  u.email,
+      link:  '/admin/usuarios',
+      time:  u.creado_en,
+    })),
+    ...solicitudesRes.rows.map((s) => ({
+      id:    `sol-${s.id}`,
+      type:  'solicitud',
+      tag:   'Solicitud pendiente',
+      title: s.solicitante ?? 'Usuario',
+      meta:  s.tipo,
+      link:  '/admin/solicitudes',
+      time:  s.creado_en,
+    })),
+    ...noticiasRes.rows.map((n) => ({
+      id:    `not-${n.id}`,
+      type:  'noticia',
+      tag:   'Noticia',
+      title: n.titulo,
+      meta:  null,
+      link:  `/noticias/${n.slug}`,
+      slug:  n.slug,
+      time:  n.creado_en,
+    })),
+  ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
+  return items;
 }
 
 /** Consulta el audit log con paginación */

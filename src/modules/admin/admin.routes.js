@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog,
-  getConfiguracion, setConfiguracion,
+  getConfiguracion, setConfiguracion, notificaciones,
 } from './admin.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 
@@ -11,6 +11,7 @@ const router = Router();
 router.use(authenticate, authorize('admin_sig'));
 
 router.get('/stats',            stats);
+router.get('/notificaciones',   notificaciones);
 router.get('/usuarios',         listarUsuarios);
 router.post('/usuarios',        crearUsuario);
 router.patch('/usuarios/:id',   actualizarUsuario);
