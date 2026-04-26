@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const ROLES = ['admin_sig', 'investigador', 'publico'];
+const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
 
 export const updatePerfilSchema = z.object({
   nombre:      z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(80).optional(),

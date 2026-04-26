@@ -9,7 +9,7 @@ import { paginate } from '../../utils/paginate.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro } from '../../utils/mailer.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
-const ROLES = ['admin_sig', 'investigador', 'publico'];
+const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
 
 /** Lista todos los usuarios con filtros */
 export async function listarUsuarios(reqQuery) {

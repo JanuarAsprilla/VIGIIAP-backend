@@ -17,6 +17,13 @@ function validateEnv() {
     logger.warn(`[startup] Variables de entorno faltantes: ${missing.join(', ')}`);
     logger.warn('[startup] Los uploads de archivos fallarán hasta que estén configuradas.');
   }
+
+  if (!process.env.FRONTEND_URL) {
+    logger.warn('[startup] FRONTEND_URL no está definida — los links en emails de verificación usarán el valor por defecto.');
+    logger.warn('[startup] Configura FRONTEND_URL en Render con la URL del frontend (ej: https://vigiiap.iiap.gov.co).');
+  } else {
+    logger.info(`[startup] FRONTEND_URL: ${process.env.FRONTEND_URL}`);
+  }
 }
 
 async function start() {

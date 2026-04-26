@@ -110,6 +110,16 @@ app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Redirect de seguridad: si el link del email apunta al backend, redirige al frontend
+app.get('/verificar-email/:token', (req, res) => {
+  const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co').replace(/\/$/, '');
+  res.redirect(302, `${base}/verificar-email/${req.params.token}`);
+});
+app.get('/reset-password/:token', (req, res) => {
+  const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co').replace(/\/$/, '');
+  res.redirect(302, `${base}/reset-password/${req.params.token}`);
+});
+
 // ─── Manejo de errores ────────────────────────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);

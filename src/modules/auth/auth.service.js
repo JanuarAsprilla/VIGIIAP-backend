@@ -101,7 +101,9 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
 // ─── Registro ─────────────────────────────────────────────────────────────────
 // Map perfil solicitado → rol inicial en BD
 function perfilToRol(perfil) {
-  if (['investigador', 'tecnico', 'institucional'].includes(perfil)) return 'investigador';
+  if (perfil === 'investigador') return 'investigador';
+  if (perfil === 'tecnico') return 'tecnico';
+  if (perfil === 'institucional') return 'institucional';
   return 'publico';
 }
 

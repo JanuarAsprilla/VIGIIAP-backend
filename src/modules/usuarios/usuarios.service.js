@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 
-const ROLES = ['admin_sig', 'investigador', 'publico'];
+const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
 
 export async function getProfile(userId) {
   const { rows } = await query(
