@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const TIPOS = ['acceso', 'dato', 'colaboracion', 'otro'];
+const TIPOS = ['uso-suelo', 'linderos', 'estudio-ambiental', 'validacion', 'aprovechamiento', 'otro'];
 const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada'];
 
 export const createSolicitudSchema = z.object({
