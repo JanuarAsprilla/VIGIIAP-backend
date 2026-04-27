@@ -22,6 +22,15 @@ function createTransport() {
 const FROM = `"${process.env.MAIL_FROM_NAME || 'VIGIIAP — IIAP'}" <${process.env.MAIL_USER}>`;
 const BASE_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co';
 
+const TIPO_LABEL = {
+  'uso-suelo':         'Certificado de Uso de Suelo',
+  'linderos':          'Consulta de Linderos',
+  'estudio-ambiental': 'Estudio Técnico Ambiental',
+  'validacion':        'Validación Cartográfica',
+  'aprovechamiento':   'Permiso de Aprovechamiento Forestal',
+  'otro':              'Otro',
+};
+
 // ─── Helper de envío ──────────────────────────────────────────────────────────
 async function send({ to, subject, html }) {
   if (!process.env.MAIL_USER || !process.env.MAIL_PASS) {
@@ -194,7 +203,7 @@ export async function notifySolicitudEstado({ email, nombre, tipo, estado, nota 
         Hola <strong>${nombre}</strong>,
       </p>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        El estado de tu solicitud de tipo <strong>"${tipo}"</strong> ha sido actualizado:
+        El estado de tu solicitud de tipo <strong>"${TIPO_LABEL[tipo] ?? tipo}"</strong> ha sido actualizado:
       </p>
       <div style="background:#f4f7f4;border-left:4px solid ${colorEstado};padding:14px 18px;border-radius:4px;margin:16px 0;">
         <p style="margin:0;font-size:15px;font-weight:700;color:${colorEstado};">${estadoLabel}</p>
@@ -350,7 +359,7 @@ export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, 
 export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email, tipo, descripcion }) {
   await send({
     to: adminEmail,
-    subject: `[VIGIIAP] Nueva solicitud: ${tipo}`,
+    subject: `[VIGIIAP] Nueva solicitud: ${TIPO_LABEL[tipo] ?? tipo}`,
     html: baseTemplate('Nueva solicitud recibida', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Se ha recibido una nueva solicitud en VIGIIAP:
@@ -366,7 +375,7 @@ export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email
         </tr>
         <tr style="background:#f4f7f4;">
           <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Tipo</td>
-          <td style="padding:8px 12px;color:#374151;">${tipo}</td>
+          <td style="padding:8px 12px;color:#374151;">${TIPO_LABEL[tipo] ?? tipo}</td>
         </tr>
         <tr>
           <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Descripción</td>
