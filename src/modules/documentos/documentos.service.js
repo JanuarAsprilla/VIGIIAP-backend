@@ -37,8 +37,12 @@ export async function getAll(reqQuery, user) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, titulo, slug, tipo, anio, autores, resumen, archivo_url, tamano_bytes, visibilidad, creado_en
-       FROM documentos d WHERE ${where}
+      `SELECT d.id, d.titulo, d.slug, d.tipo, d.tipo AS categoria, d.anio, d.autores, d.resumen,
+              d.archivo_url, d.tamano_bytes, d.visibilidad, d.creado_en,
+              c.thumbnail_url AS categoria_thumbnail_url
+       FROM documentos d
+       LEFT JOIN categorias c ON c.nombre = d.tipo
+       WHERE ${where}
        ORDER BY d.anio DESC, d.creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,

@@ -15,6 +15,7 @@ import noticiasRoutes from './modules/noticias/noticias.routes.js';
 import solicitudesRoutes from './modules/solicitudes/solicitudes.routes.js';
 import usuariosRoutes from './modules/usuarios/usuarios.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
+import categoriasRoutes from './modules/categorias/categorias.routes.js';
 
 const app = express();
 
@@ -109,6 +110,7 @@ app.use('/api/noticias', noticiasRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/categorias', categoriasRoutes);
 
 // Redirect de seguridad: si el link del email apunta al backend, redirige al frontend
 app.get('/verificar-email/:token', (req, res) => {
