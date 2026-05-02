@@ -15,7 +15,7 @@
  *   5. Redirect 302 → URL prefirmada
  */
 import { query } from '../../config/database.js';
-import { getPresignedUrl, extractKey } from '../../config/r2.js';
+import { getPresignedUrl, extractKey, isPublicUrl } from '../../config/r2.js';
 import { registrarDescarga } from '../../utils/dataCustody.js';
 
 /**
@@ -55,12 +55,14 @@ export async function descargarMapa(req, res, next) {
       return res.status(404).json({ error: 'Archivo no disponible para este mapa' });
     }
 
-    const key = extractKey(fileUrl);
-    if (!key) {
-      return res.status(500).json({ error: 'No se pudo resolver la clave del archivo' });
+    // Archivos públicos (imágenes, thumbnails) se sirven directamente
+    // Archivos privados (PDFs) requieren URL prefirmada
+    let downloadUrl = fileUrl;
+    if (!isPublicUrl(fileUrl)) {
+      const key = extractKey(fileUrl);
+      if (!key) return res.status(500).json({ error: 'No se pudo resolver la clave del archivo' });
+      downloadUrl = await getPresignedUrl(key, 120);
     }
-
-    const presignedUrl = await getPresignedUrl(key, 120);
 
     registrarDescarga({
       tipoRecurso:   'mapa',
@@ -72,7 +74,7 @@ export async function descargarMapa(req, res, next) {
       archivoUrl:    fileUrl,
     });
 
-    res.redirect(302, presignedUrl);
+    res.redirect(302, downloadUrl);
   } catch (err) { next(err); }
 }
 
@@ -95,12 +97,12 @@ export async function descargarDocumento(req, res, next) {
       return res.status(404).json({ error: 'Archivo no disponible para este documento' });
     }
 
-    const key = extractKey(doc.archivo_url);
-    if (!key) {
-      return res.status(500).json({ error: 'No se pudo resolver la clave del archivo' });
+    let downloadUrl = doc.archivo_url;
+    if (!isPublicUrl(doc.archivo_url)) {
+      const key = extractKey(doc.archivo_url);
+      if (!key) return res.status(500).json({ error: 'No se pudo resolver la clave del archivo' });
+      downloadUrl = await getPresignedUrl(key, 120);
     }
-
-    const presignedUrl = await getPresignedUrl(key, 120);
 
     registrarDescarga({
       tipoRecurso:   'documento',
@@ -112,6 +114,6 @@ export async function descargarDocumento(req, res, next) {
       archivoUrl:    doc.archivo_url,
     });
 
-    res.redirect(302, presignedUrl);
+    res.redirect(302, downloadUrl);
   } catch (err) { next(err); }
 }

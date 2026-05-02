@@ -1,7 +1,7 @@
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
-import { deleteFile } from '../../config/r2.js';
+import { deleteFileByUrl } from '../../config/r2.js';
 
 /** Devuelve los valores de visibilidad accesibles según el rol del usuario. */
 function visibilidadPermitida(user) {
@@ -111,17 +111,9 @@ export async function update(id, data) {
   return rows[0];
 }
 
-function extractKey(url) {
-  if (!url) return null;
-  const publicUrl = process.env.R2_PUBLIC_URL;
-  if (publicUrl && url.startsWith(publicUrl)) return url.slice(publicUrl.length + 1);
-  return url.split('/').slice(-1)[0];
-}
-
 export async function remove(id) {
   const { rows } = await query('SELECT archivo_url FROM documentos WHERE id=$1', [id]);
   if (!rows[0]) return;
   await query('DELETE FROM documentos WHERE id=$1', [id]);
-  const key = extractKey(rows[0].archivo_url);
-  if (key) await deleteFile(key).catch(() => {});
+  if (rows[0].archivo_url) await deleteFileByUrl(rows[0].archivo_url).catch(() => {});
 }
