@@ -94,6 +94,11 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminEmail }
   if (rol && !ROLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
   }
+  // admin_sig no puede modificar cuentas super_admin
+  const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [id]);
+  if (target[0]?.rol === 'super_admin') {
+    throw Object.assign(new Error('No se puede modificar una cuenta de Super Administrador'), { status: 403 });
+  }
 
   // Construir SET dinámico solo con los campos proporcionados
   const updates = [];
@@ -139,9 +144,13 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminEmail }
 
 /** Elimina un usuario del sistema */
 export async function eliminarUsuario({ id, adminId, adminEmail }) {
-  // No permitir que el admin se elimine a sí mismo
   if (id === adminId) {
     throw Object.assign(new Error('No puedes eliminar tu propia cuenta'), { status: 400 });
+  }
+  // admin_sig no puede eliminar cuentas super_admin
+  const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [id]);
+  if (target[0]?.rol === 'super_admin') {
+    throw Object.assign(new Error('No se puede eliminar una cuenta de Super Administrador'), { status: 403 });
   }
 
   const { rows } = await query(
@@ -285,4 +294,57 @@ export async function getAuditLog(reqQuery) {
   ]);
 
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
+}
+
+/** Estadísticas extendidas para el panel super_admin */
+export async function getSuperStats() {
+  const { rows } = await query(`
+    SELECT
+      COUNT(*)                                                   AS total_usuarios,
+      COUNT(*) FILTER (WHERE rol = 'admin_sig')                 AS admins,
+      COUNT(*) FILTER (WHERE rol = 'investigador')              AS investigadores,
+      COUNT(*) FILTER (WHERE rol = 'tecnico')                   AS tecnicos,
+      COUNT(*) FILTER (WHERE rol IN ('institucional','publico')) AS otros,
+      COUNT(*) FILTER (WHERE activo = true)                     AS activos,
+      COUNT(*) FILTER (WHERE activo = false)                    AS inactivos,
+      COUNT(*) FILTER (WHERE email_verified = false)            AS pendientes_verificacion
+    FROM usuarios
+    WHERE rol != 'super_admin'
+  `);
+  return rows[0];
+}
+
+/** Crea un nuevo admin_sig — solo puede llamar super_admin */
+export async function crearAdminSig({ nombre, email, institucion, superAdminId }) {
+  const { rows: existing } = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
+  if (existing.length) throw Object.assign(new Error('Ya existe un usuario con ese correo'), { status: 409 });
+
+  // Generar contraseña temporal segura
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  const tempPassword = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
+  const hash = await bcrypt.hash(tempPassword, 12);
+  const { rows } = await query(
+    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, activo, email_verified)
+     VALUES ($1, $2, $3, 'admin_sig', $4, true, true)
+     RETURNING id, nombre, email, rol`,
+    [nombre, email.toLowerCase(), hash, institucion ?? '']
+  );
+
+  registrarAuditoria({
+    accion: 'create_admin',
+    modulo: 'admin',
+    entidadId: rows[0].id,
+    descripcion: `Super admin creó administrador — ${rows[0].email}`,
+    usuarioId: superAdminId,
+  });
+
+  await notifyUsuarioCreado({
+    email: rows[0].email,
+    nombre: rows[0].nombre,
+    passwordTemporal: tempPassword,
+    rol: 'admin_sig',
+  }).catch(() => {});
+
+  return rows[0];
 }

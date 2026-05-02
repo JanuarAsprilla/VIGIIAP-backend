@@ -1,7 +1,7 @@
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 
-const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada'];
+const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'resuelta'];
 
 export async function getAll(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
@@ -37,7 +37,8 @@ export async function getAll(reqQuery) {
 export async function getMine(userId, reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rows: data } = await query(
-    `SELECT id, tipo, descripcion, estado, creado_en, actualizado_en
+    `SELECT id, tipo, descripcion, estado, nota_admin, respondida_en,
+            creado_en, actualizado_en
      FROM solicitudes WHERE usuario_id=$1
      ORDER BY creado_en DESC LIMIT $2 OFFSET $3`,
     [userId, limit, offset]
@@ -65,6 +66,18 @@ export async function updateEstado(id, estado, nota, adminId) {
     `UPDATE solicitudes SET estado=$1, nota_admin=$2, revisado_por=$3, actualizado_en=NOW()
      WHERE id=$4 RETURNING *`,
     [estado, nota ?? null, adminId, id]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
+  return rows[0];
+}
+
+export async function responder(id, respuesta, adminId) {
+  const { rows } = await query(
+    `UPDATE solicitudes
+     SET estado='resuelta', nota_admin=$1, revisado_por=$2,
+         respondida_en=NOW(), actualizado_en=NOW()
+     WHERE id=$3 RETURNING *`,
+    [respuesta, adminId, id]
   );
   if (!rows[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
   return rows[0];

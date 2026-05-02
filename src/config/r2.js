@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const r2 = new S3Client({
@@ -37,10 +37,31 @@ export async function deleteFile(key) {
 }
 
 /**
- * Genera una URL prefirmada para descarga temporal (ej: documentos privados).
+ * Genera una URL prefirmada de descarga (GET) con expiración corta.
+ * El bucket R2 debe estar configurado como privado para que esto tenga efecto.
+ * @param {string} key       - Clave del objeto en R2
+ * @param {number} expiresIn - Segundos hasta la expiración (default: 120s)
  */
-export async function getPresignedUrl(key, expiresIn = 3600) {
-  return getSignedUrl(r2, new PutObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn });
+export async function getPresignedUrl(key, expiresIn = 120) {
+  return getSignedUrl(r2, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn });
+}
+
+/**
+ * Extrae la clave R2 de una URL pública almacenada en BD.
+ * Soporta tanto URLs con R2_PUBLIC_URL como URLs directas del bucket.
+ * @param {string} url
+ * @returns {string|null}
+ */
+export function extractKey(url) {
+  if (!url) return null;
+  if (PUBLIC_URL && url.startsWith(PUBLIC_URL)) {
+    return url.slice(PUBLIC_URL.length).replace(/^\//, '');
+  }
+  try {
+    return new URL(url).pathname.replace(/^\//, '');
+  } catch {
+    return null;
+  }
 }
 
 export default r2;

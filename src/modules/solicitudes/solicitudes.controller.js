@@ -1,6 +1,6 @@
-import { createSolicitudSchema, updateEstadoSchema } from './solicitudes.schema.js';
+import { createSolicitudSchema, updateEstadoSchema, responderSchema } from './solicitudes.schema.js';
 import * as solService from './solicitudes.service.js';
-import { notifySolicitudEstado, notifyAdminNuevaSolicitud } from '../../utils/mailer.js';
+import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespuesta } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { query } from '../../config/database.js';
@@ -82,6 +82,42 @@ export async function updateEstado(req, res, next) {
       modulo:      'solicitudes',
       entidadId:   req.params.id,
       descripcion: `Solicitud cambiada a "${estado}"${nota ? ` — nota: ${nota}` : ''}`,
+      usuarioId:   req.user.id,
+      usuarioEmail: req.user.email,
+      ip:          req.ip,
+    });
+
+    res.json(solicitud);
+  } catch (err) { next(err); }
+}
+
+export async function responder(req, res, next) {
+  try {
+    const { respuesta } = responderSchema.parse(req.body);
+    const solicitud = await solService.responder(req.params.id, respuesta, req.user.id);
+
+    const { rows } = await query(
+      `SELECT u.nombre, u.email, s.tipo
+       FROM solicitudes s JOIN usuarios u ON u.id = s.usuario_id
+       WHERE s.id = $1`,
+      [req.params.id]
+    );
+    const owner = rows[0];
+
+    if (owner) {
+      notifySolicitudRespuesta({
+        email:    owner.email,
+        nombre:   owner.nombre,
+        tipo:     owner.tipo,
+        respuesta,
+      });
+    }
+
+    registrarAuditoria({
+      accion:      'responder_solicitud',
+      modulo:      'solicitudes',
+      entidadId:   req.params.id,
+      descripcion: `Solicitud resuelta con respuesta del administrador`,
       usuarioId:   req.user.id,
       usuarioEmail: req.user.email,
       ip:          req.ip,

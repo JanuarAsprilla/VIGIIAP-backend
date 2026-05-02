@@ -16,6 +16,7 @@ import solicitudesRoutes from './modules/solicitudes/solicitudes.routes.js';
 import usuariosRoutes from './modules/usuarios/usuarios.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import categoriasRoutes from './modules/categorias/categorias.routes.js';
+import descargasRoutes from './modules/descargas/descargas.routes.js';
 
 const app = express();
 
@@ -97,9 +98,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
 
-// ─── Health check ─────────────────────────────────────────────────────────────
+// ─── Health check (sin info del stack en producción) ─────────────────────────
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', env: process.env.NODE_ENV, version: '1.0.0' });
+  res.json({ status: 'ok' });
 });
 
 // ─── Rutas de la API ──────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/categorias', categoriasRoutes);
+app.use('/api/descargar', descargasRoutes);
 
 // Redirect de seguridad: si el link del email apunta al backend, redirige al frontend
 app.get('/verificar-email/:token', (req, res) => {

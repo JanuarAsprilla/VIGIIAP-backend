@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
+import { isRevoked } from '../utils/tokenBlacklist.js';
 
 /**
  * Verifica el JWT del header Authorization: Bearer <token>.
- * Adjunta req.user = { id, email, rol } si es válido.
+ * Adjunta req.user = { id, email, rol } si es válido y no fue revocado.
  */
 export function authenticate(req, res, next) {
   const header = req.headers.authorization;
@@ -11,6 +12,11 @@ export function authenticate(req, res, next) {
   }
 
   const token = header.slice(7);
+
+  if (isRevoked(token)) {
+    return res.status(401).json({ error: 'Sesión cerrada. Inicia sesión nuevamente.' });
+  }
+
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
@@ -26,10 +32,13 @@ export function authenticate(req, res, next) {
 export function optionalAuthenticate(req, res, next) {
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) {
-    try {
-      req.user = jwt.verify(header.slice(7), process.env.JWT_SECRET);
-    } catch {
-      // Token inválido/expirado — continuar como visitante
+    const token = header.slice(7);
+    if (!isRevoked(token)) {
+      try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+      } catch {
+        // Token inválido/expirado — continuar como visitante
+      }
     }
   }
   next();
@@ -38,13 +47,25 @@ export function optionalAuthenticate(req, res, next) {
 /**
  * Permite acceso solo a los roles indicados.
  * Usar después de authenticate.
- * @param {...string} roles - 'admin_sig', 'investigador', 'publico'
+ * @param {...string} roles - 'super_admin', 'admin_sig', 'investigador', 'publico'
  */
 export function authorize(...roles) {
   return (req, res, next) => {
-    if (!roles.includes(req.user?.rol)) {
+    // super_admin tiene acceso a todo excepto rutas exclusivas de super_admin
+    const effectiveRoles = roles.includes('admin_sig')
+      ? [...roles, 'super_admin']
+      : roles;
+    if (!effectiveRoles.includes(req.user?.rol)) {
       return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     }
     next();
   };
+}
+
+/** Solo el super_admin puede acceder. */
+export function requireSuperAdmin(req, res, next) {
+  if (req.user?.rol !== 'super_admin') {
+    return res.status(403).json({ error: 'Acción reservada para el Super Administrador' });
+  }
+  next();
 }

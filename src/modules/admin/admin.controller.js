@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import * as adminService from './admin.service.js';
+import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 
 /** GET /api/admin/notificaciones */
 export async function notificaciones(req, res, next) {
@@ -120,4 +121,100 @@ export async function auditLog(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/** GET /api/admin/super/stats — exclusivo super_admin */
+export async function superStats(req, res, next) {
+  try {
+    res.json(await adminService.getSuperStats());
+  } catch (err) { next(err); }
+}
+
+/** POST /api/admin/super/crear-admin — exclusivo super_admin */
+export async function crearAdmin(req, res, next) {
+  try {
+    const { nombre, email, institucion } = req.body;
+    if (!nombre || !email) {
+      return res.status(400).json({ error: 'nombre y email son obligatorios' });
+    }
+    const usuario = await adminService.crearAdminSig({
+      nombre, email, institucion,
+      superAdminId: req.user.id,
+    });
+    res.status(201).json(usuario);
+  } catch (err) { next(err); }
+}
+
+/** GET /api/admin/custodia?tipo=mapa&id=UUID */
+export async function custodiaRecurso(req, res, next) {
+  try {
+    const { tipo, id } = req.query;
+    if (!tipo || !id) {
+      return res.status(400).json({ error: 'Parámetros requeridos: tipo (mapa|documento) e id (UUID)' });
+    }
+    if (!['mapa', 'documento'].includes(tipo)) {
+      return res.status(400).json({ error: 'tipo debe ser "mapa" o "documento"' });
+    }
+    const rows = await getCadenaCustodia(tipo, id);
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+}
+
+/** GET /api/admin/descargas?tipo=mapa&id=UUID */
+export async function descargasRecurso(req, res, next) {
+  try {
+    const { tipo, id } = req.query;
+    if (!tipo || !id) {
+      return res.status(400).json({ error: 'Parámetros requeridos: tipo (mapa|documento) e id (UUID)' });
+    }
+    if (!['mapa', 'documento'].includes(tipo)) {
+      return res.status(400).json({ error: 'tipo debe ser "mapa" o "documento"' });
+    }
+    const rows = await getDescargasRecurso(tipo, id);
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+}
+
+/** GET /api/admin/descargas/stats */
+export async function descargasStats(req, res, next) {
+  try {
+    const { rows } = await query(
+      `SELECT tipo_recurso, recurso_id, recurso_titulo,
+              total_descargas, usuarios_unicos, ultima_descarga
+       FROM v_descargas_stats
+       ORDER BY total_descargas DESC
+       LIMIT 100`,
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+}
+
+/** GET /api/admin/scan-log?resultado=rejected&limit=50 */
+export async function scanLog(req, res, next) {
+  try {
+    const resultado = req.query.resultado ?? null;
+    const limit     = Math.min(Number(req.query.limit) || 50, 200);
+
+    const conditions = [];
+    const params     = [];
+
+    if (resultado && ['clean', 'rejected', 'suspicious'].includes(resultado)) {
+      params.push(resultado);
+      conditions.push(`resultado = $${params.length}`);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(limit);
+
+    const { rows } = await query(
+      `SELECT id, archivo_key, sha256_hash, mime_type, tamano_bytes,
+              uploaded_by, ip_origen, resultado, detalle, created_at
+       FROM file_scan_log
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length}`,
+      params,
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
 }

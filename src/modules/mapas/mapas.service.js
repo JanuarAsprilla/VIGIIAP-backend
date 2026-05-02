@@ -73,20 +73,25 @@ export async function create(data, userId) {
   const slug = slugify(data.titulo);
   const { rows } = await query(
     `INSERT INTO mapas (titulo, slug, categoria, anio, descripcion, thumbnail_url,
-                        archivo_pdf_url, archivo_img_url, geovisor_url, visibilidad, creado_por)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                        archivo_pdf_url, archivo_img_url, geovisor_url, visibilidad, creado_por,
+                        epsg, escala, fuente, bbox_norte, bbox_sur, bbox_este, bbox_oeste)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING *`,
     [data.titulo, slug, data.categoria, data.anio, data.descripcion,
      data.thumbnail_url ?? null, data.archivo_pdf_url ?? null,
      data.archivo_img_url ?? null, data.geovisor_url ?? null,
-     data.visibilidad ?? 'publico', userId]
+     data.visibilidad ?? 'publico', userId,
+     data.epsg ?? null, data.escala ?? null, data.fuente ?? null,
+     data.bbox_norte ?? null, data.bbox_sur ?? null,
+     data.bbox_este ?? null, data.bbox_oeste ?? null]
   );
   return rows[0];
 }
 
 export async function update(id, data) {
   const COLS = ['titulo', 'categoria', 'anio', 'descripcion', 'thumbnail_url',
-                'archivo_pdf_url', 'archivo_img_url', 'geovisor_url', 'visibilidad'];
+                'archivo_pdf_url', 'archivo_img_url', 'geovisor_url', 'visibilidad',
+                'epsg', 'escala', 'fuente', 'bbox_norte', 'bbox_sur', 'bbox_este', 'bbox_oeste'];
   const updates = [];
   const params  = [];
 

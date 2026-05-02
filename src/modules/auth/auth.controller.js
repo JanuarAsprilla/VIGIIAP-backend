@@ -8,7 +8,18 @@ import {
   notifyRecuperarPassword,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
+import { revokeToken } from '../../utils/tokenBlacklist.js';
 import logger from '../../utils/logger.js';
+
+/** POST /api/auth/logout — invalida el token actual */
+export async function logout(req, res, next) {
+  try {
+    const token = req.headers.authorization.slice(7);
+    const exp   = req.user?.exp ?? (Math.floor(Date.now() / 1000) + 8 * 3600);
+    await revokeToken(token, exp);
+    res.json({ message: 'Sesión cerrada correctamente.' });
+  } catch (err) { next(err); }
+}
 
 export async function login(req, res, next) {
   try {

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import app from './src/app.js';
 import { connectDB } from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
+import { loadBlacklist } from './src/utils/tokenBlacklist.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 4000;
@@ -30,6 +31,7 @@ async function start() {
   validateEnv();
   await connectDB();
   await runMigrations();
+  await loadBlacklist();
   app.listen(PORT, () => {
     logger.info(`VIGIIAP API corriendo en puerto ${PORT} [${process.env.NODE_ENV ?? 'development'}]`);
   });

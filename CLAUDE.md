@@ -20,8 +20,11 @@ src/
 ├── middlewares/
 │   ├── auth.js             # authenticate + authorize(...roles)
 │   ├── errorHandler.js     # Global error handler
+│   ├── fileGuard.js        # Magic-byte malware detection + sha256
+│   ├── geoValidator.js     # CRS / bbox / escala validation (ISO 19115)
 │   ├── notFound.js         # 404 handler
-│   └── rateLimiter.js      # rateLimiter + authRateLimiter
+│   ├── rateLimiter.js      # rateLimiter + authRateLimiter + uploadRateLimiter + downloadRateLimiter
+│   └── upload.js           # Multer → fileGuard → R2 (3-step middleware)
 ├── modules/
 │   ├── auth/               # login, registro, /me
 │   ├── mapas/              # CRUD mapas
@@ -30,6 +33,8 @@ src/
 │   ├── solicitudes/        # Gestión solicitudes de acceso
 │   └── usuarios/           # Admin de usuarios + cambio de contraseña
 └── utils/
+    ├── auditLog.js          # audit_log table (acciones críticas de usuarios)
+    ├── dataCustody.js       # geo_custodia + descarga_log + file_scan_log
     ├── logger.js            # Winston
     ├── paginate.js          # Helper paginación SQL
     └── slugify.js           # Slugs en español
@@ -99,6 +104,29 @@ server.js                   # Entry point
 login, registro, login_visitante, create_usuario, update_usuario, update_rol,
 change_password, create_solicitud, update_solicitud_estado
 
+## Seguridad de archivos
+`src/middlewares/fileGuard.js` — validación en 4 pasos:
+1. Lista negra de ejecutables (MZ/ELF/Java/ZIP/gzip/bzip2/RAR/7z/shebang/OLE)
+2. Whitelist de extensiones (pdf/jpg/jpeg/png/webp/gif)
+3. Cross-check extensión ↔ MIME declarado por cliente
+4. Magic bytes del tipo declarado (positive match)
+Categorías: `'document'` (PDF), `'image'` (JPEG/PNG/WEBP/GIF), `'thumbnail'` (JPEG/PNG/WEBP)
+
+## Cadena de custodia geoespacial
+`src/utils/dataCustody.js` → 3 tablas:
+- `geo_custodia` — ciclo de vida (ingreso/actualización/publicación/despublicación/eliminación)
+- `descarga_log` — quién descargó qué y cuándo
+- `file_scan_log` — resultado del escaneo de cada archivo subido (clean/rejected/suspicious)
+Panel admin: `GET /api/admin/custodia?tipo=mapa&id=UUID`, `/descargas`, `/descargas/stats`, `/scan-log`
+
+## Validación geoespacial
+`src/middlewares/geoValidator.js` — valida antes de crear/actualizar mapas:
+- EPSG contra 13 CRS válidos para Colombia (MAGNA-SIRGAS + legados)
+- Bounding box dentro del territorio colombiano (WGS84)
+- Escala: denominador entre 500 y 5.000.000
+- Fuente institucional mínimo 3 caracteres
+Aplicado en `POST /api/mapas` y `PUT /api/mapas/:id`
+
 ## Reglas de Desarrollo
 1. Patrón por módulo: `routes → controller → service → DB`
 2. El controller solo llama al service y retorna JSON — sin lógica de negocio
@@ -114,7 +142,7 @@ change_password, create_solicitud, update_solicitud_estado
 ```bash
 cp .env.example .env   # Llenar credenciales
 npm install
-npm run migrate        # Crear tablas en Supabase (correr 003_audit_notifications.sql también)
+npm run migrate        # Crear tablas (incluye 013_security_custody + 014_geo_metadata_mapas)
 npm run dev            # Servidor en puerto 4000
 ```
 

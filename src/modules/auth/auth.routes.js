@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   login,
+  logout,
   visitante,
   register,
   verifyEmail,
@@ -15,6 +16,7 @@ import { authRateLimiter } from '../../middlewares/rateLimiter.js';
 const router = Router();
 
 router.post('/login',                  authRateLimiter, login);
+router.post('/logout',                 authenticate,    logout);
 router.post('/visitante',              authRateLimiter, visitante);
 router.post('/registro',               authRateLimiter, register);
 router.get('/verificar-email/:token',  verifyEmail);

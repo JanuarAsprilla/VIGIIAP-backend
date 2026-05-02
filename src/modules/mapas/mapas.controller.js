@@ -1,6 +1,7 @@
 import { createMapaSchema, updateMapaSchema, toggleMapaSchema } from './mapas.schema.js';
 import * as mapaService from './mapas.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
 export async function index(req, res, next) {
   try {
@@ -27,6 +28,15 @@ export async function store(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    registrarCustodia({
+      tipoRecurso:  'mapa',
+      recursoId:    mapa.id,
+      accion:       ACCION.INGRESO,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+      metadatos:    { titulo: mapa.titulo, categoria: mapa.categoria },
+    });
     res.status(201).json(mapa);
   } catch (err) { next(err); }
 }
@@ -44,6 +54,15 @@ export async function update(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    registrarCustodia({
+      tipoRecurso:  'mapa',
+      recursoId:    mapa.id,
+      accion:       ACCION.ACTUALIZACION,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+      metadatos:    { titulo: mapa.titulo, campos: Object.keys(data) },
+    });
     res.json(mapa);
   } catch (err) { next(err); }
 }
@@ -52,6 +71,14 @@ export async function patchActivo(req, res, next) {
   try {
     const { activo } = toggleMapaSchema.parse(req.body);
     const mapa = await mapaService.setActivo(req.params.id, activo);
+    registrarCustodia({
+      tipoRecurso:  'mapa',
+      recursoId:    mapa.id,
+      accion:       activo ? ACCION.PUBLICACION : ACCION.DESPUBLICACION,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
     res.json(mapa);
   } catch (err) { next(err); }
 }
@@ -64,6 +91,14 @@ export async function destroy(req, res, next) {
       modulo:       'mapas',
       entidadId:    req.params.id,
       descripcion:  `Mapa eliminado`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+    registrarCustodia({
+      tipoRecurso:  'mapa',
+      recursoId:    req.params.id,
+      accion:       ACCION.ELIMINACION,
       usuarioId:    req.user.id,
       usuarioEmail: req.user.email,
       ip:           req.ip,

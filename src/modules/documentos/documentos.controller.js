@@ -1,6 +1,7 @@
 import { createDocumentoSchema, updateDocumentoSchema } from './documentos.schema.js';
 import * as docService from './documentos.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
 export async function index(req, res, next) {
   try { res.json(await docService.getAll(req.query, req.user)); } catch (err) { next(err); }
@@ -23,6 +24,15 @@ export async function store(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    registrarCustodia({
+      tipoRecurso:  'documento',
+      recursoId:    doc.id,
+      accion:       ACCION.INGRESO,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+      metadatos:    { titulo: doc.titulo, tipo: doc.tipo, tamano_bytes: doc.tamano_bytes },
+    });
     res.status(201).json(doc);
   } catch (err) { next(err); }
 }
@@ -40,6 +50,15 @@ export async function update(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    registrarCustodia({
+      tipoRecurso:  'documento',
+      recursoId:    doc.id,
+      accion:       ACCION.ACTUALIZACION,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+      metadatos:    { titulo: doc.titulo, campos: Object.keys(data) },
+    });
     res.json(doc);
   } catch (err) { next(err); }
 }
@@ -52,6 +71,14 @@ export async function destroy(req, res, next) {
       modulo:       'documentos',
       entidadId:    req.params.id,
       descripcion:  `Documento eliminado`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+    registrarCustodia({
+      tipoRecurso:  'documento',
+      recursoId:    req.params.id,
+      accion:       ACCION.ELIMINACION,
       usuarioId:    req.user.id,
       usuarioEmail: req.user.email,
       ip:           req.ip,

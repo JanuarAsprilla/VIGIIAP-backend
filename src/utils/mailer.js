@@ -355,6 +355,42 @@ export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, 
   });
 }
 
+/** Notifica al usuario que su solicitud fue tramitada con respuesta formal del admin */
+export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta }) {
+  await send({
+    to: email,
+    subject: `[VIGIIAP] Tu solicitud fue tramitada — ${TIPO_LABEL[tipo] ?? tipo}`,
+    html: baseTemplate('Tu solicitud ha sido tramitada', `
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Hola <strong>${nombre}</strong>,
+      </p>
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        El equipo del IIAP ha procesado tu solicitud de tipo
+        <strong>"${TIPO_LABEL[tipo] ?? tipo}"</strong> y te envía la siguiente respuesta:
+      </p>
+      <div style="background:#ECFDF5;border-left:4px solid #059669;padding:16px 20px;border-radius:6px;margin:20px 0;">
+        <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#065F46;text-transform:uppercase;letter-spacing:0.08em;">
+          Respuesta del administrador
+        </p>
+        <p style="margin:0;font-size:14px;color:#1F2937;line-height:1.7;">${respuesta}</p>
+      </div>
+      <div style="background:#FFF7ED;border-left:4px solid #D4A373;padding:12px 16px;border-radius:6px;margin:16px 0;">
+        <p style="margin:0;font-size:13px;color:#92400E;line-height:1.6;">
+          <strong>Nota:</strong> Si tu solicitud incluye archivos, mapas u otros documentos,
+          serán enviados por separado a este correo electrónico.
+          También puedes revisar el estado de tu solicitud directamente en el portal VIGIIAP.
+        </p>
+      </div>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="${BASE_URL}/solicitudes"
+           style="display:inline-block;background:#1B4332;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
+          Ver mis solicitudes en el portal
+        </a>
+      </div>
+    `),
+  });
+}
+
 /** Notifica nueva solicitud creada al admin */
 export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email, tipo, descripcion }) {
   await send({
