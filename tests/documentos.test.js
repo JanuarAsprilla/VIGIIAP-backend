@@ -58,6 +58,7 @@ describe('GET /api/documentos', () => {
     expect(res.status).toBe(200);
     expect(docService.getAll).toHaveBeenCalledWith(
       expect.objectContaining({ tipo: 'informe', anio: '2024' }),
+      undefined,
     );
   });
 });

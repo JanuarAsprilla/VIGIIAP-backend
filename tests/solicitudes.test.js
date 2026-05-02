@@ -102,7 +102,7 @@ describe('POST /api/solicitudes', () => {
     const res = await request(app)
       .post('/api/solicitudes')
       .set('Authorization', `Bearer ${pubToken}`)
-      .send({ tipo: 'acceso', descripcion: 'Solicito acceso a datos de biodiversidad' });
+      .send({ tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos de biodiversidad' });
     expect(res.status).toBe(201);
   });
 });
