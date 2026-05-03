@@ -8,11 +8,11 @@ import { query, connectDB } from '../src/config/database.js';
 import logger from '../src/utils/logger.js';
 
 const ADMIN = {
-  nombre:    'Administrador VIGIIAP',
-  email:     'admin@vigiiap.iiap.gob.pe',
+  nombre:    'Administrador VIGI-IIAP',
+  email:     'admin@iiap.gov.co',
   password:  'Admin@IIAP2026!',
   rol:       'admin_sig',
-  institucion: 'Instituto de Investigaciones de la Amazonía Peruana',
+  institucion: 'Instituto de Investigaciones Ambientales del Pacífico',
 };
 
 async function createAdmin() {
