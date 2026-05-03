@@ -1,5 +1,5 @@
 import multer from 'multer';
-import { uploadFile } from '../config/r2.js';
+import { uploadFile, isPublicUrl } from '../config/r2.js';
 import { validateFile, sha256 } from './fileGuard.js';
 import { registrarScanArchivo } from '../utils/dataCustody.js';
 
@@ -78,7 +78,9 @@ export function uploadFields(fields) {
           const ext  = file._sanitizedExt ?? file.originalname.split('.').pop().toLowerCase();
           const key  = `${field.folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-          const url = await uploadFile(key, file.buffer, file.mimetype);
+          // Imágenes y thumbnails van al bucket público; PDFs/documentos al privado
+          const isPublic = ['image', 'thumbnail'].includes(field.category ?? 'document');
+          const url = await uploadFile(key, file.buffer, file.mimetype, isPublic);
           req.body[`${field.name}_url`]         = url;
           req.body[`${field.name}_tamano_bytes`] = file.size;
 

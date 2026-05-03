@@ -46,16 +46,15 @@ export function optionalAuthenticate(req, res, next) {
 
 /**
  * Permite acceso solo a los roles indicados.
+ * super_admin siempre pasa — está por encima de cualquier rol.
  * Usar después de authenticate.
- * @param {...string} roles - 'super_admin', 'admin_sig', 'investigador', 'publico'
+ * @param {...string} roles - 'admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'
  */
 export function authorize(...roles) {
   return (req, res, next) => {
-    // super_admin tiene acceso a todo excepto rutas exclusivas de super_admin
-    const effectiveRoles = roles.includes('admin_sig')
-      ? [...roles, 'super_admin']
-      : roles;
-    if (!effectiveRoles.includes(req.user?.rol)) {
+    // super_admin tiene acceso absoluto a todas las rutas protegidas
+    if (req.user?.rol === 'super_admin') return next();
+    if (!roles.includes(req.user?.rol)) {
       return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     }
     next();

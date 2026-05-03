@@ -20,9 +20,9 @@ const args = Object.fromEntries(
 
 const SUPERADMIN = {
   nombre:     args.nombre     ?? 'Super Administrador VIGI-IIAP',
-  email:      args.email      ?? 'superadmin@vigiiap.iiap.gob.pe',
+  email:      args.email      ?? 'superadmin@iiap.gov.co',
   password:   args.password   ?? `SuperAdmin@IIAP${new Date().getFullYear()}!`,
-  institucion: 'Instituto de Investigaciones de la Amazonía Peruana',
+  institucion: 'Instituto de Investigaciones Ambientales del Pacífico',
 };
 
 async function run() {

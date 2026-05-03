@@ -19,7 +19,7 @@ function createTransport() {
   });
 }
 
-const FROM = `"${process.env.MAIL_FROM_NAME || 'VIGIIAP — IIAP'}" <${process.env.MAIL_USER}>`;
+const FROM = `"${process.env.MAIL_FROM_NAME || 'VIGI-IIAP'}" <${process.env.MAIL_USER}>`;
 const BASE_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co';
 
 const TIPO_LABEL = {
@@ -65,10 +65,10 @@ function baseTemplate(title, body) {
         <tr>
           <td style="background:#1B4332;padding:28px 32px;">
             <h1 style="margin:0;color:#D8F3DC;font-size:20px;font-weight:700;letter-spacing:0.5px;">
-              🌿 VIGIIAP — IIAP
+              🌿 VIGI-IIAP
             </h1>
             <p style="margin:4px 0 0;color:#A8D5B7;font-size:13px;">
-              Visor y Gestor de Información Ambiental del Pacífico
+              Visor Gestor de Información del Instituto de Investigaciones Ambientales del Pacífico
             </p>
           </td>
         </tr>
@@ -101,10 +101,10 @@ function baseTemplate(title, body) {
 export async function notifyAdminNewRegistro({ adminEmail, nombre, email, institucion, motivo }) {
   await send({
     to: adminEmail,
-    subject: `[VIGIIAP] Nuevo registro: ${nombre}`,
+    subject: `[VIGI-IIAP] Nuevo registro: ${nombre}`,
     html: baseTemplate('Nuevo registro de usuario', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Un nuevo usuario se ha registrado en VIGIIAP y requiere revisión:
+        Un nuevo usuario se ha registrado en VIGI-IIAP y requiere revisión:
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
         <tr style="background:#f4f7f4;">
@@ -137,15 +137,15 @@ export async function notifyUsuarioActivacion({ email, nombre, activo, rol }) {
   const rolLabel = { admin_sig: 'Administrador SIG', investigador: 'Investigador', publico: 'Público' }[rol] ?? rol;
   await send({
     to: email,
-    subject: `[VIGIIAP] Cuenta ${estado}`,
+    subject: `[VIGI-IIAP] Cuenta ${estado}`,
     html: baseTemplate(`Tu cuenta ha sido ${estado}`, `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
       </p>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         ${activo
-          ? `Tu cuenta en VIGIIAP ha sido <strong>activada</strong>. Ahora puedes ingresar al portal con el rol de <strong>${rolLabel}</strong>.`
-          : `Tu cuenta en VIGIIAP ha sido <strong>desactivada</strong>. Si tienes dudas, contacta al administrador.`
+          ? `Tu cuenta en VIGI-IIAP ha sido <strong>activada</strong>. Ahora puedes ingresar al portal con el rol de <strong>${rolLabel}</strong>.`
+          : `Tu cuenta en VIGI-IIAP ha sido <strong>desactivada</strong>. Si tienes dudas, contacta al administrador.`
         }
       </p>
       ${activo ? `
@@ -161,13 +161,13 @@ export async function notifyUsuarioCreado({ email, nombre, passwordTemporal, rol
   const rolLabel = { admin_sig: 'Administrador SIG', investigador: 'Investigador', publico: 'Público' }[rol] ?? rol;
   await send({
     to: email,
-    subject: '[VIGIIAP] Bienvenido — Tu cuenta ha sido creada',
-    html: baseTemplate('Bienvenido a VIGIIAP', `
+    subject: '[VIGI-IIAP] Bienvenido — Tu cuenta ha sido creada',
+    html: baseTemplate('Bienvenido a VIGI-IIAP', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
       </p>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Un administrador ha creado tu cuenta en VIGIIAP con el rol de <strong>${rolLabel}</strong>.
+        Un administrador ha creado tu cuenta en VIGI-IIAP con el rol de <strong>${rolLabel}</strong>.
         Tus credenciales de acceso son:
       </p>
       <div style="background:#f4f7f4;border-left:4px solid #1B4332;padding:14px 18px;border-radius:4px;margin:16px 0;">
@@ -197,7 +197,7 @@ export async function notifySolicitudEstado({ email, nombre, tipo, estado, nota 
 
   await send({
     to: email,
-    subject: `[VIGIIAP] Tu solicitud fue ${estado === 'aprobada' ? 'aprobada' : estado === 'rechazada' ? 'rechazada' : 'actualizada'}`,
+    subject: `[VIGI-IIAP] Tu solicitud fue ${estado === 'aprobada' ? 'aprobada' : estado === 'rechazada' ? 'rechazada' : 'actualizada'}`,
     html: baseTemplate('Actualización de solicitud', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
@@ -221,13 +221,13 @@ export async function notifyVerificacionEmail({ email, nombre, verificationToken
   const verifyUrl = `${BASE_URL}/verificar-email/${verificationToken}`;
   await send({
     to: email,
-    subject: '[VIGIIAP] Verifica tu correo electrónico',
+    subject: '[VIGI-IIAP] Verifica tu correo electrónico',
     html: baseTemplate('Verifica tu correo', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
       </p>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Gracias por registrarte en VIGIIAP. Para completar tu solicitud de acceso, debes verificar
+        Gracias por registrarte en VIGI-IIAP. Para completar tu solicitud de acceso, debes verificar
         tu dirección de correo electrónico haciendo clic en el botón a continuación:
       </p>
       <div style="text-align:center;margin:24px 0;">
@@ -243,7 +243,7 @@ export async function notifyVerificacionEmail({ email, nombre, verificationToken
         <p style="margin:6px 0 0;font-size:12px;color:#1B4332;word-break:break-all;">${verifyUrl}</p>
       </div>
       <p style="color:#6B7280;font-size:12px;margin-top:16px;">
-        Este enlace expira en <strong>24 horas</strong>. Si no te registraste en VIGIIAP, ignora este correo.
+        Este enlace expira en <strong>24 horas</strong>. Si no te registraste en VIGI-IIAP, ignora este correo.
       </p>
     `),
   });
@@ -254,13 +254,13 @@ export async function notifyRecuperarPassword({ email, nombre, resetToken }) {
   const resetUrl = `${BASE_URL}/reset-password/${resetToken}`;
   await send({
     to: email,
-    subject: '[VIGIIAP] Recuperación de contraseña',
+    subject: '[VIGI-IIAP] Recuperación de contraseña',
     html: baseTemplate('Recuperar contraseña', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
       </p>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Recibimos una solicitud para restablecer la contraseña de tu cuenta en VIGIIAP.
+        Recibimos una solicitud para restablecer la contraseña de tu cuenta en VIGI-IIAP.
         Haz clic en el botón a continuación para crear una nueva contraseña:
       </p>
       <div style="text-align:center;margin:24px 0;">
@@ -287,13 +287,13 @@ export async function notifyRecuperarPassword({ email, nombre, resetToken }) {
 export async function notifyRegistroRecibido({ email, nombre }) {
   await send({
     to: email,
-    subject: '[VIGIIAP] Solicitud de acceso recibida',
+    subject: '[VIGI-IIAP] Solicitud de acceso recibida',
     html: baseTemplate('Solicitud recibida', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
       </p>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hemos recibido tu solicitud de acceso a VIGIIAP. Un administrador revisará tu información
+        Hemos recibido tu solicitud de acceso a VIGI-IIAP. Un administrador revisará tu información
         y recibirás un correo cuando tu cuenta sea activada.
       </p>
       <p style="color:#6B7280;font-size:13px;">
@@ -307,7 +307,7 @@ export async function notifyRegistroRecibido({ email, nombre }) {
 export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, activationUrl }) {
   await send({
     to: adminEmail,
-    subject: `[VIGIIAP] ✅ Usuario listo para activar: ${nombre}`,
+    subject: `[VIGI-IIAP] ✅ Usuario listo para activar: ${nombre}`,
     html: baseTemplate('Usuario verificado — pendiente de activación', `
       <div style="background:#ECFDF5;border-left:4px solid #059669;padding:14px 18px;border-radius:4px;margin-bottom:20px;">
         <p style="margin:0;font-size:14px;color:#065F46;font-weight:600;">
@@ -318,7 +318,7 @@ export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, 
         </p>
       </div>
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        El siguiente usuario completó la verificación de su correo y está esperando que un administrador active su acceso a VIGIIAP:
+        El siguiente usuario completó la verificación de su correo y está esperando que un administrador active su acceso a VIGI-IIAP:
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
         <tr style="background:#f4f7f4;">
@@ -359,7 +359,7 @@ export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, 
 export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta }) {
   await send({
     to: email,
-    subject: `[VIGIIAP] Tu solicitud fue tramitada — ${TIPO_LABEL[tipo] ?? tipo}`,
+    subject: `[VIGI-IIAP] Tu solicitud fue tramitada — ${TIPO_LABEL[tipo] ?? tipo}`,
     html: baseTemplate('Tu solicitud ha sido tramitada', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${nombre}</strong>,
@@ -378,7 +378,7 @@ export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta 
         <p style="margin:0;font-size:13px;color:#92400E;line-height:1.6;">
           <strong>Nota:</strong> Si tu solicitud incluye archivos, mapas u otros documentos,
           serán enviados por separado a este correo electrónico.
-          También puedes revisar el estado de tu solicitud directamente en el portal VIGIIAP.
+          También puedes revisar el estado de tu solicitud directamente en el portal VIGI-IIAP.
         </p>
       </div>
       <div style="text-align:center;margin:28px 0 16px;">
@@ -395,10 +395,10 @@ export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta 
 export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email, tipo, descripcion }) {
   await send({
     to: adminEmail,
-    subject: `[VIGIIAP] Nueva solicitud: ${TIPO_LABEL[tipo] ?? tipo}`,
+    subject: `[VIGI-IIAP] Nueva solicitud: ${TIPO_LABEL[tipo] ?? tipo}`,
     html: baseTemplate('Nueva solicitud recibida', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Se ha recibido una nueva solicitud en VIGIIAP:
+        Se ha recibido una nueva solicitud en VIGI-IIAP:
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
         <tr style="background:#f4f7f4;">
