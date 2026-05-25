@@ -4,10 +4,23 @@
  * Toda acción aquí queda en Supabase (PostgreSQL) y se notifica por email.
  */
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro } from '../../utils/mailer.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+
+/**
+ * Genera una contraseña temporal criptográficamente segura.
+ * Usa crypto.randomBytes para garantizar aleatoriedad real.
+ * @param {number} length - Longitud deseada de la contraseña
+ * @returns {string}
+ */
+function generateTempPassword(length = 12) {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  const randomBytes = crypto.randomBytes(length);
+  return Array.from(randomBytes, (byte) => chars[byte % chars.length]).join('');
+}
 
 const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
 
@@ -60,8 +73,8 @@ export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
   }
 
-  // Contraseña temporal aleatoria
-  const passwordTemporal = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
+  // Contraseña temporal criptográficamente segura
+  const passwordTemporal = generateTempPassword(12);
   const password_hash = await bcrypt.hash(passwordTemporal, 12);
 
   const { rows } = await query(
@@ -319,9 +332,8 @@ export async function crearAdminSig({ nombre, email, institucion, superAdminId }
   const { rows: existing } = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
   if (existing.length) throw Object.assign(new Error('Ya existe un usuario con ese correo'), { status: 409 });
 
-  // Generar contraseña temporal segura
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
-  const tempPassword = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  // Contraseña temporal criptográficamente segura
+  const tempPassword = generateTempPassword(12);
 
   const hash = await bcrypt.hash(tempPassword, 12);
   const { rows } = await query(

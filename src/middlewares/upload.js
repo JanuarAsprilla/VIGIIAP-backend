@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import multer from 'multer';
 import { uploadFile, isPublicUrl } from '../config/r2.js';
 import { validateFile, sha256 } from './fileGuard.js';
@@ -76,7 +77,7 @@ export function uploadFields(fields) {
 
           const file = fileArr[0];
           const ext  = file._sanitizedExt ?? file.originalname.split('.').pop().toLowerCase();
-          const key  = `${field.folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          const key  = `${field.folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
           // Imágenes y thumbnails van al bucket público; PDFs/documentos al privado
           const isPublic = ['image', 'thumbnail'].includes(field.category ?? 'document');

@@ -32,5 +32,5 @@ export const recoverSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string(),
-  password: z.string().min(8, 'Contraseña mínimo 8 caracteres'),
+  password: strongPassword,
 });

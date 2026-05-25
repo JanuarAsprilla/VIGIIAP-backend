@@ -16,12 +16,17 @@ export function errorHandler(err, _req, res, _next) {
   }
 
   const status = err.status || err.statusCode || 500;
-  const message = err.message || 'Error interno del servidor';
 
   if (status >= 500) {
-    logger.error(err.stack || message);
+    logger.error(err.stack || err.message);
+    // En producción no exponemos detalles internos al cliente
+    const publicMessage = process.env.NODE_ENV === 'production'
+      ? 'Error interno del servidor'
+      : (err.message || 'Error interno del servidor');
+    return res.status(status).json({ error: publicMessage });
   }
 
+  const message = err.message || 'Error del servidor';
   res.status(status).json({
     error: message,
     ...(err.code && { code: err.code }),

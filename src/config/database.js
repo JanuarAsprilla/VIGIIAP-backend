@@ -9,7 +9,12 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  // rejectUnauthorized: true valida el certificado SSL del servidor de BD.
+  // Para deshabilitar en desarrollo local establece DB_SSL=false en .env.
+  // En producción (Supabase/RDS) SIEMPRE debe ser true.
+  ssl: process.env.DB_SSL === 'true'
+    ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
+    : false,
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

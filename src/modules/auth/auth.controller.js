@@ -24,7 +24,7 @@ export async function logout(req, res, next) {
 export async function login(req, res, next) {
   try {
     const data      = loginSchema.parse(req.body);
-    const ip        = req.ip || req.headers['x-forwarded-for'];
+    const ip        = req.ip;   // confiamos en trust proxy configurado en app.js
     const userAgent = req.headers['user-agent'];
     const result    = await authService.login(data.email, data.password, ip, userAgent);
     res.json(result);
@@ -36,8 +36,14 @@ export async function login(req, res, next) {
 /** POST /api/auth/visitante — acceso rápido sin credenciales */
 export async function visitante(req, res, next) {
   try {
+    // Validar nombre: opcional pero, si se proporciona, debe ser texto corto
     const { nombre } = req.body ?? {};
-    const ip        = req.ip || req.headers['x-forwarded-for'];
+    if (nombre !== undefined && nombre !== null) {
+      if (typeof nombre !== 'string' || nombre.length > 100) {
+        return res.status(400).json({ error: 'El campo nombre debe ser texto de máximo 100 caracteres.' });
+      }
+    }
+    const ip        = req.ip;   // confiamos en trust proxy configurado en app.js
     const userAgent = req.headers['user-agent'];
     const result    = await authService.loginVisitante({ nombre, ip, userAgent });
     res.json(result);

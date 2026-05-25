@@ -20,6 +20,10 @@ import descargasRoutes from './modules/descargas/descargas.routes.js';
 
 const app = express();
 
+// Confiar en el primer proxy (Render, Nginx) para que req.ip refleje la IP real del cliente
+// y el rate limiting opere sobre la IP correcta en lugar de la del proxy.
+app.set('trust proxy', 1);
+
 // ─── Orígenes permitidos (CORS estricto) ─────────────────────────────────────
 const allowedOrigins = (process.env.CORS_ORIGIN ?? '')
   .split(',')

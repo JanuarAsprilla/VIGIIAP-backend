@@ -8,8 +8,13 @@ import logger from './src/utils/logger.js';
 const PORT = process.env.PORT || 4000;
 
 function validateEnv() {
+  // JWT_SECRET es crítica — sin ella cualquier token JWT es inseguro
+  if (!process.env.JWT_SECRET) {
+    logger.error('[startup] FATAL: JWT_SECRET no está definida. El servidor no puede arrancar de forma segura.');
+    process.exit(1);
+  }
+
   const required = [
-    'JWT_SECRET',
     'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
     'R2_BUCKET_NAME', 'R2_PUBLIC_URL',
   ];
