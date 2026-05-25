@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { errorHandler } from './middlewares/errorHandler.js';
@@ -19,6 +20,10 @@ import categoriasRoutes from './modules/categorias/categorias.routes.js';
 import descargasRoutes from './modules/descargas/descargas.routes.js';
 
 const app = express();
+
+// Confiar en el primer proxy (Render, Nginx) para que req.ip refleje la IP real del cliente
+// y el rate limiting opere sobre la IP correcta en lugar de la del proxy.
+app.set('trust proxy', 1);
 
 // ─── Orígenes permitidos (CORS estricto) ─────────────────────────────────────
 const allowedOrigins = (process.env.CORS_ORIGIN ?? '')
@@ -94,6 +99,7 @@ app.use(
 );
 app.use(compression());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);

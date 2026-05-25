@@ -1,17 +1,31 @@
 import jwt from 'jsonwebtoken';
 import { isRevoked } from '../utils/tokenBlacklist.js';
+import { COOKIE_NAME } from '../utils/cookieOptions.js';
 
 /**
- * Verifica el JWT del header Authorization: Bearer <token>.
+ * Extrae el JWT de la cookie HttpOnly (preferido) o del header Authorization: Bearer.
+ * Devuelve null si no hay token disponible.
+ * @param {import('express').Request} req
+ * @returns {string|null}
+ */
+function extractToken(req) {
+  // 1. Cookie HttpOnly — inmune a XSS, prioridad cuando está presente
+  if (req.cookies?.[COOKIE_NAME]) return req.cookies[COOKIE_NAME];
+  // 2. Authorization: Bearer — compatibilidad con clientes API y fase de transición
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) return header.slice(7);
+  return null;
+}
+
+/**
+ * Verifica el JWT (cookie o Bearer).
  * Adjunta req.user = { id, email, rol } si es válido y no fue revocado.
  */
 export function authenticate(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const token = extractToken(req);
+  if (!token) {
     return res.status(401).json({ error: 'Token de autenticación requerido' });
   }
-
-  const token = header.slice(7);
 
   if (isRevoked(token)) {
     return res.status(401).json({ error: 'Sesión cerrada. Inicia sesión nuevamente.' });
@@ -26,19 +40,16 @@ export function authenticate(req, res, next) {
 }
 
 /**
- * Intenta verificar el JWT si viene en el header, pero no bloquea si falta o es inválido.
+ * Intenta verificar el JWT si viene en cookie o header, pero no bloquea si falta o es inválido.
  * Útil para rutas públicas que filtran contenido según el rol del usuario.
  */
 export function optionalAuthenticate(req, res, next) {
-  const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) {
-    const token = header.slice(7);
-    if (!isRevoked(token)) {
-      try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET);
-      } catch {
-        // Token inválido/expirado — continuar como visitante
-      }
+  const token = extractToken(req);
+  if (token && !isRevoked(token)) {
+    try {
+      req.user = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      // Token inválido/expirado — continuar como anónimo
     }
   }
   next();
