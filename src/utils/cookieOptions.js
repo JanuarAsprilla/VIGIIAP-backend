@@ -1,0 +1,37 @@
+/**
+ * Opciones centralizadas para la cookie HttpOnly de autenticación JWT.
+ *
+ * - httpOnly:  el navegador nunca expone la cookie a JavaScript → inmune a XSS
+ * - secure:    solo se envía por HTTPS en producción
+ * - sameSite:  'Strict' previene CSRF (la cookie no se manda en peticiones cross-site)
+ * - maxAge:    coincide con la vida del JWT (7 días por defecto)
+ *
+ * El nombre 'vigiiap_token' es el que el frontend busca al activar USE_COOKIE_AUTH.
+ */
+export const COOKIE_NAME = 'vigiiap_token';
+
+/**
+ * Devuelve las opciones de res.cookie() para el token de sesión.
+ * @param {number} [maxAgeMs] - Duración en milisegundos. Por defecto 7 días.
+ */
+export function authCookieOptions(maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  return {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
+    maxAge:   maxAgeMs,
+    path:     '/',
+  };
+}
+
+/**
+ * Opciones para borrar la cookie en logout (maxAge=0 + mismo path/domain).
+ */
+export function clearCookieOptions() {
+  return {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
+    path:     '/',
+  };
+}

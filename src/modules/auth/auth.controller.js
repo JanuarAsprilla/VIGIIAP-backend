@@ -9,14 +9,20 @@ import {
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { revokeToken } from '../../utils/tokenBlacklist.js';
+import { COOKIE_NAME, authCookieOptions, clearCookieOptions } from '../../utils/cookieOptions.js';
 import logger from '../../utils/logger.js';
 
-/** POST /api/auth/logout — invalida el token actual */
+/** POST /api/auth/logout — invalida el token actual y limpia la cookie */
 export async function logout(req, res, next) {
   try {
-    const token = req.headers.authorization.slice(7);
-    const exp   = req.user?.exp ?? (Math.floor(Date.now() / 1000) + 8 * 3600);
-    await revokeToken(token, exp);
+    // Leer token desde cookie o header (ambos modos soportados)
+    const token = req.cookies?.[COOKIE_NAME] ?? req.headers.authorization?.slice(7);
+    if (token) {
+      const exp = req.user?.exp ?? (Math.floor(Date.now() / 1000) + 8 * 3600);
+      await revokeToken(token, exp);
+    }
+    // Borrar cookie de sesión (si existe) independientemente del modo
+    res.clearCookie(COOKIE_NAME, clearCookieOptions());
     res.json({ message: 'Sesión cerrada correctamente.' });
   } catch (err) { next(err); }
 }
@@ -24,9 +30,14 @@ export async function logout(req, res, next) {
 export async function login(req, res, next) {
   try {
     const data      = loginSchema.parse(req.body);
-    const ip        = req.ip;   // confiamos en trust proxy configurado en app.js
+    const ip        = req.ip;
     const userAgent = req.headers['user-agent'];
     const result    = await authService.login(data.email, data.password, ip, userAgent);
+
+    // Establecer cookie HttpOnly — el frontend puede ignorar result.token cuando
+    // USE_COOKIE_AUTH = true; lo devolvemos igual para compatibilidad en la transición.
+    res.cookie(COOKIE_NAME, result.token, authCookieOptions());
+
     res.json(result);
   } catch (err) {
     next(err);
@@ -43,9 +54,13 @@ export async function visitante(req, res, next) {
         return res.status(400).json({ error: 'El campo nombre debe ser texto de máximo 100 caracteres.' });
       }
     }
-    const ip        = req.ip;   // confiamos en trust proxy configurado en app.js
+    const ip        = req.ip;
     const userAgent = req.headers['user-agent'];
     const result    = await authService.loginVisitante({ nombre, ip, userAgent });
+
+    // Visitante también recibe cookie — duración 8h (coincide con el JWT)
+    res.cookie(COOKIE_NAME, result.token, authCookieOptions(8 * 60 * 60 * 1000));
+
     res.json(result);
   } catch (err) {
     next(err);
