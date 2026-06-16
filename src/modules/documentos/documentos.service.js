@@ -13,11 +13,12 @@ function visibilidadPermitida(user) {
 export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { tipo, anio, q, admin } = reqQuery;
+  const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
   const conditions = ['d.activo = true'];
   const params = [];
 
   // El panel admin ve todo sin filtro de visibilidad
-  if (admin !== 'true') {
+  if (!isAdminView) {
     const permitida = visibilidadPermitida(user);
     if (permitida) {
       params.push(permitida);

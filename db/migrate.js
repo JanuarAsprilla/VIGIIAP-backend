@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { query, connectDB } from '../src/config/database.js';
+import { query, connectDB, getClient } from '../src/config/database.js';
 import logger from '../src/utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,8 +26,18 @@ export async function runMigrations() {
     if (rows.length) continue;
 
     const sql = readFileSync(join(__dirname, 'migrations', file), 'utf8');
-    await query(sql);
-    await query('INSERT INTO _migraciones (nombre) VALUES ($1)', [file]);
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO _migraciones (nombre) VALUES ($1)', [file]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
     logger.info(`[migration] ${file}`);
     ran++;
   }

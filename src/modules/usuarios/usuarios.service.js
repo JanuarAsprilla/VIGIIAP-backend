@@ -41,6 +41,11 @@ export async function getAll(reqQuery) {
 
 export async function updateRol(id, rol, activo) {
   if (!ROLES.includes(rol)) throw Object.assign(new Error('Rol inválido'), { status: 400 });
+  const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [id]);
+  if (!target[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  if (target[0].rol === 'super_admin') {
+    throw Object.assign(new Error('No se puede modificar una cuenta de Super Administrador'), { status: 403 });
+  }
   const { rows } = await query(
     'UPDATE usuarios SET rol=$1, activo=$2, actualizado_en=NOW() WHERE id=$3 RETURNING id,nombre,email,rol,activo',
     [rol, activo, id]

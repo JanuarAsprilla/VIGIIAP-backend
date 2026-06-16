@@ -76,7 +76,8 @@ export async function crearUsuario(req, res, next) {
       adminId:    req.user.id,
       adminEmail: req.user.email,
     });
-    res.status(201).json(usuario);
+    const { _passwordTemporal, ...usuarioSafe } = usuario;
+    res.status(201).json(usuarioSafe);
   } catch (err) {
     next(err);
   }
@@ -141,7 +142,8 @@ export async function crearAdmin(req, res, next) {
       nombre, email, institucion,
       superAdminId: req.user.id,
     });
-    res.status(201).json(usuario);
+    const { _passwordTemporal: _p, ...adminSafe } = usuario;
+    res.status(201).json(adminSafe);
   } catch (err) { next(err); }
 }
 
