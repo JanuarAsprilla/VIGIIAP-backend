@@ -12,11 +12,12 @@ function visibilidadPermitida(user) {
 export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { categoria, q, admin } = reqQuery;
+  const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
 
-  const conditions = admin === 'true' ? [] : ['m.activo = true'];
+  const conditions = isAdminView ? [] : ['m.activo = true'];
   const params = [];
 
-  if (admin !== 'true') {
+  if (!isAdminView) {
     const permitida = visibilidadPermitida(user);
     if (permitida) {
       params.push(permitida);

@@ -32,7 +32,7 @@ export function authenticate(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     next();
   } catch {
     res.status(401).json({ error: 'Token inválido o expirado' });
@@ -47,7 +47,7 @@ export function optionalAuthenticate(req, res, next) {
   const token = extractToken(req);
   if (token && !isRevoked(token)) {
     try {
-      req.user = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     } catch {
       // Token inválido/expirado — continuar como anónimo
     }

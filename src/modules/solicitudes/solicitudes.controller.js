@@ -4,6 +4,7 @@ import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespue
 import { getAdminEmails } from '../admin/admin.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { query } from '../../config/database.js';
+import logger from '../../utils/logger.js';
 
 export async function index(req, res, next) {
   try { res.json(await solService.getAll(req.query)); } catch (err) { next(err); }
@@ -26,17 +27,19 @@ export async function store(req, res, next) {
     const solicitante = rows[0];
 
     if (solicitante) {
-      getAdminEmails().then((adminEmails) => {
-        adminEmails.forEach((adminEmail) =>
-          notifyAdminNuevaSolicitud({
-            adminEmail,
-            solicitante:  solicitante.nombre,
-            email:        solicitante.email,
-            tipo:         data.tipo,
-            descripcion:  data.descripcion,
-          })
-        );
-      });
+      getAdminEmails()
+        .then((adminEmails) =>
+          adminEmails.forEach((adminEmail) =>
+            notifyAdminNuevaSolicitud({
+              adminEmail,
+              solicitante:  solicitante.nombre,
+              email:        solicitante.email,
+              tipo:         data.tipo,
+              descripcion:  data.descripcion,
+            }).catch(err => logger.error('[solicitudes] Email admin error:', err.message))
+          )
+        )
+        .catch(err => logger.error('[solicitudes] getAdminEmails error:', err.message));
     }
 
     registrarAuditoria({
@@ -74,7 +77,7 @@ export async function updateEstado(req, res, next) {
         tipo:   owner.tipo,
         estado,
         nota,
-      });
+      }).catch(err => logger.error('[solicitudes] Email estado error:', err.message));
     }
 
     registrarAuditoria({
@@ -110,7 +113,7 @@ export async function responder(req, res, next) {
         nombre:   owner.nombre,
         tipo:     owner.tipo,
         respuesta,
-      });
+      }).catch(err => logger.error('[solicitudes] Email respuesta error:', err.message));
     }
 
     registrarAuditoria({
