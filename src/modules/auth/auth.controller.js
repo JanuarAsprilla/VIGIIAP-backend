@@ -15,15 +15,32 @@ import logger from '../../utils/logger.js';
 /** POST /api/auth/logout — invalida el token actual y limpia la cookie */
 export async function logout(req, res, next) {
   try {
-    // Leer token desde cookie o header (ambos modos soportados)
     const token = req.cookies?.[COOKIE_NAME] ?? req.headers.authorization?.slice(7);
     if (token) {
       const exp = req.user?.exp ?? (Math.floor(Date.now() / 1000) + 8 * 3600);
       await revokeToken(token, exp);
     }
-    // Borrar cookie de sesión (si existe) independientemente del modo
+    if (req.user?.id) {
+      await authService.revokeAllRefreshTokens(req.user.id).catch(() => {});
+    }
     res.clearCookie(COOKIE_NAME, clearCookieOptions());
     res.json({ message: 'Sesión cerrada correctamente.' });
+  } catch (err) { next(err); }
+}
+
+/** POST /api/auth/refresh — renueva access token usando refresh token */
+export async function refresh(req, res, next) {
+  try {
+    const { refreshToken } = req.body ?? {};
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      return res.status(400).json({ error: 'refreshToken requerido' });
+    }
+    const ip        = req.ip;
+    const userAgent = req.headers['user-agent'];
+    const tokens    = await authService.refreshTokens(refreshToken, { ip, userAgent });
+
+    res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
+    res.json({ token: tokens.accessToken, refreshToken: tokens.refreshToken });
   } catch (err) { next(err); }
 }
 
