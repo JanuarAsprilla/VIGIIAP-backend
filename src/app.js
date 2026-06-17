@@ -109,6 +109,16 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+// ─── Health check (Render, load balancers, uptime monitors) ──────────────────
+app.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version ?? '1.0.0',
+  });
+});
+
 // ─── Rutas de la API ──────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/mapas', mapassRoutes);

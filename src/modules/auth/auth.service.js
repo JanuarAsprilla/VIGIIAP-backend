@@ -17,17 +17,59 @@ function generateSecureToken() {
 }
 
 // ─── Login institucional / externo ────────────────────────────────────────────
+const MAX_INTENTOS = 5;
+const LOCKOUT_MINS = 15;
+
 export async function login(email, password, ip, userAgent) {
   const { rows } = await query(
-    'SELECT id, nombre, email, password_hash, rol, activo, email_verified FROM usuarios WHERE email = $1',
+    `SELECT id, nombre, email, password_hash, rol, activo, email_verified,
+            intentos_fallidos, bloqueado_hasta
+     FROM usuarios WHERE email = $1`,
     [email.toLowerCase()]
   );
 
   const user = rows[0];
   if (!user) throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
 
+  // Bloqueo temporal por intentos fallidos
+  if (user.bloqueado_hasta && new Date() < new Date(user.bloqueado_hasta)) {
+    const minutos = Math.ceil((new Date(user.bloqueado_hasta) - new Date()) / 60_000);
+    throw Object.assign(
+      new Error(`Cuenta bloqueada temporalmente. Intenta de nuevo en ${minutos} minuto(s).`),
+      { status: 429, code: 'ACCOUNT_LOCKED' }
+    );
+  }
+
   const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
+
+  if (!valid) {
+    const nuevosIntentos = (user.intentos_fallidos ?? 0) + 1;
+    const bloquear       = nuevosIntentos >= MAX_INTENTOS;
+    await query(
+      `UPDATE usuarios
+       SET intentos_fallidos = $1,
+           bloqueado_hasta   = $2,
+           actualizado_en    = NOW()
+       WHERE id = $3`,
+      [
+        bloquear ? 0 : nuevosIntentos,
+        bloquear ? new Date(Date.now() + LOCKOUT_MINS * 60_000) : null,
+        user.id,
+      ]
+    );
+    const msg = bloquear
+      ? `Cuenta bloqueada ${LOCKOUT_MINS} minutos por ${MAX_INTENTOS} intentos fallidos consecutivos.`
+      : 'Credenciales incorrectas';
+    throw Object.assign(new Error(msg), { status: 401 });
+  }
+
+  // Login exitoso — resetear contador de intentos
+  if (user.intentos_fallidos > 0 || user.bloqueado_hasta) {
+    await query(
+      'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1',
+      [user.id]
+    );
+  }
 
   if (!user.email_verified) {
     throw Object.assign(

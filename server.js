@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import app from './src/app.js';
 import { connectDB } from './src/config/database.js';
+import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
 import { loadBlacklist } from './src/utils/tokenBlacklist.js';
 import logger from './src/utils/logger.js';
@@ -37,9 +38,34 @@ async function start() {
   await connectDB();
   await runMigrations();
   await loadBlacklist();
-  app.listen(PORT, () => {
+
+  const server = app.listen(PORT, () => {
     logger.info(`VIGIIAP API corriendo en puerto ${PORT} [${process.env.NODE_ENV ?? 'development'}]`);
   });
+
+  // Graceful shutdown — Render envía SIGTERM antes de reciclar el contenedor.
+  // Dejamos que las requests en vuelo terminen (hasta 10 s) antes de salir.
+  async function shutdown(signal) {
+    logger.info(`[shutdown] ${signal} recibido — cerrando servidor...`);
+    server.close(async () => {
+      try {
+        await pool.end();
+        logger.info('[shutdown] Pool de BD cerrado. Saliendo limpiamente.');
+      } catch (err) {
+        logger.error('[shutdown] Error al cerrar pool:', err.message);
+      }
+      process.exit(0);
+    });
+
+    // Forzar salida si las conexiones no cierran en 10 s
+    setTimeout(() => {
+      logger.warn('[shutdown] Timeout de 10 s alcanzado. Forzando salida.');
+      process.exit(1);
+    }, 10_000).unref();
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 }
 
 start().catch((err) => {
