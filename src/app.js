@@ -4,6 +4,8 @@ import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import swaggerUi from 'swagger-ui-express';
+import { openApiSpec } from './docs/openapi.js';
 
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { errorHandler } from './middlewares/errorHandler.js';
@@ -108,6 +110,13 @@ app.use(rateLimiter);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// ─── API Docs (Swagger UI) ────────────────────────────────────────────────────
+app.get('/api/docs.json', (_req, res) => res.json(openApiSpec));
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+  customSiteTitle: 'VIGIIAP API Docs',
+  swaggerOptions: { persistAuthorization: true },
+}));
 
 // ─── Health check (Render, load balancers, uptime monitors) ──────────────────
 app.get('/health', (_req, res) => {

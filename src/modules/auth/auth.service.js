@@ -16,6 +16,61 @@ function generateSecureToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+const REFRESH_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS ?? '30', 10);
+const ACCESS_EXPIRES        = process.env.JWT_EXPIRES_IN ?? '15m';
+
+// Emite access token (corto) + refresh token (largo), persiste el refresh en BD.
+async function issueTokenPair(user, { ip, userAgent } = {}) {
+  const accessToken  = signToken({ id: user.id, email: user.email, rol: user.rol }, ACCESS_EXPIRES);
+  const refreshToken = generateSecureToken();
+  const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
+  const expiraEn     = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 86_400_000);
+
+  await query(
+    `INSERT INTO refresh_tokens (token_hash, usuario_id, expira_en, ip, user_agent)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [tokenHash, user.id, expiraEn, ip ?? null, userAgent ?? null]
+  );
+
+  return { accessToken, refreshToken };
+}
+
+// ─── Refresh token — renueva el par con rotación ──────────────────────────────
+export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  const { rows } = await query(
+    `SELECT rt.id, rt.revocado, rt.expira_en,
+            u.id AS uid, u.email, u.rol, u.activo
+     FROM refresh_tokens rt
+     JOIN usuarios u ON u.id = rt.usuario_id
+     WHERE rt.token_hash = $1`,
+    [tokenHash]
+  );
+
+  const rt = rows[0];
+  if (!rt)          throw Object.assign(new Error('Refresh token inválido'), { status: 401 });
+  if (rt.revocado)  throw Object.assign(new Error('Refresh token ya fue usado o revocado'), { status: 401 });
+  if (new Date() > new Date(rt.expira_en)) {
+    throw Object.assign(new Error('Refresh token expirado'), { status: 401 });
+  }
+  if (!rt.activo)   throw Object.assign(new Error('Cuenta inactiva'), { status: 403 });
+
+  // Revocar el token usado (rotación — un refresh token se usa una sola vez)
+  await query('UPDATE refresh_tokens SET revocado = true WHERE id = $1', [rt.id]);
+
+  const user = { id: rt.uid, email: rt.email, rol: rt.rol };
+  return issueTokenPair(user, { ip, userAgent });
+}
+
+// Revoca todos los refresh tokens activos de un usuario (logout total)
+export async function revokeAllRefreshTokens(userId) {
+  await query(
+    'UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1 AND revocado = false',
+    [userId]
+  );
+}
+
 // ─── Login institucional / externo ────────────────────────────────────────────
 const MAX_INTENTOS = 5;
 const LOCKOUT_MINS = 15;
@@ -85,7 +140,10 @@ export async function login(email, password, ip, userAgent) {
     );
   }
 
-  const token = signToken({ id: user.id, email: user.email, rol: user.rol });
+  const { accessToken, refreshToken } = await issueTokenPair(
+    { id: user.id, email: user.email, rol: user.rol },
+    { ip, userAgent }
+  );
 
   registrarAuditoria({
     accion: 'login',
@@ -99,7 +157,8 @@ export async function login(email, password, ip, userAgent) {
   });
 
   return {
-    token,
+    token: accessToken,
+    refreshToken,
     user: { id: user.id, nombre: user.nombre, email: user.email, rol: user.rol },
   };
 }
