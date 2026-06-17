@@ -35,3 +35,29 @@ export function clearCookieOptions() {
     path:     '/',
   };
 }
+
+export const REFRESH_COOKIE_NAME = 'vigiiap_refresh';
+
+/**
+ * Opciones para la cookie del refresh token.
+ * path='/api/auth/refresh' → el navegador NUNCA la envía a otros endpoints.
+ * @param {number} [days] - Días de vida. Por defecto 30.
+ */
+export function refreshCookieOptions(days = 30) {
+  return {
+    httpOnly: true,
+    secure:   true,
+    sameSite: 'None',
+    maxAge:   days * 24 * 60 * 60 * 1000,
+    path:     '/api/auth/refresh',
+  };
+}
+
+export function clearRefreshCookieOptions() {
+  return {
+    httpOnly: true,
+    secure:   true,
+    sameSite: 'None',
+    path:     '/api/auth/refresh',
+  };
+}

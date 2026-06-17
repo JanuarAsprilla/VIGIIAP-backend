@@ -9,7 +9,10 @@ import {
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { revokeToken } from '../../utils/tokenBlacklist.js';
-import { COOKIE_NAME, authCookieOptions, clearCookieOptions } from '../../utils/cookieOptions.js';
+import {
+  COOKIE_NAME, authCookieOptions, clearCookieOptions,
+  REFRESH_COOKIE_NAME, refreshCookieOptions, clearRefreshCookieOptions,
+} from '../../utils/cookieOptions.js';
 import logger from '../../utils/logger.js';
 
 /** POST /api/auth/logout — invalida el token actual y limpia la cookie */
@@ -24,23 +27,29 @@ export async function logout(req, res, next) {
       await authService.revokeAllRefreshTokens(req.user.id).catch(() => {});
     }
     res.clearCookie(COOKIE_NAME, clearCookieOptions());
+    res.clearCookie(REFRESH_COOKIE_NAME, clearRefreshCookieOptions());
     res.json({ message: 'Sesión cerrada correctamente.' });
   } catch (err) { next(err); }
 }
 
-/** POST /api/auth/refresh — renueva access token usando refresh token */
+/** POST /api/auth/refresh — renueva el par usando la cookie HttpOnly del refresh token */
 export async function refresh(req, res, next) {
   try {
-    const { refreshToken } = req.body ?? {};
-    if (!refreshToken || typeof refreshToken !== 'string') {
-      return res.status(400).json({ error: 'refreshToken requerido' });
+    // Leer el refresh token desde la cookie HttpOnly (nunca desde el body)
+    const rawToken = req.cookies?.[REFRESH_COOKIE_NAME];
+    if (!rawToken) {
+      return res.status(401).json({ error: 'Refresh token no encontrado' });
     }
     const ip        = req.ip;
     const userAgent = req.headers['user-agent'];
-    const tokens    = await authService.refreshTokens(refreshToken, { ip, userAgent });
+    const tokens    = await authService.refreshTokens(rawToken, { ip, userAgent });
 
+    // Emitir ambas cookies renovadas
     res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
-    res.json({ token: tokens.accessToken, refreshToken: tokens.refreshToken });
+    res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, refreshCookieOptions());
+
+    // Solo el access token en el body (para clientes Bearer)
+    res.json({ token: tokens.accessToken });
   } catch (err) { next(err); }
 }
 
@@ -51,11 +60,15 @@ export async function login(req, res, next) {
     const userAgent = req.headers['user-agent'];
     const result    = await authService.login(data.email, data.password, ip, userAgent);
 
-    // Establecer cookie HttpOnly — el frontend puede ignorar result.token cuando
-    // USE_COOKIE_AUTH = true; lo devolvemos igual para compatibilidad en la transición.
+    // Access token en cookie HttpOnly
     res.cookie(COOKIE_NAME, result.token, authCookieOptions());
+    // Refresh token en cookie HttpOnly propia, scoped a /api/auth/refresh
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, refreshCookieOptions());
 
-    res.json(result);
+    // No devolvemos refreshToken en el body — es un secreto de larga duración
+    // que no debe ser accesible desde JS. El access token se devuelve por
+    // compatibilidad con clientes que usan Bearer.
+    res.json({ token: result.token, user: result.user });
   } catch (err) {
     next(err);
   }

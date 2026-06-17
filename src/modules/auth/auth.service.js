@@ -35,31 +35,53 @@ async function issueTokenPair(user, { ip, userAgent } = {}) {
   return { accessToken, refreshToken };
 }
 
-// ─── Refresh token — renueva el par con rotación ──────────────────────────────
+// ─── Refresh token — renueva el par con rotación atómica ─────────────────────
 export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
+  // Fix 1 (TOCTOU): el UPDATE atómico con WHERE revocado=false y expira_en>NOW()
+  // garantiza que solo un proceso puede usar el token — si dos requests llegan al
+  // mismo tiempo, solo uno obtiene filas en el RETURNING.
   const { rows } = await query(
-    `SELECT rt.id, rt.revocado, rt.expira_en,
-            u.id AS uid, u.email, u.rol, u.activo
-     FROM refresh_tokens rt
-     JOIN usuarios u ON u.id = rt.usuario_id
-     WHERE rt.token_hash = $1`,
+    `UPDATE refresh_tokens rt
+     SET    revocado = true
+     FROM   usuarios u
+     WHERE  rt.token_hash  = $1
+       AND  rt.revocado    = false
+       AND  rt.expira_en   > NOW()
+       AND  u.id           = rt.usuario_id
+       AND  u.activo       = true
+     RETURNING rt.id, rt.usuario_id,
+               u.id AS uid, u.email, u.rol`,
     [tokenHash]
   );
 
-  const rt = rows[0];
-  if (!rt)          throw Object.assign(new Error('Refresh token inválido'), { status: 401 });
-  if (rt.revocado)  throw Object.assign(new Error('Refresh token ya fue usado o revocado'), { status: 401 });
-  if (new Date() > new Date(rt.expira_en)) {
-    throw Object.assign(new Error('Refresh token expirado'), { status: 401 });
+  if (!rows[0]) {
+    // Fix 2 (family revocation): token inválido/ya-usado puede indicar robo.
+    // Buscamos si el token existía pero estaba revocado — si es así, invalidamos
+    // TODA la familia de tokens del usuario (evicción total del posible atacante).
+    const { rows: stolen } = await query(
+      `SELECT usuario_id FROM refresh_tokens WHERE token_hash = $1 AND revocado = true`,
+      [tokenHash]
+    );
+    if (stolen[0]) {
+      await query(
+        'UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1 AND revocado = false',
+        [stolen[0].usuario_id]
+      );
+      registrarAuditoria({
+        accion:      'refresh_token_reuse',
+        modulo:      'auth',
+        entidadId:   stolen[0].usuario_id,
+        descripcion: 'Refresh token reutilizado — posible robo de token. Sesiones revocadas.',
+        ip:          ip ?? null,
+        userAgent,
+      });
+    }
+    throw Object.assign(new Error('Refresh token inválido, expirado o ya usado'), { status: 401 });
   }
-  if (!rt.activo)   throw Object.assign(new Error('Cuenta inactiva'), { status: 403 });
 
-  // Revocar el token usado (rotación — un refresh token se usa una sola vez)
-  await query('UPDATE refresh_tokens SET revocado = true WHERE id = $1', [rt.id]);
-
-  const user = { id: rt.uid, email: rt.email, rol: rt.rol };
+  const user = { id: rows[0].uid, email: rows[0].email, rol: rows[0].rol };
   return issueTokenPair(user, { ip, userAgent });
 }
 
