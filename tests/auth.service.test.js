@@ -45,6 +45,8 @@ const mockUser = {
   rol: 'admin_sig',
   activo: true,
   email_verified: true,
+  intentos_fallidos: 0,
+  bloqueado_hasta: null,
 };
 
 // ─── login() ──────────────────────────────────────────────────────────────────
@@ -52,7 +54,9 @@ describe('login()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('retorna token y datos de usuario con credenciales válidas', async () => {
-    query.mockResolvedValueOnce({ rows: [mockUser] });
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })              // SELECT usuario
+      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] }); // INSERT refresh_tokens
     bcrypt.compare.mockResolvedValueOnce(true);
 
     const result = await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
@@ -80,7 +84,9 @@ describe('login()', () => {
   });
 
   it('lanza 401 cuando la contraseña es incorrecta', async () => {
-    query.mockResolvedValueOnce({ rows: [mockUser] });
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })    // SELECT usuario
+      .mockResolvedValueOnce({ rows: [] });            // UPDATE intentos_fallidos
     bcrypt.compare.mockResolvedValueOnce(false);
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest')).rejects.toMatchObject({
@@ -112,7 +118,9 @@ describe('login()', () => {
   });
 
   it('normaliza el email a minúsculas al buscar en BD', async () => {
-    query.mockResolvedValueOnce({ rows: [mockUser] });
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })              // SELECT usuario
+      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] }); // INSERT refresh_tokens
     bcrypt.compare.mockResolvedValueOnce(true);
 
     await login('ADMIN@IIAP.GOB.PE', 'Segura123!', '127.0.0.1', 'jest');
