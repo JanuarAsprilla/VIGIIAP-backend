@@ -9,6 +9,7 @@ import { openApiSpec } from './docs/openapi.js';
 
 import { query } from './config/database.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
+import { requestId } from './middlewares/requestId.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { notFound } from './middlewares/notFound.js';
 
@@ -83,6 +84,9 @@ app.use((_req, res, next) => {
   );
   next();
 });
+
+// ─── Request ID — correlación de logs en producción ──────────────────────────
+app.use(requestId);
 
 // ─── CORS estricto ────────────────────────────────────────────────────────────
 app.use(
