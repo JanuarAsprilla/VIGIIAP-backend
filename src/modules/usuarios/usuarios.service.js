@@ -28,7 +28,7 @@ export async function getAll(reqQuery) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, nombre, email, rol, institucion, activo, creado_en
+      `SELECT id, nombre, email, rol, institucion, activo, creado_en, last_login_at
        FROM usuarios ${where}
        ORDER BY creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
