@@ -13,6 +13,7 @@ function visibilidadPermitida(user) {
 export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { tipo, anio, q, admin } = reqQuery;
+  if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
   const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
   const conditions = ['d.activo = true'];
   const params = [];

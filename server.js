@@ -39,6 +39,14 @@ async function start() {
   await runMigrations();
   await loadBlacklist();
 
+  // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
+  const { query } = await import('./src/config/database.js');
+  query(
+    `DELETE FROM refresh_tokens
+     WHERE expira_en < NOW()
+        OR (revocado = true AND creado_en < NOW() - INTERVAL '60 days')`,
+  ).catch((err) => logger.warn(`[startup] Error purgando refresh_tokens: ${err.message}`));
+
   const server = app.listen(PORT, () => {
     logger.info(`VIGIIAP API corriendo en puerto ${PORT} [${process.env.NODE_ENV ?? 'development'}]`);
   });

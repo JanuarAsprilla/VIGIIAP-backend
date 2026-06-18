@@ -106,27 +106,23 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
 
-// ─── Health check (sin info del stack en producción) ─────────────────────────
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
-});
-
-// ─── API Docs (Swagger UI) ────────────────────────────────────────────────────
-app.get('/api/docs.json', (_req, res) => res.json(openApiSpec));
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
-  customSiteTitle: 'VIGIIAP API Docs',
-  swaggerOptions: { persistAuthorization: true },
-}));
-
 // ─── Health check (Render, load balancers, uptime monitors) ──────────────────
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version ?? '1.0.0',
   });
 });
+
+// ─── API Docs (Swagger UI) — solo en entornos no-producción ──────────────────
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/docs.json', (_req, res) => res.json(openApiSpec));
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+    customSiteTitle: 'VIGIIAP API Docs',
+    swaggerOptions: { persistAuthorization: true },
+  }));
+}
 
 // ─── Rutas de la API ──────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);

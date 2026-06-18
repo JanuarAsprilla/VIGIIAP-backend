@@ -28,6 +28,7 @@ const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico
 export async function listarUsuarios(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rol, activo, q } = reqQuery;
+  if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
   const conditions = [];
   const params = [];
 

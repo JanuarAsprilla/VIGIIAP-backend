@@ -39,6 +39,13 @@ export function uploadFields(fields) {
         if (!fileArr?.length) continue;
 
         const file     = fileArr[0];
+        const maxBytes = (field.maxSizeMB ?? 20) * 1024 * 1024;
+        if (file.size > maxBytes) {
+          return res.status(422).json({
+            error: `El archivo en '${field.name}' supera el tamaño máximo de ${field.maxSizeMB ?? 20} MB`,
+          });
+        }
+
         const category = field.category ?? 'document';
         const result   = validateFile(file, category);
         const hash     = result.hash ?? sha256(file.buffer);

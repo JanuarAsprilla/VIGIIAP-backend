@@ -16,12 +16,44 @@ export async function getConfiguracion(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// Claves permitidas para configuración del sistema (ver migración 005_configuracion.sql)
+const CONFIG_SCHEMA = {
+  siteName:             { type: 'string', maxLength: 100 },
+  siteDesc:             { type: 'string', maxLength: 500 },
+  region:               { type: 'string', maxLength: 200 },
+  email:                { type: 'string', maxLength: 254 },
+  phone:                { type: 'string', maxLength: 50 },
+  address:              { type: 'string', maxLength: 300 },
+  modoMantenimiento:    { type: 'boolean' },
+  mensajeMantenimiento: { type: 'string', maxLength: 1000 },
+};
+
 /** PUT /api/admin/configuracion */
 export async function setConfiguracion(req, res, next) {
   try {
-    if (!req.body || typeof req.body !== 'object') {
-      return res.status(400).json({ message: 'Body debe ser un objeto clave→valor' });
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Body debe ser un objeto clave→valor' });
     }
+
+    const unknownKeys = Object.keys(req.body).filter((k) => !CONFIG_SCHEMA[k]);
+    if (unknownKeys.length) {
+      return res.status(400).json({ error: `Claves no permitidas: ${unknownKeys.join(', ')}` });
+    }
+
+    const errors = [];
+    for (const [key, value] of Object.entries(req.body)) {
+      const rule = CONFIG_SCHEMA[key];
+      if (rule.type === 'boolean' && typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
+        errors.push(`'${key}' debe ser booleano`);
+      } else if (rule.type === 'string') {
+        if (typeof value !== 'string') { errors.push(`'${key}' debe ser texto`); continue; }
+        if (rule.maxLength && value.length > rule.maxLength) {
+          errors.push(`'${key}' supera el máximo de ${rule.maxLength} caracteres`);
+        }
+      }
+    }
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+
     await adminService.setConfiguracion(req.body, req.user.id, req.user.email);
     res.json({ message: 'Configuración guardada' });
   } catch (err) { next(err); }

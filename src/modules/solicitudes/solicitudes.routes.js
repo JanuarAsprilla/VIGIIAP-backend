@@ -6,7 +6,7 @@ const router = Router();
 
 router.get('/', authenticate, authorize('admin_sig'), index);
 router.get('/mis-solicitudes', authenticate, mine);
-router.post('/', authenticate, authorize('publico', 'investigador', 'institucional', 'admin_sig', 'super_admin'), store);
+router.post('/', authenticate, authorize('publico', 'investigador', 'tecnico', 'institucional', 'admin_sig', 'super_admin'), store);
 router.patch('/:id/estado', authenticate, authorize('admin_sig'), updateEstado);
 router.post('/:id/responder', authenticate, authorize('admin_sig'), responder);
 
