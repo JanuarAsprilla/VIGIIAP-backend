@@ -97,7 +97,7 @@ export async function crearUsuario(req, res, next) {
   try {
     const { nombre, email, rol, institucion, tipoAcceso } = req.body;
     if (!nombre || !email || !rol) {
-      return res.status(400).json({ message: 'nombre, email y rol son obligatorios' });
+      return res.status(400).json({ error: 'nombre, email y rol son obligatorios' });
     }
     const usuario = await adminService.crearUsuario({
       nombre,

@@ -25,9 +25,14 @@ function validateEnv() {
     logger.warn('[startup] Los uploads de archivos fallarán hasta que estén configuradas.');
   }
 
+  const emailVars = ['MAIL_HOST', 'MAIL_PORT', 'MAIL_USER', 'MAIL_PASS', 'MAIL_FROM'];
+  const missingEmail = emailVars.filter((k) => !process.env[k]);
+  if (missingEmail.length) {
+    logger.warn(`[startup] Email no configurado (${missingEmail.join(', ')}) — las notificaciones por email estarán desactivadas.`);
+  }
+
   if (!process.env.FRONTEND_URL) {
     logger.warn('[startup] FRONTEND_URL no está definida — los links en emails de verificación usarán el valor por defecto.');
-    logger.warn('[startup] Configura FRONTEND_URL en Render con la URL del frontend (ej: https://vigiiap.iiap.gov.co).');
   } else {
     logger.info(`[startup] FRONTEND_URL: ${process.env.FRONTEND_URL}`);
   }
