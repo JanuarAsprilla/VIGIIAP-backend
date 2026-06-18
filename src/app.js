@@ -88,6 +88,17 @@ app.use((_req, res, next) => {
 // ─── Request ID — correlación de logs en producción ──────────────────────────
 app.use(requestId);
 
+// ─── Response Time — latencia visible para monitoreo ─────────────────────────
+app.use((_req, res, next) => {
+  const start = Date.now();
+  const end = res.end.bind(res);
+  res.end = (...args) => {
+    if (!res.headersSent) res.setHeader('X-Response-Time', `${Date.now() - start}ms`);
+    return end(...args);
+  };
+  next();
+});
+
 // ─── CORS estricto ────────────────────────────────────────────────────────────
 app.use(
   cors({
