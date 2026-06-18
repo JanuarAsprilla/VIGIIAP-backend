@@ -60,14 +60,20 @@ export async function login(req, res, next) {
     const userAgent = req.headers['user-agent'];
     const result    = await authService.login(data.email, data.password, ip, userAgent);
 
+    // 2FA activo — emitir token temporal y pedir segundo factor
+    if (result.requiresTwoFactor) {
+      res.cookie('vigiiap_2fa_temp', result.twoFactorToken, {
+        httpOnly: true, secure: true, sameSite: 'None',
+        maxAge: 15 * 60 * 1000, path: '/api/auth/2fa/confirm',
+      });
+      return res.json({ requiresTwoFactor: true });
+    }
+
     // Access token en cookie HttpOnly
     res.cookie(COOKIE_NAME, result.token, authCookieOptions());
     // Refresh token en cookie HttpOnly propia, scoped a /api/auth/refresh
     res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, refreshCookieOptions());
 
-    // No devolvemos refreshToken en el body — es un secreto de larga duración
-    // que no debe ser accesible desde JS. El access token se devuelve por
-    // compatibilidad con clientes que usan Bearer.
     res.json({ token: result.token, user: result.user });
   } catch (err) {
     next(err);

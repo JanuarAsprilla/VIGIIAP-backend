@@ -64,8 +64,10 @@ describe('login()', () => {
 
   it('retorna token y datos de usuario con credenciales válidas', async () => {
     query
-      .mockResolvedValueOnce({ rows: [mockUser] })              // SELECT usuario
-      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] }); // INSERT refresh_tokens
+      .mockResolvedValueOnce({ rows: [mockUser] })                       // SELECT usuario
+      .mockResolvedValueOnce({ rows: [] })                               // UPDATE last_login_at
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })       // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] });          // INSERT refresh_tokens
     bcrypt.compare.mockResolvedValueOnce(true);
 
     const result = await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
@@ -128,8 +130,10 @@ describe('login()', () => {
 
   it('normaliza el email a minúsculas al buscar en BD', async () => {
     query
-      .mockResolvedValueOnce({ rows: [mockUser] })              // SELECT usuario
-      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] }); // INSERT refresh_tokens
+      .mockResolvedValueOnce({ rows: [mockUser] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] });
     bcrypt.compare.mockResolvedValueOnce(true);
 
     await login('ADMIN@IIAP.GOB.PE', 'Segura123!', '127.0.0.1', 'jest');
@@ -305,7 +309,9 @@ describe('login() — last_login_at', () => {
     };
     query
       .mockResolvedValueOnce({ rows: [mockUser] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] })                               // UPDATE last_login_at
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })       // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [] });                              // INSERT refresh_tokens
     bcrypt.compare.mockResolvedValueOnce(true);
 
     await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');

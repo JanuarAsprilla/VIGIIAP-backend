@@ -26,7 +26,7 @@ const REFRESH_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS ?? '3
 const ACCESS_EXPIRES        = process.env.JWT_EXPIRES_IN ?? '15m';
 
 // Emite access token (corto) + refresh token (largo), persiste el refresh en BD.
-async function issueTokenPair(user, { ip, userAgent } = {}) {
+export async function issueTokenPair(user, { ip, userAgent } = {}) {
   const accessToken  = signToken({ id: user.id, email: user.email, rol: user.rol }, ACCESS_EXPIRES);
   const refreshToken = generateSecureToken();
   const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -164,6 +164,20 @@ export async function login(email, password, ip, userAgent) {
       new Error('Tu cuenta está pendiente de aprobación. Recibirás un correo cuando sea activada.'),
       { status: 403, code: 'ACCOUNT_INACTIVE' }
     );
+  }
+
+  // Verificar si el usuario tiene 2FA activo
+  const { rows: tfRows } = await query(
+    'SELECT totp_enabled FROM usuarios WHERE id = $1', [user.id]
+  );
+  if (tfRows[0]?.totp_enabled) {
+    // Emitir token temporal de scope '2fa' válido 15 minutos
+    const twoFactorToken = jwt.sign(
+      { id: user.id, email: user.email, rol: user.rol, scope: '2fa' },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m', algorithm: 'HS256' }
+    );
+    return { requiresTwoFactor: true, twoFactorToken };
   }
 
   const { accessToken, refreshToken } = await issueTokenPair(

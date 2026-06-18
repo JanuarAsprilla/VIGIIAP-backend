@@ -14,6 +14,7 @@ import {
 import { authenticate } from '../../middlewares/auth.js';
 import { authRateLimiter } from '../../middlewares/rateLimiter.js';
 import { getSessions, revokeSession, revokeAllSessions } from './sessions.controller.js';
+import { setup as tfSetup, verify as tfVerify, disable as tfDisable, confirm as tfConfirm } from './twoFactor.controller.js';
 
 const router = Router();
 
@@ -32,5 +33,11 @@ router.get('/me',                      authenticate, me);
 router.get('/sessions',        authenticate, getSessions);
 router.delete('/sessions/:id', authenticate, revokeSession);
 router.delete('/sessions',     authenticate, revokeAllSessions);
+
+// 2FA TOTP
+router.post('/2fa/setup',    authenticate, tfSetup);
+router.post('/2fa/verify',   authenticate, tfVerify);
+router.post('/2fa/disable',  authenticate, tfDisable);
+router.post('/2fa/confirm',  tfConfirm); // usa cookie vigiiap_2fa_temp, sin authenticate
 
 export default router;
