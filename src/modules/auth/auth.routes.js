@@ -13,6 +13,7 @@ import {
 } from './auth.controller.js';
 import { authenticate } from '../../middlewares/auth.js';
 import { authRateLimiter } from '../../middlewares/rateLimiter.js';
+import { getSessions, revokeSession, revokeAllSessions } from './sessions.controller.js';
 
 const router = Router();
 
@@ -26,5 +27,10 @@ router.post('/reenviar-verificacion',  authRateLimiter, reenviarVerificacion);
 router.post('/recuperar-password',     authRateLimiter, recuperarPassword);
 router.post('/reset-password',         authRateLimiter, resetPassword);
 router.get('/me',                      authenticate, me);
+
+// Gestión de sesiones activas
+router.get('/sessions',        authenticate, getSessions);
+router.delete('/sessions/:id', authenticate, revokeSession);
+router.delete('/sessions',     authenticate, revokeAllSessions);
 
 export default router;

@@ -345,7 +345,7 @@ describe('update()', () => {
 describe('remove()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('elimina la noticia de BD y borra su imagen de R2', async () => {
+  it('hace soft delete de la noticia y borra su imagen de R2', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ imagen_url: 'https://files.test.local/R2_PUBLIC_URL/noticia.jpg' }] })
       .mockResolvedValueOnce({ rows: [] });
@@ -354,7 +354,8 @@ describe('remove()', () => {
 
     await remove('noticia-uuid-001');
 
-    expect(query).toHaveBeenCalledWith('DELETE FROM noticias WHERE id=$1', ['noticia-uuid-001']);
+    const updateCall = query.mock.calls.find(([sql]) => sql.includes('deleted_at'));
+    expect(updateCall).toBeDefined();
     expect(deleteFile).toHaveBeenCalled();
   });
 
@@ -368,11 +369,10 @@ describe('remove()', () => {
     expect(deleteFile).not.toHaveBeenCalled();
   });
 
-  it('retorna sin error cuando la noticia no existe', async () => {
+  it('lanza 404 cuando la noticia no existe o ya fue eliminada', async () => {
     query.mockResolvedValueOnce({ rows: [] });
 
-    await expect(remove('uuid-inexistente')).resolves.toBeUndefined();
-    expect(query).toHaveBeenCalledTimes(1);
+    await expect(remove('uuid-inexistente')).rejects.toMatchObject({ status: 404 });
   });
 
   it('no interrumpe el flujo si deleteFile falla', async () => {

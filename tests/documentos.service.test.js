@@ -335,16 +335,18 @@ describe('update()', () => {
 describe('remove()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('elimina el documento de BD y borra su archivo de R2', async () => {
+  it('hace soft delete y borra el archivo de R2', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] }) // SELECT existing
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE deleted_at
 
     deleteFileByUrl.mockResolvedValue(undefined);
 
     await remove('doc-uuid-001');
 
-    expect(query).toHaveBeenCalledWith('DELETE FROM documentos WHERE id=$1', ['doc-uuid-001']);
+    // Debe usar UPDATE, no DELETE
+    const updateCall = query.mock.calls.find(([sql]) => sql.includes('deleted_at'));
+    expect(updateCall).toBeDefined();
     expect(deleteFileByUrl).toHaveBeenCalledWith('https://files.test.local/doc.pdf');
   });
 
@@ -358,11 +360,10 @@ describe('remove()', () => {
     expect(deleteFileByUrl).not.toHaveBeenCalled();
   });
 
-  it('retorna sin error cuando el documento no existe', async () => {
+  it('lanza 404 cuando el documento no existe o ya fue eliminado', async () => {
     query.mockResolvedValueOnce({ rows: [] });
 
-    await expect(remove('uuid-inexistente')).resolves.toBeUndefined();
-    expect(query).toHaveBeenCalledTimes(1);
+    await expect(remove('uuid-inexistente')).rejects.toMatchObject({ status: 404 });
   });
 
   it('no interrumpe el flujo si deleteFileByUrl falla', async () => {
@@ -372,7 +373,6 @@ describe('remove()', () => {
 
     deleteFileByUrl.mockRejectedValue(new Error('R2 error'));
 
-    // No debe lanzar
     await expect(remove('doc-uuid-001')).resolves.toBeUndefined();
   });
 });
