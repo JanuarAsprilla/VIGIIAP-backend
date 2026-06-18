@@ -24,6 +24,13 @@ vi.mock('jsonwebtoken', () => ({
   },
 }));
 
+vi.mock('../src/utils/tokenBlacklist.js', () => ({
+  isRevoked: vi.fn().mockReturnValue(false),
+  revokeToken: vi.fn().mockResolvedValue(undefined),
+  loadBlacklist: vi.fn().mockResolvedValue(undefined),
+  revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ─── Imports bajo prueba ───────────────────────────────────────────────────────
 import { query } from '../src/config/database.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
@@ -34,7 +41,9 @@ import {
   register,
   getProfile,
   loginVisitante,
+  resetPassword,
 } from '../src/modules/auth/auth.service.js';
+import { revokeAllRefreshTokens } from '../src/utils/tokenBlacklist.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 const mockUser = {
@@ -280,5 +289,61 @@ describe('loginVisitante()', () => {
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
+  });
+});
+
+// ─── last_login_at ─────────────────────────────────────────────────────────────
+describe('login() — last_login_at', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('actualiza last_login_at en cada login exitoso', async () => {
+    const mockUser = {
+      id: 'uuid-001', nombre: 'Admin', email: 'admin@iiap.gob.pe',
+      password_hash: '$2a$12$hash', rol: 'admin_sig',
+      activo: true, email_verified: true,
+      intentos_fallidos: 0, bloqueado_hasta: null,
+    };
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })
+      .mockResolvedValueOnce({ rows: [] });
+    bcrypt.compare.mockResolvedValueOnce(true);
+
+    await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
+
+    const updateCall = query.mock.calls.find(([sql]) => sql.includes('last_login_at'));
+    expect(updateCall).toBeDefined();
+  });
+});
+
+// ─── resetPassword() ───────────────────────────────────────────────────────────
+describe('resetPassword()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('revoca todas las sesiones tras resetear contraseña exitosamente', async () => {
+    const mockUser = {
+      id: 'uuid-001',
+      email: 'admin@iiap.gob.pe',
+      password_reset_expires: new Date(Date.now() + 60_000).toISOString(),
+    };
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })
+      .mockResolvedValueOnce({ rows: [] });
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$newhash');
+
+    await resetPassword('rawtoken64chars', 'NuevaPass123!');
+
+    const revokeCall = query.mock.calls.find(
+      ([sql]) => sql.includes('refresh_tokens') && sql.includes('revocado = true')
+    );
+    expect(revokeCall).toBeDefined();
+    expect(revokeCall[1]).toEqual([mockUser.id]);
+  });
+
+  it('lanza 400 si el token no existe en la BD', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(resetPassword('token-invalido', 'NuevaPass123!')).rejects.toMatchObject({
+      status: 400,
+    });
   });
 });

@@ -146,13 +146,11 @@ export async function login(email, password, ip, userAgent) {
     throw Object.assign(new Error(msg), { status: 401 });
   }
 
-  // Login exitoso — resetear contador de intentos
-  if (user.intentos_fallidos > 0 || user.bloqueado_hasta) {
-    await query(
-      'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1',
-      [user.id]
-    );
-  }
+  // Login exitoso — resetear contador de intentos y registrar último acceso
+  await query(
+    'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL, last_login_at = NOW() WHERE id = $1',
+    [user.id]
+  );
 
   if (!user.email_verified) {
     throw Object.assign(
@@ -390,13 +388,16 @@ export async function resetPassword(token, newPassword) {
     [password_hash, user.id]
   );
 
+  // Revocar todas las sesiones — quien recupera su cuenta invalida sesiones previas comprometidas
+  await revokeAllRefreshTokens(user.id);
+
   return { email: user.email };
 }
 
 // ─── Perfil ───────────────────────────────────────────────────────────────────
 export async function getProfile(userId) {
   const { rows } = await query(
-    'SELECT id, nombre, email, rol, tipo_acceso, institucion, creado_en FROM usuarios WHERE id = $1',
+    'SELECT id, nombre, email, rol, tipo_acceso, institucion, creado_en, last_login_at FROM usuarios WHERE id = $1',
     [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
