@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import { openApiSpec } from './docs/openapi.js';
 
+import { query } from './config/database.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { notFound } from './middlewares/notFound.js';
@@ -107,12 +108,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
 
 // ─── Health check (Render, load balancers, uptime monitors) ──────────────────
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    uptime: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-  });
+app.get('/health', async (_req, res) => {
+  try {
+    await query('SELECT 1');
+    res.json({ status: 'ok', uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString(), db: 'ok' });
+  } catch {
+    res.status(503).json({ status: 'degraded', db: 'unreachable' });
+  }
 });
 
 // ─── API Docs (Swagger UI) — solo en entornos no-producción ──────────────────
