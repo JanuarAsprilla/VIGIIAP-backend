@@ -302,7 +302,7 @@ describe('setActivo()', () => {
 describe('remove()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('elimina el mapa de BD y borra sus archivos de R2', async () => {
+  it('hace soft delete del mapa y borra sus archivos de R2', async () => {
     query
       .mockResolvedValueOnce({
         rows: [{
@@ -311,13 +311,14 @@ describe('remove()', () => {
           thumbnail_url: 'https://files.test.local/thumb.jpg',
         }],
       })
-      .mockResolvedValueOnce({ rows: [] }); // DELETE
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE deleted_at
 
     deleteFileByUrl.mockResolvedValue(undefined);
 
     await remove('mapa-uuid-001');
 
-    expect(query).toHaveBeenCalledWith('DELETE FROM mapas WHERE id=$1', ['mapa-uuid-001']);
+    const updateCall = query.mock.calls.find(([sql]) => sql.includes('deleted_at'));
+    expect(updateCall).toBeDefined();
     expect(deleteFileByUrl).toHaveBeenCalledTimes(3);
   });
 
@@ -333,11 +334,11 @@ describe('remove()', () => {
     expect(deleteFileByUrl).not.toHaveBeenCalled();
   });
 
-  it('retorna sin error cuando el mapa no existe', async () => {
+  it('lanza 404 cuando el mapa no existe o ya fue eliminado', async () => {
     query.mockResolvedValueOnce({ rows: [] });
 
-    await expect(remove('uuid-inexistente')).resolves.toBeUndefined();
-    // No debe intentar DELETE
+    await expect(remove('uuid-inexistente')).rejects.toMatchObject({ status: 404 });
+    // No debe intentar UPDATE
     expect(query).toHaveBeenCalledTimes(1);
   });
 

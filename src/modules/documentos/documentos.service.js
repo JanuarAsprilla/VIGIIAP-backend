@@ -15,7 +15,7 @@ export async function getAll(reqQuery, user) {
   const { tipo, anio, q, admin } = reqQuery;
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
   const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
-  const conditions = ['d.activo = true'];
+  const conditions = isAdminView ? ['d.deleted_at IS NULL'] : ['d.activo = true', 'd.deleted_at IS NULL'];
   const params = [];
 
   // El panel admin ve todo sin filtro de visibilidad
@@ -114,8 +114,8 @@ export async function update(id, data) {
 }
 
 export async function remove(id) {
-  const { rows } = await query('SELECT archivo_url FROM documentos WHERE id=$1', [id]);
-  if (!rows[0]) return;
-  await query('DELETE FROM documentos WHERE id=$1', [id]);
-  if (rows[0].archivo_url) await deleteFileByUrl(rows[0].archivo_url).catch(() => {});
+  const { rows: existing } = await query('SELECT archivo_url FROM documentos WHERE id=$1 AND deleted_at IS NULL', [id]);
+  if (!existing[0]) throw Object.assign(new Error('Documento no encontrado'), { status: 404 });
+  await query('UPDATE documentos SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1', [id]);
+  if (existing[0].archivo_url) await deleteFileByUrl(existing[0].archivo_url).catch(() => {});
 }

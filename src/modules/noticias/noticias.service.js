@@ -15,7 +15,7 @@ export async function getAll(reqQuery, user) {
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
   const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
 
-  const conditions = isAdminView ? [] : ['n.publicado = true'];
+  const conditions = isAdminView ? ['n.deleted_at IS NULL'] : ['n.publicado = true', 'n.deleted_at IS NULL'];
   const params = [];
 
   if (!isAdminView) {
@@ -58,7 +58,7 @@ export async function getBySlug(slug, user) {
     `SELECT n.*, u.nombre AS autor
      FROM noticias n
      LEFT JOIN usuarios u ON u.id = n.creado_por
-     WHERE n.slug = $1 AND n.publicado = true ${visFilter}`,
+     WHERE n.slug = $1 AND n.publicado = true AND n.deleted_at IS NULL ${visFilter}`,
     params,
   );
   if (!rows[0]) throw Object.assign(new Error('Noticia no encontrada'), { status: 404 });
@@ -121,9 +121,12 @@ function extractKey(url) {
 }
 
 export async function remove(id) {
-  const { rows } = await query('SELECT imagen_url FROM noticias WHERE id=$1', [id]);
-  if (!rows[0]) return;
-  await query('DELETE FROM noticias WHERE id=$1', [id]);
-  const key = extractKey(rows[0].imagen_url);
+  const { rows: existing } = await query('SELECT imagen_url FROM noticias WHERE id=$1 AND deleted_at IS NULL', [id]);
+  if (!existing[0]) throw Object.assign(new Error('Noticia no encontrada'), { status: 404 });
+  await query(
+    'UPDATE noticias SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1',
+    [id]
+  );
+  const key = extractKey(existing[0].imagen_url);
   if (key) await deleteFile(key).catch(() => {});
 }

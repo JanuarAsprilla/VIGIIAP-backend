@@ -4,7 +4,7 @@ import { deleteFile } from '../../config/r2.js';
 /** Devuelve todas las categorías con su thumbnail_url. */
 export async function getAll() {
   const { rows } = await query(
-    'SELECT nombre, thumbnail_url, actualizado_en FROM categorias ORDER BY nombre',
+    'SELECT nombre, thumbnail_url, actualizado_en FROM categorias WHERE deleted_at IS NULL ORDER BY nombre',
     [],
   );
   return rows;
@@ -43,17 +43,20 @@ export async function updateThumbnail(nombre, newUrl) {
   return result;
 }
 
-/** Elimina una categoría y su thumbnail de R2 si existe. */
+/** Elimina una categoría (soft delete) y su thumbnail de R2 si existe. */
 export async function remove(nombre) {
-  const { rows } = await query(
-    'SELECT thumbnail_url FROM categorias WHERE nombre = $1',
+  const { rows: existing } = await query(
+    'SELECT thumbnail_url FROM categorias WHERE nombre = $1 AND deleted_at IS NULL',
     [nombre],
   );
-  if (!rows[0]) throw Object.assign(new Error('Categoría no encontrada'), { status: 404 });
+  if (!existing[0]) throw Object.assign(new Error('Categoría no encontrada'), { status: 404 });
 
-  await query('DELETE FROM categorias WHERE nombre = $1', [nombre]);
+  await query(
+    'UPDATE categorias SET deleted_at = NOW() WHERE nombre = $1',
+    [nombre]
+  );
 
-  const key = extractKey(rows[0].thumbnail_url);
+  const key = extractKey(existing[0].thumbnail_url);
   if (key) await deleteFile(key).catch(() => {});
 }
 

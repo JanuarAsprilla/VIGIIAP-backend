@@ -15,7 +15,7 @@ export async function getAll(reqQuery, user) {
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
   const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
 
-  const conditions = isAdminView ? [] : ['m.activo = true'];
+  const conditions = isAdminView ? ['m.deleted_at IS NULL'] : ['m.activo = true', 'm.deleted_at IS NULL'];
   const params = [];
 
   if (!isAdminView) {
@@ -64,7 +64,7 @@ export async function getBySlug(slug, user) {
     `SELECT m.*, u.nombre AS autor
      FROM mapas m
      LEFT JOIN usuarios u ON u.id = m.creado_por
-     WHERE m.slug = $1 AND m.activo = true ${visFilter}`,
+     WHERE m.slug = $1 AND m.activo = true AND m.deleted_at IS NULL ${visFilter}`,
     params
   );
   if (!rows[0]) throw Object.assign(new Error('Mapa no encontrado'), { status: 404 });
@@ -129,9 +129,11 @@ export async function setActivo(id, activo) {
 }
 
 export async function remove(id) {
-  const { rows } = await query('SELECT archivo_pdf_url, archivo_img_url, thumbnail_url FROM mapas WHERE id=$1', [id]);
-  if (!rows[0]) return;
-  await query('DELETE FROM mapas WHERE id=$1', [id]);
-  const urls = [rows[0].archivo_pdf_url, rows[0].archivo_img_url, rows[0].thumbnail_url].filter(Boolean);
+  const { rows: existing } = await query(
+    'SELECT archivo_pdf_url, archivo_img_url, thumbnail_url FROM mapas WHERE id=$1 AND deleted_at IS NULL', [id]
+  );
+  if (!existing[0]) throw Object.assign(new Error('Mapa no encontrado'), { status: 404 });
+  await query('UPDATE mapas SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1', [id]);
+  const urls = [existing[0].archivo_pdf_url, existing[0].archivo_img_url, existing[0].thumbnail_url].filter(Boolean);
   await Promise.allSettled(urls.map(url => deleteFileByUrl(url)));
 }
