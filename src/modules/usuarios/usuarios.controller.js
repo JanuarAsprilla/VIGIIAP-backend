@@ -1,6 +1,11 @@
 import { updateRolSchema, updatePasswordSchema, updatePerfilSchema } from './usuarios.schema.js';
 import * as userService from './usuarios.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { revokeToken } from '../../utils/tokenBlacklist.js';
+import {
+  COOKIE_NAME, clearCookieOptions,
+  REFRESH_COOKIE_NAME, clearRefreshCookieOptions,
+} from '../../utils/cookieOptions.js';
 
 export async function getMe(req, res, next) {
   try { res.json(await userService.getProfile(req.user.id)); } catch (err) { next(err); }
@@ -48,15 +53,22 @@ export async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = updatePasswordSchema.parse(req.body);
     await userService.updatePassword(req.user.id, currentPassword, newPassword);
+
+    // Blacklistear el access token actual — ya no es válido tras el cambio
+    const token = req.cookies?.[COOKIE_NAME] ?? req.headers.authorization?.slice(7);
+    if (token && req.user?.exp) await revokeToken(token, req.user.exp);
+    res.clearCookie(COOKIE_NAME, clearCookieOptions());
+    res.clearCookie(REFRESH_COOKIE_NAME, clearRefreshCookieOptions());
+
     registrarAuditoria({
-      accion:      'change_password',
-      modulo:      'usuarios',
-      entidadId:   req.user.id,
-      descripcion: 'Usuario cambió su contraseña',
-      usuarioId:   req.user.id,
+      accion:       'change_password',
+      modulo:       'usuarios',
+      entidadId:    req.user.id,
+      descripcion:  'Usuario cambió su contraseña — sesiones revocadas',
+      usuarioId:    req.user.id,
       usuarioEmail: req.user.email,
-      ip:          req.ip,
+      ip:           req.ip,
     });
-    res.json({ message: 'Contraseña actualizada' });
+    res.json({ message: 'Contraseña actualizada. Por seguridad, inicia sesión nuevamente.' });
   } catch (err) { next(err); }
 }

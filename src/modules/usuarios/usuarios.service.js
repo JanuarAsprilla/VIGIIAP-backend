@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
+import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 
 // super_admin excluido: solo el propio super_admin puede asignarlo vía admin.service
 const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
@@ -82,4 +83,5 @@ export async function updatePassword(userId, currentPassword, newPassword) {
 
   const hash = await bcrypt.hash(newPassword, 12);
   await query('UPDATE usuarios SET password_hash=$1, actualizado_en=NOW() WHERE id=$2', [hash, userId]);
+  await revokeAllRefreshTokens(userId);
 }

@@ -212,7 +212,8 @@ describe('usuarios.service → updatePassword()', () => {
   it('cambia la contraseña si la actual es correcta', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ password_hash: '$2a$12$hashedpassword' }] })
-      .mockResolvedValueOnce({ rows: [] }); // UPDATE
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE password
+      .mockResolvedValueOnce({ rows: [] }); // revokeAllRefreshTokens
 
     bcrypt.compare.mockResolvedValueOnce(true);
     bcrypt.hash.mockResolvedValueOnce('$2a$12$newhashedpassword');
@@ -223,7 +224,24 @@ describe('usuarios.service → updatePassword()', () => {
 
     expect(bcrypt.compare).toHaveBeenCalledWith('OldPass1!', '$2a$12$hashedpassword');
     expect(bcrypt.hash).toHaveBeenCalledWith('Nueva123!', 12);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('revoca todas las sesiones activas tras cambiar contraseña', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ password_hash: '$2a$12$hashedpassword' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    bcrypt.compare.mockResolvedValueOnce(true);
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$newhashedpassword');
+
+    await updatePassword('usr-uuid-1', 'OldPass1!', 'Nueva123!');
+
+    const revokeCall = query.mock.calls.find(
+      ([sql]) => sql.includes('refresh_tokens') && sql.includes('revocado = true')
+    );
+    expect(revokeCall).toBeDefined();
+    expect(revokeCall[1]).toEqual(['usr-uuid-1']);
   });
 
   it('lanza 401 si la contraseña actual es incorrecta', async () => {
