@@ -6,7 +6,7 @@ import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 
-const noticiaUpload = uploadSingle('imagen', 'noticias/thumbnails', 5);
+const noticiaUpload = uploadSingle('imagen', 'noticias/thumbnails', 5, 'image');
 
 router.get('/',      optionalAuthenticate, index);
 router.get('/:slug', optionalAuthenticate, show);

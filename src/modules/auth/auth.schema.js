@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 export const loginSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Contraseña mínimo 6 caracteres'),
+  // max 72: bcrypt truncates silently beyond 72 bytes; min 8 matches registration policy
+  password: z.string().min(8, 'Contraseña mínimo 8 caracteres').max(72, 'Contraseña máximo 72 caracteres'),
 });
 
 const strongPassword = z

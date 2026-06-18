@@ -16,6 +16,12 @@ function generateSecureToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Tokens se almacenan como SHA-256 para que una brecha de BD no permita usarlos directamente.
+// El valor original solo existe en el email enviado al usuario.
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 const REFRESH_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS ?? '30', 10);
 const ACCESS_EXPIRES        = process.env.JWT_EXPIRES_IN ?? '15m';
 
@@ -257,12 +263,12 @@ export async function register(data) {
       motivo ?? null,
       rolInicial,
       tipoAcceso ?? 'externo',
-      verificationToken,
+      hashToken(verificationToken), // almacenar hash — no el token original
       verificationExpires,
     ]
   );
 
-  return { ...rows[0], verificationToken };
+  return { ...rows[0], verificationToken }; // devolver token original al llamador para el email
 }
 
 // ─── Verificar email ──────────────────────────────────────────────────────────
@@ -271,7 +277,7 @@ export async function verifyEmail(token) {
     `SELECT id, nombre, email, email_verified, email_verification_expires
      FROM usuarios
      WHERE email_verification_token = $1`,
-    [token]
+    [hashToken(token)]
   );
 
   const user = rows[0];
@@ -320,7 +326,7 @@ export async function reenviarVerificacion(email) {
          email_verification_expires = $2,
          actualizado_en = NOW()
      WHERE id = $3`,
-    [token, expires, rows[0].id]
+    [hashToken(token), expires, rows[0].id]
   );
 
   return { nombre: rows[0].nombre, email: rows[0].email, verificationToken: token };
@@ -346,7 +352,7 @@ export async function solicitarRecuperacion(email) {
          password_reset_expires = $2,
          actualizado_en = NOW()
      WHERE id = $3`,
-    [resetToken, resetExpires, user.id]
+    [hashToken(resetToken), resetExpires, user.id]
   );
 
   return { nombre: user.nombre, email: user.email, resetToken };
@@ -358,7 +364,7 @@ export async function resetPassword(token, newPassword) {
     `SELECT id, email, password_reset_expires
      FROM usuarios
      WHERE password_reset_token = $1`,
-    [token]
+    [hashToken(token)]
   );
 
   const user = rows[0];

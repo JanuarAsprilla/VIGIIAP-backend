@@ -10,7 +10,7 @@ export const createSolicitudSchema = z.object({
 
 export const updateEstadoSchema = z.object({
   estado:     z.enum(ESTADOS, { errorMap: () => ({ message: `Estado debe ser uno de: ${ESTADOS.join(', ')}` }) }),
-  nota:       z.string().optional(),
+  nota:       z.string().max(2000).optional(),
 });
 
 export const responderSchema = z.object({

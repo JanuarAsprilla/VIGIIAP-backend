@@ -14,7 +14,7 @@ export const COOKIE_NAME = 'vigiiap_token';
  * Devuelve las opciones de res.cookie() para el token de sesión.
  * @param {number} [maxAgeMs] - Duración en milisegundos. Por defecto 7 días.
  */
-export function authCookieOptions(maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+export function authCookieOptions(maxAgeMs = 15 * 60 * 1000) {
   return {
     httpOnly: true,
     secure:   true,          // requerido por SameSite=None; Render siempre es HTTPS

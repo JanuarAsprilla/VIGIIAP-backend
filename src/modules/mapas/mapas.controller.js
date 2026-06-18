@@ -71,6 +71,15 @@ export async function patchActivo(req, res, next) {
   try {
     const { activo } = toggleMapaSchema.parse(req.body);
     const mapa = await mapaService.setActivo(req.params.id, activo);
+    registrarAuditoria({
+      accion:       activo ? 'publish_mapa' : 'unpublish_mapa',
+      modulo:       'mapas',
+      entidadId:    mapa.id,
+      descripcion:  `Mapa ${activo ? 'publicado' : 'despublicado'}: ${mapa.titulo}`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
     registrarCustodia({
       tipoRecurso:  'mapa',
       recursoId:    mapa.id,

@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 
-const ROLES = ['super_admin', 'admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
+// super_admin excluido: solo el propio super_admin puede asignarlo vía admin.service
+const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
 
 export async function getProfile(userId) {
   const { rows } = await query(
