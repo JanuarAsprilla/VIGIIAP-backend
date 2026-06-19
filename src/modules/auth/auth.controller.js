@@ -60,6 +60,15 @@ export async function login(req, res, next) {
     const userAgent = req.headers['user-agent'];
     const result    = await authService.login(data.email, data.password, ip, userAgent);
 
+    // Contraseña expirada — emitir token temporal y forzar cambio
+    if (result.passwordExpired) {
+      res.cookie('vigiiap_expired_temp', result.expiredToken, {
+        httpOnly: true, secure: true, sameSite: 'None',
+        maxAge: 15 * 60 * 1000, path: '/api/auth/change-expired-password',
+      });
+      return res.status(200).json({ passwordExpired: true });
+    }
+
     // 2FA activo — emitir token temporal y pedir segundo factor
     if (result.requiresTwoFactor) {
       res.cookie('vigiiap_2fa_temp', result.twoFactorToken, {

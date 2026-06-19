@@ -6,6 +6,7 @@ import {
   getConfiguracion, setConfiguracion, notificaciones,
   superStats, crearAdmin,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
+  batchUsuarios,
 } from './admin.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 
@@ -18,6 +19,7 @@ router.get('/stats',            stats);
 router.get('/notificaciones',   notificaciones);
 router.get('/usuarios',         listarUsuarios);
 router.post('/usuarios',        crearUsuario);
+router.patch('/usuarios/batch',  batchUsuarios);      // ANTES de /:id para no conflictar
 router.patch('/usuarios/:id',   actualizarUsuario);
 router.delete('/usuarios/:id',  eliminarUsuario);
 router.get('/audit',            auditLog);

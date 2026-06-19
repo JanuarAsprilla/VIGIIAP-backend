@@ -15,6 +15,7 @@ import { authenticate } from '../../middlewares/auth.js';
 import { authRateLimiter } from '../../middlewares/rateLimiter.js';
 import { getSessions, revokeSession, revokeAllSessions } from './sessions.controller.js';
 import { setup as tfSetup, verify as tfVerify, disable as tfDisable, confirm as tfConfirm } from './twoFactor.controller.js';
+import { changeExpiredPassword } from './expiredPassword.controller.js';
 
 const router = Router();
 
@@ -33,6 +34,9 @@ router.get('/me',                      authenticate, me);
 router.get('/sessions',        authenticate, getSessions);
 router.delete('/sessions/:id', authenticate, revokeSession);
 router.delete('/sessions',     authenticate, revokeAllSessions);
+
+// Cambio de contraseña expirada (usa cookie vigiiap_expired_temp)
+router.post('/change-expired-password', changeExpiredPassword);
 
 // 2FA TOTP
 router.post('/2fa/setup',    authenticate, tfSetup);

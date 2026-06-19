@@ -1,6 +1,7 @@
 import { query } from '../../config/database.js';
 import * as adminService from './admin.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
+import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /** GET /api/admin/notificaciones */
 export async function notificaciones(req, res, next) {
@@ -250,5 +251,57 @@ export async function scanLog(req, res, next) {
       params,
     );
     res.json({ data: rows });
+  } catch (err) { next(err); }
+}
+
+/** PATCH /api/admin/usuarios/batch — activar/desactivar/cambiar-rol en lote */
+export async function batchUsuarios(req, res, next) {
+  try {
+    const { ids, accion, rol } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids debe ser un array no vacío' });
+    }
+    if (ids.length > 50) {
+      return res.status(400).json({ error: 'Máximo 50 usuarios por operación batch' });
+    }
+    const ACCIONES = ['activar', 'desactivar', 'cambiar-rol'];
+    if (!ACCIONES.includes(accion)) {
+      return res.status(400).json({ error: `accion debe ser uno de: ${ACCIONES.join(', ')}` });
+    }
+    const ROLES_BATCH = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
+    if (accion === 'cambiar-rol' && !ROLES_BATCH.includes(rol)) {
+      return res.status(400).json({ error: `rol inválido. Opciones: ${ROLES_BATCH.join(', ')}` });
+    }
+
+    // Proteger super_admin de operaciones batch
+    const { rows: targets } = await query(
+      'SELECT id, rol FROM usuarios WHERE id = ANY($1::uuid[])', [ids]
+    );
+    if (targets.some((u) => u.rol === 'super_admin')) {
+      return res.status(403).json({ error: 'No se puede operar sobre cuentas super_admin en batch' });
+    }
+
+    let sql;
+    const params = [ids];
+    if (accion === 'activar')    sql = 'UPDATE usuarios SET activo = true,  actualizado_en = NOW() WHERE id = ANY($1::uuid[])';
+    if (accion === 'desactivar') sql = 'UPDATE usuarios SET activo = false, actualizado_en = NOW() WHERE id = ANY($1::uuid[])';
+    if (accion === 'cambiar-rol') {
+      sql = 'UPDATE usuarios SET rol = $2, actualizado_en = NOW() WHERE id = ANY($1::uuid[])';
+      params.push(rol);
+    }
+
+    const result = await query(sql, params);
+
+    registrarAuditoria({
+      accion:       `batch_${accion.replace('-', '_')}`,
+      modulo:       'admin',
+      descripcion:  `Batch ${accion}: ${result.rowCount} usuarios afectados`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+      metadatos:    { ids, accion, rol: rol ?? null, afectados: result.rowCount },
+    });
+
+    res.json({ message: `${result.rowCount} usuarios actualizados`, afectados: result.rowCount });
   } catch (err) { next(err); }
 }
