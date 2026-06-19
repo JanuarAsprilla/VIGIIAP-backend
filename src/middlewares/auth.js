@@ -32,7 +32,12 @@ export function authenticate(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    // Rechazar tokens de scope especial (2fa, password-change) en rutas normales
+    if (payload.scope && payload.scope !== 'access') {
+      return res.status(401).json({ error: 'Token no válido para este endpoint' });
+    }
+    req.user = payload;
     next();
   } catch {
     res.status(401).json({ error: 'Token inválido o expirado' });

@@ -11,6 +11,15 @@ const APP_NAME = 'VIGIIAP';
 
 /** Genera un secret TOTP y lo guarda temporalmente (sin activar). */
 export async function setupTotp(userId, email) {
+  const { rows } = await query(
+    'SELECT totp_enabled FROM usuarios WHERE id = $1', [userId]
+  );
+  if (rows[0]?.totp_enabled) {
+    throw Object.assign(
+      new Error('2FA ya está activado. Desactívalo primero antes de reconfigurarlo.'),
+      { status: 409 }
+    );
+  }
   const secret     = authenticator.generateSecret();
   const otpauthUrl = authenticator.keyuri(email, APP_NAME, secret);
   await query('UPDATE usuarios SET totp_secret = $1 WHERE id = $2', [secret, userId]);

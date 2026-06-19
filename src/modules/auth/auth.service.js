@@ -27,7 +27,7 @@ const ACCESS_EXPIRES        = process.env.JWT_EXPIRES_IN ?? '15m';
 
 // Emite access token (corto) + refresh token (largo), persiste el refresh en BD.
 export async function issueTokenPair(user, { ip, userAgent } = {}) {
-  const accessToken  = signToken({ id: user.id, email: user.email, rol: user.rol }, ACCESS_EXPIRES);
+  const accessToken  = signToken({ id: user.id, email: user.email, rol: user.rol, scope: 'access' }, ACCESS_EXPIRES);
   const refreshToken = generateSecureToken();
   const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
   const expiraEn     = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 86_400_000);
