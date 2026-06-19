@@ -3,11 +3,12 @@ import { index, show, store, update, destroy } from './documentos.controller.js'
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
+import { cacheMiddleware } from '../../middlewares/cache.js';
 
 const router = Router();
 
-router.get('/',      optionalAuthenticate, index);
-router.get('/:slug', optionalAuthenticate, show);
+router.get('/',      cacheMiddleware(120), optionalAuthenticate, index);
+router.get('/:slug', cacheMiddleware(300), optionalAuthenticate, show);
 router.post(
   '/',
   authenticate,

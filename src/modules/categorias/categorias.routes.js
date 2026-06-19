@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { index, create, upsertThumbnail, destroy } from './categorias.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { uploadSingle } from '../../middlewares/upload.js';
+import { cacheMiddleware } from '../../middlewares/cache.js';
 
 const router = Router();
 
 // GET  /api/categorias              — público
-router.get('/', index);
+router.get('/', cacheMiddleware(600), index);
 
 // POST /api/categorias              — solo admin (crear categoría)
 router.post('/', authenticate, authorize('admin_sig'), create);

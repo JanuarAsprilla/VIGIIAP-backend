@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getPapelera, restaurar } from './papelera.controller.js';
+import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog,
   getConfiguracion, setConfiguracion, notificaciones,
@@ -32,6 +33,12 @@ router.get('/scan-log',         scanLog);
 // ── Rutas exclusivas de super_admin ──────────────────────────────────────────
 router.get('/super/stats',         requireSuperAdmin, superStats);
 router.post('/super/crear-admin',  requireSuperAdmin, crearAdmin);
+
+// ── Exports CSV/JSON (admin_sig y super_admin) ────────────────────────────────
+router.get('/export/usuarios',    exportUsuarios);
+router.get('/export/solicitudes', exportSolicitudes);
+router.get('/export/audit',       exportAudit);
+router.get('/export/descargas',   exportDescargas);
 
 // ── Papelera (soft deletes) — solo super_admin ────────────────────────────────
 router.get('/papelera',                      requireSuperAdmin, getPapelera);
