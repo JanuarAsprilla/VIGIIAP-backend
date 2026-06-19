@@ -272,13 +272,26 @@ export async function batchUsuarios(req, res, next) {
     if (accion === 'cambiar-rol' && !ROLES_BATCH.includes(rol)) {
       return res.status(400).json({ error: `rol inválido. Opciones: ${ROLES_BATCH.join(', ')}` });
     }
+    // Solo super_admin puede promover a admin_sig
+    if (accion === 'cambiar-rol' && rol === 'admin_sig' && req.user.rol !== 'super_admin') {
+      return res.status(403).json({ error: 'Solo el super_admin puede asignar el rol admin_sig' });
+    }
 
-    // Proteger super_admin de operaciones batch
+    // Proteger contra auto-operación y cuentas super_admin
+    if (ids.includes(req.user.id)) {
+      return res.status(400).json({ error: 'No puedes operar sobre tu propia cuenta en batch' });
+    }
     const { rows: targets } = await query(
       'SELECT id, rol FROM usuarios WHERE id = ANY($1::uuid[])', [ids]
     );
     if (targets.some((u) => u.rol === 'super_admin')) {
       return res.status(403).json({ error: 'No se puede operar sobre cuentas super_admin en batch' });
+    }
+    // admin_sig no puede desactivar ni cambiar rol de otros admin_sig
+    if (req.user.rol !== 'super_admin' && ['desactivar', 'cambiar-rol'].includes(accion)) {
+      if (targets.some((u) => u.rol === 'admin_sig')) {
+        return res.status(403).json({ error: 'No puedes operar sobre otros admin_sig' });
+      }
     }
 
     let sql;

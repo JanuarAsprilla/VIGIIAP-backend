@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { issueTokenPair, revokeAllRefreshTokens } from './auth.service.js';
+import { verifyTotpOrBackup } from './twoFactor.service.js';
 import { resetPasswordSchema } from './auth.schema.js';
 import {
   COOKIE_NAME, REFRESH_COOKIE_NAME,
@@ -24,6 +25,18 @@ export async function changeExpiredPassword(req, res, next) {
     }
     if (payload.scope !== 'password-change') {
       return res.status(401).json({ error: 'Token incorrecto para este endpoint' });
+    }
+
+    // Si el usuario tiene 2FA activo, exigir código TOTP antes de permitir el cambio
+    const { rows: tfRow } = await query(
+      'SELECT totp_enabled FROM usuarios WHERE id = $1', [payload.id]
+    );
+    if (tfRow[0]?.totp_enabled) {
+      const { totpCode } = req.body;
+      if (!totpCode) {
+        return res.status(401).json({ error: 'Código TOTP requerido (2FA activo)' });
+      }
+      await verifyTotpOrBackup(payload.id, totpCode);
     }
 
     const { password } = resetPasswordSchema.pick({ password: true }).parse(req.body);
