@@ -82,6 +82,9 @@ export async function updatePassword(userId, currentPassword, newPassword) {
   if (!valid) throw Object.assign(new Error('Contraseña actual incorrecta'), { status: 401 });
 
   const hash = await bcrypt.hash(newPassword, 12);
-  await query('UPDATE usuarios SET password_hash=$1, actualizado_en=NOW() WHERE id=$2', [hash, userId]);
+  await query(
+    'UPDATE usuarios SET password_hash=$1, password_changed_at=NOW(), actualizado_en=NOW() WHERE id=$2',
+    [hash, userId]
+  );
   await revokeAllRefreshTokens(userId);
 }

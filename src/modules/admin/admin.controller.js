@@ -1,6 +1,7 @@
 import { query } from '../../config/database.js';
 import * as adminService from './admin.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
+import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /** GET /api/admin/notificaciones */
 export async function notificaciones(req, res, next) {
@@ -250,5 +251,70 @@ export async function scanLog(req, res, next) {
       params,
     );
     res.json({ data: rows });
+  } catch (err) { next(err); }
+}
+
+/** PATCH /api/admin/usuarios/batch — activar/desactivar/cambiar-rol en lote */
+export async function batchUsuarios(req, res, next) {
+  try {
+    const { ids, accion, rol } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids debe ser un array no vacío' });
+    }
+    if (ids.length > 50) {
+      return res.status(400).json({ error: 'Máximo 50 usuarios por operación batch' });
+    }
+    const ACCIONES = ['activar', 'desactivar', 'cambiar-rol'];
+    if (!ACCIONES.includes(accion)) {
+      return res.status(400).json({ error: `accion debe ser uno de: ${ACCIONES.join(', ')}` });
+    }
+    const ROLES_BATCH = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
+    if (accion === 'cambiar-rol' && !ROLES_BATCH.includes(rol)) {
+      return res.status(400).json({ error: `rol inválido. Opciones: ${ROLES_BATCH.join(', ')}` });
+    }
+    // Solo super_admin puede promover a admin_sig
+    if (accion === 'cambiar-rol' && rol === 'admin_sig' && req.user.rol !== 'super_admin') {
+      return res.status(403).json({ error: 'Solo el super_admin puede asignar el rol admin_sig' });
+    }
+
+    // Proteger contra auto-operación y cuentas super_admin
+    if (ids.includes(req.user.id)) {
+      return res.status(400).json({ error: 'No puedes operar sobre tu propia cuenta en batch' });
+    }
+    const { rows: targets } = await query(
+      'SELECT id, rol FROM usuarios WHERE id = ANY($1::uuid[])', [ids]
+    );
+    if (targets.some((u) => u.rol === 'super_admin')) {
+      return res.status(403).json({ error: 'No se puede operar sobre cuentas super_admin en batch' });
+    }
+    // admin_sig no puede desactivar ni cambiar rol de otros admin_sig
+    if (req.user.rol !== 'super_admin' && ['desactivar', 'cambiar-rol'].includes(accion)) {
+      if (targets.some((u) => u.rol === 'admin_sig')) {
+        return res.status(403).json({ error: 'No puedes operar sobre otros admin_sig' });
+      }
+    }
+
+    let sql;
+    const params = [ids];
+    if (accion === 'activar')    sql = 'UPDATE usuarios SET activo = true,  actualizado_en = NOW() WHERE id = ANY($1::uuid[])';
+    if (accion === 'desactivar') sql = 'UPDATE usuarios SET activo = false, actualizado_en = NOW() WHERE id = ANY($1::uuid[])';
+    if (accion === 'cambiar-rol') {
+      sql = 'UPDATE usuarios SET rol = $2, actualizado_en = NOW() WHERE id = ANY($1::uuid[])';
+      params.push(rol);
+    }
+
+    const result = await query(sql, params);
+
+    registrarAuditoria({
+      accion:       `batch_${accion.replace('-', '_')}`,
+      modulo:       'admin',
+      descripcion:  `Batch ${accion}: ${result.rowCount} usuarios afectados`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+      metadatos:    { ids, accion, rol: rol ?? null, afectados: result.rowCount },
+    });
+
+    res.json({ message: `${result.rowCount} usuarios actualizados`, afectados: result.rowCount });
   } catch (err) { next(err); }
 }

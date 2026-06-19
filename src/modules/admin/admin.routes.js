@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { getPapelera, restaurar } from './papelera.controller.js';
+import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog,
   getConfiguracion, setConfiguracion, notificaciones,
   superStats, crearAdmin,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
+  batchUsuarios,
 } from './admin.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 
@@ -17,6 +19,7 @@ router.get('/stats',            stats);
 router.get('/notificaciones',   notificaciones);
 router.get('/usuarios',         listarUsuarios);
 router.post('/usuarios',        crearUsuario);
+router.patch('/usuarios/batch',  batchUsuarios);      // ANTES de /:id para no conflictar
 router.patch('/usuarios/:id',   actualizarUsuario);
 router.delete('/usuarios/:id',  eliminarUsuario);
 router.get('/audit',            auditLog);
@@ -32,6 +35,12 @@ router.get('/scan-log',         scanLog);
 // ── Rutas exclusivas de super_admin ──────────────────────────────────────────
 router.get('/super/stats',         requireSuperAdmin, superStats);
 router.post('/super/crear-admin',  requireSuperAdmin, crearAdmin);
+
+// ── Exports CSV/JSON (admin_sig y super_admin) ────────────────────────────────
+router.get('/export/usuarios',    exportUsuarios);
+router.get('/export/solicitudes', exportSolicitudes);
+router.get('/export/audit',       exportAudit);
+router.get('/export/descargas',   exportDescargas);
 
 // ── Papelera (soft deletes) — solo super_admin ────────────────────────────────
 router.get('/papelera',                      requireSuperAdmin, getPapelera);

@@ -2,7 +2,10 @@ import rateLimit from 'express-rate-limit';
 
 export const rateLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_MAX) || 100,
+  // Usuarios autenticados tienen límite más generoso que anónimos
+  max: (req) => (req.user ? 500 : (Number(process.env.RATE_LIMIT_MAX) || 100)),
+  // Clave por usuario autenticado (previene bypass por IP compartida)
+  keyGenerator: (req) => req.user?.id ?? req.ip,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' },
@@ -17,10 +20,11 @@ export const authRateLimiter = rateLimit({
   message: { error: 'Demasiados intentos de autenticación. Intenta en 15 minutos.' },
 });
 
-/** Subida de archivos: máximo 10 por hora por IP. */
+/** Subida de archivos: máximo 10 por hora por usuario (no por IP). */
 export const uploadRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
+  keyGenerator: (req) => req.user?.id ?? req.ip,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Límite de subidas alcanzado. Máximo 10 archivos por hora.' },

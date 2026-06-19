@@ -26,8 +26,8 @@ const REFRESH_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS ?? '3
 const ACCESS_EXPIRES        = process.env.JWT_EXPIRES_IN ?? '15m';
 
 // Emite access token (corto) + refresh token (largo), persiste el refresh en BD.
-async function issueTokenPair(user, { ip, userAgent } = {}) {
-  const accessToken  = signToken({ id: user.id, email: user.email, rol: user.rol }, ACCESS_EXPIRES);
+export async function issueTokenPair(user, { ip, userAgent } = {}) {
+  const accessToken  = signToken({ id: user.id, email: user.email, rol: user.rol, scope: 'access' }, ACCESS_EXPIRES);
   const refreshToken = generateSecureToken();
   const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
   const expiraEn     = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 86_400_000);
@@ -106,7 +106,7 @@ const LOCKOUT_MINS = 15;
 export async function login(email, password, ip, userAgent) {
   const { rows } = await query(
     `SELECT id, nombre, email, password_hash, rol, activo, email_verified,
-            intentos_fallidos, bloqueado_hasta
+            intentos_fallidos, bloqueado_hasta, password_changed_at, creado_en
      FROM usuarios WHERE email = $1`,
     [email.toLowerCase()]
   );
@@ -164,6 +164,39 @@ export async function login(email, password, ip, userAgent) {
       new Error('Tu cuenta está pendiente de aprobación. Recibirás un correo cuando sea activada.'),
       { status: 403, code: 'ACCOUNT_INACTIVE' }
     );
+  }
+
+  // Verificar si la contraseña expiró (solo roles institucionales)
+  const EXPIRY_ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional'];
+  if (EXPIRY_ROLES.includes(user.rol)) {
+    const { rows: cfg } = await query(
+      "SELECT valor FROM configuracion WHERE clave = 'passwordExpiryDays'", []
+    );
+    const expiryDays = parseInt(cfg[0]?.valor ?? '90', 10);
+    const changedAt  = user.password_changed_at ?? user.creado_en;
+    const expired    = new Date(changedAt) < new Date(Date.now() - expiryDays * 86_400_000);
+    if (expired) {
+      const expiredToken = jwt.sign(
+        { id: user.id, email: user.email, rol: user.rol, scope: 'password-change' },
+        process.env.JWT_SECRET,
+        { expiresIn: '15m', algorithm: 'HS256' }
+      );
+      return { passwordExpired: true, expiredToken };
+    }
+  }
+
+  // Verificar si el usuario tiene 2FA activo
+  const { rows: tfRows } = await query(
+    'SELECT totp_enabled FROM usuarios WHERE id = $1', [user.id]
+  );
+  if (tfRows[0]?.totp_enabled) {
+    // Emitir token temporal de scope '2fa' válido 15 minutos
+    const twoFactorToken = jwt.sign(
+      { id: user.id, email: user.email, rol: user.rol, scope: '2fa' },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m', algorithm: 'HS256' }
+    );
+    return { requiresTwoFactor: true, twoFactorToken };
   }
 
   const { accessToken, refreshToken } = await issueTokenPair(
@@ -383,6 +416,7 @@ export async function resetPassword(token, newPassword) {
      SET password_hash = $1,
          password_reset_token = NULL,
          password_reset_expires = NULL,
+         password_changed_at = NOW(),
          actualizado_en = NOW()
      WHERE id = $2`,
     [password_hash, user.id]
