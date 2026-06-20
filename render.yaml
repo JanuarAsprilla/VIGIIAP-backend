@@ -1,0 +1,87 @@
+services:
+  - type: web
+    name: vigiiap-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # ─── Servidor ────────────────────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+
+      # ─── Base de datos (Supabase PostgreSQL + PostGIS) ──────────────────────
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_NAME
+        value: postgres
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        value: "true"
+
+      # ─── JWT ────────────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_DAYS
+        value: "30"
+
+      # ─── Cloudflare R2 ──────────────────────────────────────────────────────
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: R2_PUBLIC_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_BUCKET_URL
+        sync: false
+
+      # ─── CORS ───────────────────────────────────────────────────────────────
+      - key: CORS_ORIGIN
+        value: https://vigiiap.onrender.com,https://vigiiap.iiap.gov.co
+
+      # ─── Rate limiting ──────────────────────────────────────────────────────
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "100"
+
+      # ─── Email (SMTP) ────────────────────────────────────────────────────────
+      - key: MAIL_HOST
+        sync: false
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_SECURE
+        value: "false"
+      - key: MAIL_USER
+        sync: false
+      - key: MAIL_PASS
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: "VIGIIAP — IIAP"
+
+      # ─── Frontend URL (links en emails) ─────────────────────────────────────
+      - key: FRONTEND_URL
+        value: https://vigiiap.onrender.com
+
+      # ─── Redis (opcional — cache + email queue con retry) ───────────────────
+      # Dejar vacío si no se usa Redis; el sistema cae en fallback sin cache.
+      - key: REDIS_URL
+        sync: false
+
+      # ─── Sentry (opcional — monitoreo de errores en producción) ─────────────
+      - key: SENTRY_DSN
+        sync: false
