@@ -11,7 +11,7 @@ ALTER TABLE categorias ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_mapas_active       ON mapas      (id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_documentos_active  ON documentos (id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_noticias_active    ON noticias   (id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_categorias_active  ON categorias (id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_categorias_active  ON categorias (nombre) WHERE deleted_at IS NULL;
 
 COMMENT ON COLUMN mapas.deleted_at      IS 'Soft delete — NULL = activo, NOT NULL = en papelera';
 COMMENT ON COLUMN documentos.deleted_at IS 'Soft delete — NULL = activo, NOT NULL = en papelera';
