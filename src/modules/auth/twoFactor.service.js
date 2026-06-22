@@ -2,7 +2,8 @@
  * twoFactor.service.js — lógica de negocio 2FA TOTP
  * Separado del controller para facilitar testing unitario.
  */
-import { authenticator } from 'otplib';
+import { createRequire } from 'module';
+const { authenticator } = createRequire(import.meta.url)('otplib');
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
