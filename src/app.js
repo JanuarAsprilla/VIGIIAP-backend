@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -163,6 +164,7 @@ app.get('/reset-password/:token', (req, res) => {
 });
 
 // ─── Manejo de errores ────────────────────────────────────────────────────────
+Sentry.setupExpressErrorHandler(app);
 app.use(notFound);
 app.use(errorHandler);
 
