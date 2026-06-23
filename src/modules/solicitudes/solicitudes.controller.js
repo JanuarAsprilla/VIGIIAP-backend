@@ -1,6 +1,6 @@
 import { createSolicitudSchema, updateEstadoSchema, responderSchema } from './solicitudes.schema.js';
 import * as solService from './solicitudes.service.js';
-import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespuesta } from '../../utils/mailer.js';
+import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespuesta, notifySolicitudRecibida } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { query } from '../../config/database.js';
@@ -34,6 +34,14 @@ export async function store(req, res, next) {
     const solicitante = rows[0];
 
     if (solicitante) {
+      // Confirmación al solicitante
+      notifySolicitudRecibida({
+        email:  solicitante.email,
+        nombre: solicitante.nombre,
+        tipo:   data.tipo,
+      }).catch(err => logger.error('[solicitudes] Email recibida error:', err.message));
+
+      // Aviso a todos los admins
       getAdminEmails()
         .then((adminEmails) =>
           adminEmails.forEach((adminEmail) =>
@@ -98,6 +106,44 @@ export async function updateEstado(req, res, next) {
     });
 
     res.json(solicitud);
+  } catch (err) { next(err); }
+}
+
+export async function uploadArchivo(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Se requiere un archivo' });
+    }
+    const isAdmin = ['admin_sig', 'super_admin'].includes(req.user.rol);
+    const archivo = await solService.addArchivo(
+      req.params.id, req.file, req.user.id, isAdmin, req.ip
+    );
+    res.status(201).json(archivo);
+  } catch (err) { next(err); }
+}
+
+export async function getArchivos(req, res, next) {
+  try {
+    const isAdmin = ['admin_sig', 'super_admin'].includes(req.user.rol);
+    const archivos = await solService.getArchivos(req.params.id, req.user.id, isAdmin);
+    res.json(archivos);
+  } catch (err) { next(err); }
+}
+
+export async function downloadArchivo(req, res, next) {
+  try {
+    const isAdmin = ['admin_sig', 'super_admin'].includes(req.user.rol);
+    const result = await solService.getArchivoPresignedUrl(
+      req.params.id, req.params.archivoId, req.user.id, isAdmin
+    );
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
+export async function deleteArchivo(req, res, next) {
+  try {
+    await solService.removeArchivo(req.params.id, req.params.archivoId, req.user.id);
+    res.status(204).end();
   } catch (err) { next(err); }
 }
 
