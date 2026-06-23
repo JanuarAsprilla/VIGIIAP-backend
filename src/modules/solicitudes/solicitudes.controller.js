@@ -14,6 +14,13 @@ export async function mine(req, res, next) {
   try { res.json(await solService.getMine(req.user.id, req.query)); } catch (err) { next(err); }
 }
 
+export async function show(req, res, next) {
+  try {
+    const isAdmin = ['admin_sig', 'super_admin'].includes(req.user.rol);
+    res.json(await solService.getById(req.params.id, req.user.id, isAdmin));
+  } catch (err) { next(err); }
+}
+
 export async function store(req, res, next) {
   try {
     const data = createSolicitudSchema.parse(req.body);

@@ -132,31 +132,44 @@ describe('solicitudes.service → create()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('inserta y retorna la solicitud creada', async () => {
-    query.mockResolvedValueOnce({ rows: [SOL] });
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate limit check
+      .mockResolvedValueOnce({ rows: [SOL] });            // INSERT
 
     const result = await create(
       { tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos' },
       'usr-uuid-1'
     );
     expect(result.id).toBe('sol-uuid-1');
-    expect(query).toHaveBeenCalledOnce();
-    const params = query.mock.calls[0][1];
+    expect(query).toHaveBeenCalledTimes(2);
+    const params = query.mock.calls[1][1]; // 2nd call = INSERT
     expect(params).toContain('uso-suelo');
     expect(params).toContain('usr-uuid-1');
   });
 
   it('pasa descripción aunque sea undefined (BD puede manejarla como null)', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
     const result = await create({ tipo: 'biodiversidad', descripcion: undefined }, 'usr-2');
     expect(result).toBeDefined();
-    expect(query).toHaveBeenCalledOnce();
   });
 
   it('el SQL de INSERT hace RETURNING *', async () => {
-    query.mockResolvedValueOnce({ rows: [SOL] });
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [SOL] });
     await create({ tipo: 'agua', descripcion: 'Test' }, 'usr-3');
-    const sql = query.mock.calls[0][0];
+    const sql = query.mock.calls[1][0]; // 2nd call = INSERT
     expect(sql).toMatch(/RETURNING/i);
+  });
+
+  it('lanza 429 si el usuario supera 5 solicitudes en 24 horas', async () => {
+    query.mockResolvedValueOnce({ rows: [{ count: '5' }] });
+    await expect(
+      create({ tipo: 'uso-suelo', descripcion: 'Solicitud extra' }, 'usr-spam')
+    ).rejects.toMatchObject({ status: 429 });
+    expect(query).toHaveBeenCalledOnce(); // solo el rate limit check, nunca el INSERT
   });
 });
 
@@ -165,23 +178,29 @@ describe('solicitudes.service → updateEstado()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('actualiza a "aprobada" y retorna el registro actualizado', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'aprobada' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })             // SELECT estado actual
+      .mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'aprobada' }] });     // UPDATE
 
     const result = await updateEstado('sol-uuid-1', 'aprobada', 'Todo correcto', 'admin-uuid');
     expect(result.estado).toBe('aprobada');
   });
 
   it('actualiza a "rechazada" con nota_admin', async () => {
-    query.mockResolvedValueOnce({
-      rows: [{ ...SOL, estado: 'rechazada', nota_admin: 'Datos incompletos' }],
-    });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({
+        rows: [{ ...SOL, estado: 'rechazada', nota_admin: 'Datos incompletos' }],
+      });
     const result = await updateEstado('sol-uuid-1', 'rechazada', 'Datos incompletos', 'admin-uuid');
     expect(result.estado).toBe('rechazada');
     expect(result.nota_admin).toBe('Datos incompletos');
   });
 
   it('actualiza a "en_revision"', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'en_revision' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'en_revision' }] });
     const result = await updateEstado('sol-uuid-1', 'en_revision', null, 'admin-uuid');
     expect(result.estado).toBe('en_revision');
   });
@@ -200,10 +219,19 @@ describe('solicitudes.service → updateEstado()', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  it('lanza 422 si la transición de estado no es válida', async () => {
+    query.mockResolvedValueOnce({ rows: [{ estado: 'resuelta' }] }); // estado final
+    await expect(
+      updateEstado('sol-uuid-1', 'pendiente', null, 'admin-uuid')
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
   it('pasa nota como null cuando se omite', async () => {
-    query.mockResolvedValueOnce({ rows: [SOL] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [SOL] });
     await updateEstado('sol-uuid-1', 'en_revision', undefined, 'admin-uuid');
-    const params = query.mock.calls[0][1];
+    const params = query.mock.calls[1][1]; // 2nd call = UPDATE
     expect(params[1]).toBeNull();
   });
 });
@@ -213,21 +241,32 @@ describe('solicitudes.service → responder()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('marca como resuelta y persiste la respuesta', async () => {
-    query.mockResolvedValueOnce({
-      rows: [{ ...SOL, estado: 'resuelta', nota_admin: 'Acceso concedido' }],
-    });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'aprobada' }] })              // SELECT estado
+      .mockResolvedValueOnce({
+        rows: [{ ...SOL, estado: 'resuelta', nota_admin: 'Acceso concedido' }],
+      });
     const result = await responder('sol-uuid-1', 'Acceso concedido', 'admin-uuid');
     expect(result.estado).toBe('resuelta');
     expect(result.nota_admin).toBe('Acceso concedido');
   });
 
   it('incluye respuesta y adminId en los params del UPDATE', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'resuelta' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'en_revision' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'resuelta' }] });
     await responder('sol-uuid-1', 'Respuesta al solicitante', 'admin-uuid');
-    const params = query.mock.calls[0][1];
+    const params = query.mock.calls[1][1]; // 2nd call = UPDATE
     expect(params[0]).toBe('Respuesta al solicitante');
     expect(params[1]).toBe('admin-uuid');
     expect(params[2]).toBe('sol-uuid-1');
+  });
+
+  it('lanza 422 si la solicitud ya está resuelta', async () => {
+    query.mockResolvedValueOnce({ rows: [{ estado: 'resuelta' }] });
+    await expect(
+      responder('sol-uuid-1', 'Ya resuelta', 'admin-uuid')
+    ).rejects.toMatchObject({ status: 422 });
   });
 
   it('lanza 404 si la solicitud no existe', async () => {
