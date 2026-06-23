@@ -1,5 +1,9 @@
+import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
+import { validateFile, sha256 } from '../../middlewares/fileGuard.js';
+import { uploadFile, getPresignedUrl, deleteFileByUrl, extractKey } from '../../config/r2.js';
+import { registrarScanArchivo } from '../../utils/dataCustody.js';
 
 const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'resuelta'];
 
@@ -146,6 +150,133 @@ export async function updateEstado(id, estado, nota, adminId) {
   );
   return rows[0];
 }
+
+// ─── Archivos adjuntos ────────────────────────────────────────────────────────
+
+const MAX_ARCHIVOS = 5;
+
+function validateSolicitudFile(file) {
+  const docResult = validateFile(file, 'document');
+  if (docResult.valid) return docResult;
+  const imgResult = validateFile(file, 'image');
+  if (imgResult.valid) return imgResult;
+  return { valid: false, error: 'Tipo de archivo no permitido. Aceptados: PDF, JPEG, PNG, WebP.' };
+}
+
+export async function addArchivo(solicitudId, file, userId, isAdmin, ip) {
+  // Verificar acceso: el dueño o el admin pueden adjuntar
+  const params = [solicitudId];
+  const ownerClause = isAdmin ? '' : 'AND usuario_id = $2';
+  if (!isAdmin) params.push(userId);
+  const { rows: sol } = await query(
+    `SELECT id, estado FROM solicitudes WHERE id = $1 ${ownerClause}`, params
+  );
+  if (!sol[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
+  if (sol[0].estado === 'resuelta' && !isAdmin) {
+    throw Object.assign(new Error('No se pueden adjuntar archivos a una solicitud ya resuelta'), { status: 422 });
+  }
+
+  // Verificar límite de archivos
+  const { rows: cnt } = await query(
+    'SELECT COUNT(*) FROM solicitud_archivos WHERE solicitud_id = $1', [solicitudId]
+  );
+  if (Number(cnt[0].count) >= MAX_ARCHIVOS) {
+    throw Object.assign(
+      new Error(`Límite de ${MAX_ARCHIVOS} archivos por solicitud alcanzado`), { status: 422 }
+    );
+  }
+
+  // Validar contenido del archivo
+  const validation = validateSolicitudFile(file);
+  const hash = sha256(file.buffer);
+
+  if (!validation.valid) {
+    registrarScanArchivo({
+      archivoKey: `solicitudes/${solicitudId}/rejected-${Date.now()}`,
+      sha256Hash: hash, mimeType: file.mimetype,
+      tamanioBytes: file.buffer.length, uploadedBy: userId, ipOrigen: ip,
+      resultado: 'rejected', detalle: validation.error,
+    }).catch(() => {});
+    throw Object.assign(new Error(validation.error), { status: 422 });
+  }
+
+  const ext = (file.originalname ?? 'file').split('.').pop().toLowerCase();
+  const key = `solicitudes/${solicitudId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const url = await uploadFile(key, file.buffer, file.mimetype, false);
+
+  registrarScanArchivo({
+    archivoKey: key, sha256Hash: hash, mimeType: file.mimetype,
+    tamanioBytes: file.buffer.length, uploadedBy: userId, ipOrigen: ip,
+    resultado: 'clean',
+  }).catch(() => {});
+
+  const { rows } = await query(
+    `INSERT INTO solicitud_archivos (solicitud_id, nombre, url, mime_type, tamano_bytes, subido_por)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, nombre, mime_type, tamano_bytes, creado_en`,
+    [solicitudId, file.originalname, url, file.mimetype, file.buffer.length, userId]
+  );
+  return rows[0];
+}
+
+export async function getArchivos(solicitudId, userId, isAdmin) {
+  const params = [solicitudId];
+  const ownerCheck = isAdmin ? '' : `
+    AND EXISTS (
+      SELECT 1 FROM solicitudes WHERE id = $1 AND usuario_id = $2
+    )`;
+  if (!isAdmin) params.push(userId);
+
+  const { rows: sol } = await query(
+    `SELECT id FROM solicitudes WHERE id = $1 ${isAdmin ? '' : 'AND usuario_id = $2'}`, params
+  );
+  if (!sol[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
+
+  const { rows } = await query(
+    `SELECT sa.id, sa.nombre, sa.mime_type, sa.tamano_bytes, sa.creado_en,
+            u.nombre AS subido_por_nombre
+     FROM solicitud_archivos sa
+     LEFT JOIN usuarios u ON u.id = sa.subido_por
+     WHERE sa.solicitud_id = $1
+     ORDER BY sa.creado_en ASC`,
+    [solicitudId]
+  );
+  return rows;
+}
+
+export async function getArchivoPresignedUrl(solicitudId, archivoId, userId, isAdmin) {
+  const params = [solicitudId];
+  if (!isAdmin) params.push(userId);
+
+  const { rows: sol } = await query(
+    `SELECT id FROM solicitudes WHERE id = $1 ${isAdmin ? '' : 'AND usuario_id = $2'}`, params
+  );
+  if (!sol[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
+
+  const { rows } = await query(
+    'SELECT url, nombre FROM solicitud_archivos WHERE id = $1 AND solicitud_id = $2',
+    [archivoId, solicitudId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Archivo no encontrado'), { status: 404 });
+
+  const key = extractKey(rows[0].url);
+  if (!key) throw Object.assign(new Error('No se pudo generar el enlace de descarga'), { status: 500 });
+
+  const presignedUrl = await getPresignedUrl(key, 180);
+  return { url: presignedUrl, nombre: rows[0].nombre };
+}
+
+export async function removeArchivo(solicitudId, archivoId, adminId) {
+  const { rows } = await query(
+    'SELECT url FROM solicitud_archivos WHERE id = $1 AND solicitud_id = $2',
+    [archivoId, solicitudId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Archivo no encontrado'), { status: 404 });
+
+  await deleteFileByUrl(rows[0].url);
+  await query('DELETE FROM solicitud_archivos WHERE id = $1', [archivoId]);
+}
+
+// ─── Responder ────────────────────────────────────────────────────────────────
 
 export async function responder(id, respuesta, adminId) {
   // Validar que no esté ya resuelta
