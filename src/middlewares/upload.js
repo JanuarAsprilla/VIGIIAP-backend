@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import multer from 'multer';
-import { uploadFile, isPublicUrl } from '../config/r2.js';
+import { uploadFile } from '../config/r2.js';
 import { validateFile, sha256 } from './fileGuard.js';
 import { registrarScanArchivo } from '../utils/dataCustody.js';
 

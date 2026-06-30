@@ -2,7 +2,7 @@
  * twoFactor.service.js — lógica de negocio 2FA TOTP
  * Separado del controller para facilitar testing unitario.
  */
-import { authenticator } from 'otplib';
+import * as OTPAuth from 'otpauth';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
@@ -20,10 +20,13 @@ export async function setupTotp(userId, email) {
       { status: 409 }
     );
   }
-  const secret     = authenticator.generateSecret();
-  const otpauthUrl = authenticator.keyuri(email, APP_NAME, secret);
-  await query('UPDATE usuarios SET totp_secret = $1 WHERE id = $2', [secret, userId]);
-  return { secret, otpauthUrl };
+  const secret     = new OTPAuth.Secret();
+  const secretB32  = secret.base32;
+  const totp       = new OTPAuth.TOTP({ issuer: APP_NAME, label: email, secret, period: 30 });
+  const otpauthUrl = totp.toString();
+
+  await query('UPDATE usuarios SET totp_secret = $1 WHERE id = $2', [secretB32, userId]);
+  return { secret: secretB32, otpauthUrl };
 }
 
 /** Verifica el código TOTP, activa 2FA y devuelve backup codes. */
@@ -37,7 +40,7 @@ export async function enableTotp(userId, code) {
   if (rows[0].totp_enabled) {
     throw Object.assign(new Error('2FA ya está activado'), { status: 409 });
   }
-  if (!authenticator.check(code, rows[0].totp_secret)) {
+  if (!checkTotp(code, rows[0].totp_secret)) {
     throw Object.assign(new Error('Código TOTP inválido'), { status: 401 });
   }
 
@@ -59,7 +62,7 @@ export async function verifyTotpOrBackup(userId, code) {
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
-  if (authenticator.check(code, rows[0].totp_secret)) return true;
+  if (checkTotp(code, rows[0].totp_secret)) return true;
 
   const codes = rows[0].totp_backup_codes ?? [];
   for (let i = 0; i < codes.length; i++) {
@@ -81,11 +84,22 @@ export async function disableTotp(userId, code) {
     'SELECT totp_secret FROM usuarios WHERE id = $1 AND totp_enabled = true', [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('2FA no está activado'), { status: 400 });
-  if (!authenticator.check(code, rows[0].totp_secret)) {
+  if (!checkTotp(code, rows[0].totp_secret)) {
     throw Object.assign(new Error('Código TOTP inválido'), { status: 401 });
   }
   await query(
     'UPDATE usuarios SET totp_enabled = false, totp_secret = NULL, totp_backup_codes = NULL WHERE id = $1',
     [userId]
   );
+}
+
+/** Verifica un token TOTP con ventana de ±1 paso (30s de tolerancia). */
+function checkTotp(token, secretB32) {
+  try {
+    const totp  = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secretB32), period: 30 });
+    const delta = totp.validate({ token, window: 1 });
+    return delta !== null;
+  } catch {
+    return false;
+  }
 }
