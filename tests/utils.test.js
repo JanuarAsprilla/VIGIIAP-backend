@@ -2,7 +2,7 @@
  * Tests unitarios para utilidades puras: paginate, slugify.
  * No requieren mocks — son funciones deterministas sin efectos secundarios.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { paginate } from '../src/utils/paginate.js';
 import { slugify } from '../src/utils/slugify.js';
 
@@ -135,5 +135,29 @@ describe('slugify()', () => {
 
   it('maneja números solos', () => {
     expect(slugify('2024')).toBe('2024');
+  });
+});
+
+
+// ── notFound middleware ──────────────────────────────────────────────────────
+import { notFound } from '../src/middlewares/notFound.js';
+
+describe('notFound middleware', () => {
+  it('responds 404 with route info', () => {
+    const req = { method: 'GET', originalUrl: '/api/inexistente' };
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    notFound(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Ruta no encontrada: GET /api/inexistente',
+    });
+  });
+
+  it('includes method and path in error message', () => {
+    const req = { method: 'DELETE', originalUrl: '/api/algo' };
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    notFound(req, res);
+    expect(res.json.mock.calls[0][0].error).toContain('DELETE');
+    expect(res.json.mock.calls[0][0].error).toContain('/api/algo');
   });
 });

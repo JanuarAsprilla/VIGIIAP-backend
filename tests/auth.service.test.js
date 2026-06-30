@@ -353,3 +353,140 @@ describe('resetPassword()', () => {
     });
   });
 });
+
+// ─── Additional imports for new tests ─────────────────────────────────────────
+import { verifyEmail, reenviarVerificacion, solicitarRecuperacion } from '../src/modules/auth/auth.service.js';
+import { query } from '../src/config/database.js';
+
+describe('verifyEmail()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna alreadyVerified=true si el email ya estaba verificado', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', email_verified: true, email_verification_expires: new Date() }] });
+    const result = await verifyEmail('valid-token');
+    expect(result.alreadyVerified).toBe(true);
+  });
+
+  it('lanza 400 si el token no existe en BD', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(verifyEmail('bad-token')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('lanza 400 si el token está expirado', async () => {
+    const expired = new Date(Date.now() - 3600000); // 1 hora atrás
+    query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', email_verified: false, email_verification_expires: expired }] });
+    await expect(verifyEmail('expired-token')).rejects.toMatchObject({ status: 400, code: 'TOKEN_EXPIRED' });
+  });
+
+  it('verifica el email y retorna alreadyVerified=false', async () => {
+    const future = new Date(Date.now() + 3600000);
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', email_verified: false, email_verification_expires: future }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'u1' }] });
+    const result = await verifyEmail('valid-token');
+    expect(result.alreadyVerified).toBe(false);
+    expect(result.email).toBe('j@j.co');
+  });
+});
+
+describe('reenviarVerificacion()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna undefined si el usuario no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const result = await reenviarVerificacion('no@existe.co');
+    expect(result).toBeUndefined();
+  });
+
+  it('retorna undefined si el email ya está verificado', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', email_verified: true }] });
+    const result = await reenviarVerificacion('j@j.co');
+    expect(result).toBeUndefined();
+  });
+
+  it('genera nuevo token y retorna datos para enviar email', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', email_verified: false }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const result = await reenviarVerificacion('j@j.co');
+    expect(result).toHaveProperty('verificationToken');
+    expect(result.email).toBe('j@j.co');
+  });
+});
+
+describe('solicitarRecuperacion()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna null si el usuario no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const result = await solicitarRecuperacion('no@existe.co');
+    expect(result).toBeNull();
+  });
+
+  it('genera token de reset y retorna datos para enviar email', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', email_verified: true, activo: true }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const result = await solicitarRecuperacion('j@j.co');
+    expect(result).toHaveProperty('resetToken');
+    expect(result.email).toBe('j@j.co');
+  });
+});
+
+describe('login() — bloqueo por 5 intentos fallidos', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('bloquea la cuenta después de 5 intentos fallidos', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(false);
+    const userWith4Attempts = { ...mockUser, intentos_fallidos: 4 };
+    query.mockResolvedValueOnce({ rows: [userWith4Attempts] }); // SELECT user
+    query.mockResolvedValueOnce({ rows: [] }); // UPDATE intentos_fallidos (bloquear=true)
+
+    await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
+      .rejects.toMatchObject({ status: 401 });
+
+    // Verificar que se bloquea con NULL reset en intentos y fecha de bloqueo
+    const updateParams = query.mock.calls[1][1];
+    expect(updateParams[0]).toBe(0); // bloquear ? 0 : nuevosIntentos
+    expect(updateParams[1]).toBeInstanceOf(Date); // fecha de bloqueo
+  });
+
+  it('intentos_fallidos es null → usa 0 como base', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(false);
+    const userWithNullAttempts = { ...mockUser, intentos_fallidos: null };
+    query.mockResolvedValueOnce({ rows: [userWithNullAttempts] });
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
+      .rejects.toMatchObject({ status: 401 });
+
+    const updateParams = query.mock.calls[1][1];
+    expect(updateParams[0]).toBe(1); // null ?? 0 + 1 = 1
+  });
+});
+
+describe('register() — perfilToRol branches', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('asigna rol "tecnico" cuando perfil es "tecnico"', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.hash.mockResolvedValue('$2a$12$hashed');
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'T', email: 't@t.co', rol: 'tecnico' }] });
+    await register({ nombre: 'T', email: 't@t.co', password: 'Pass!123', perfil: 'tecnico', motivo: 'x', tipoAcceso: 'externo' });
+    const insertParams = query.mock.calls[1][1];
+    expect(insertParams).toContain('tecnico');
+  });
+
+  it('asigna rol "institucional" cuando perfil es "institucional"', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.hash.mockResolvedValue('$2a$12$hashed');
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'I', email: 'i@i.co', rol: 'institucional' }] });
+    await register({ nombre: 'I', email: 'i@i.co', password: 'Pass!123', perfil: 'institucional', motivo: 'x', tipoAcceso: 'externo' });
+    const insertParams = query.mock.calls[1][1];
+    expect(insertParams).toContain('institucional');
+  });
+});

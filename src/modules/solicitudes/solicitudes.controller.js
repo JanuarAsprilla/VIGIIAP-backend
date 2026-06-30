@@ -14,6 +14,50 @@ export async function mine(req, res, next) {
   try { res.json(await solService.getMine(req.user.id, req.query)); } catch (err) { next(err); }
 }
 
+export async function show(req, res, next) {
+  try {
+    res.json(await solService.getById(req.params.id, req.user.id, req.user.rol));
+  } catch (err) { next(err); }
+}
+
+export async function listArchivos(req, res, next) {
+  try {
+    res.json(await solService.getArchivos(req.params.id));
+  } catch (err) { next(err); }
+}
+
+export async function uploadArchivo(req, res, next) {
+  try {
+    const archivoUrl = req.body.archivo_url;
+    if (!archivoUrl) return res.status(400).json({ error: 'Archivo requerido' });
+    const archivo = await solService.addArchivo(
+      req.params.id,
+      {
+        nombre:       req.body.nombre ?? req.file?.originalname ?? 'archivo',
+        archivo_url:  archivoUrl,
+        tamano_bytes: req.body.archivo_tamano_bytes ? Number(req.body.archivo_tamano_bytes) : 0,
+        mime_type:    req.file?.mimetype ?? req.body.mime_type,
+      },
+      req.user.id,
+    );
+    res.status(201).json(archivo);
+  } catch (err) { next(err); }
+}
+
+export async function deleteArchivo(req, res, next) {
+  try {
+    await solService.removeArchivo(req.params.id, req.params.archivoId);
+    res.status(204).end();
+  } catch (err) { next(err); }
+}
+
+export async function downloadArchivo(req, res, next) {
+  try {
+    const result = await solService.getArchivoPresignedUrl(req.params.id, req.params.archivoId);
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
 export async function store(req, res, next) {
   try {
     const data = createSolicitudSchema.parse(req.body);

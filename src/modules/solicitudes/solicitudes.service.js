@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
+import { getPresignedUrl, extractKey, isPublicUrl } from '../../config/r2.js';
 
 const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'resuelta'];
 
@@ -81,4 +82,57 @@ export async function responder(id, respuesta, adminId) {
   );
   if (!rows[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
   return rows[0];
+}
+
+export async function getById(id, userId, userRol) {
+  const isAdmin = ['admin_sig', 'super_admin'].includes(userRol);
+  const { rows } = await query(
+    `SELECT s.*, u.nombre AS solicitante, u.email AS solicitante_email
+     FROM solicitudes s JOIN usuarios u ON u.id = s.usuario_id
+     WHERE s.id = $1 ${isAdmin ? '' : 'AND s.usuario_id = $2'}`,
+    isAdmin ? [id] : [id, userId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
+  return rows[0];
+}
+
+export async function getArchivos(solicitudId) {
+  const { rows } = await query(
+    `SELECT id, nombre, tamano_bytes, mime_type, creado_en
+     FROM solicitud_archivos WHERE solicitud_id = $1 ORDER BY creado_en ASC`,
+    [solicitudId]
+  );
+  return rows;
+}
+
+export async function addArchivo(solicitudId, { nombre, archivo_url, tamano_bytes, mime_type }, userId) {
+  const { rows } = await query(
+    `INSERT INTO solicitud_archivos (solicitud_id, nombre, archivo_url, tamano_bytes, mime_type, subido_por)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, nombre, tamano_bytes, mime_type, creado_en`,
+    [solicitudId, nombre, archivo_url, tamano_bytes ?? 0, mime_type ?? 'application/octet-stream', userId]
+  );
+  return rows[0];
+}
+
+export async function removeArchivo(solicitudId, archivoId) {
+  const { rows } = await query(
+    `DELETE FROM solicitud_archivos WHERE id=$1 AND solicitud_id=$2 RETURNING archivo_url`,
+    [archivoId, solicitudId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Archivo no encontrado'), { status: 404 });
+  return rows[0];
+}
+
+export async function getArchivoPresignedUrl(solicitudId, archivoId) {
+  const { rows } = await query(
+    `SELECT archivo_url FROM solicitud_archivos WHERE id=$1 AND solicitud_id=$2`,
+    [archivoId, solicitudId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Archivo no encontrado'), { status: 404 });
+  const { archivo_url } = rows[0];
+  if (isPublicUrl(archivo_url)) return { url: archivo_url };
+  const key = extractKey(archivo_url);
+  if (!key) throw Object.assign(new Error('No se pudo resolver el archivo'), { status: 500 });
+  const url = await getPresignedUrl(key, 120);
+  return { url };
 }

@@ -13,6 +13,14 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
+vi.mock('../src/config/r2.js', () => ({
+  uploadFile:      vi.fn(),
+  deleteFile:      vi.fn(),
+  extractKey:      vi.fn((url) => url?.split('/').pop() ?? null),
+  isPublicUrl:     vi.fn((url) => !!url?.startsWith('https://files.test.local')),
+  getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.test.local/file'),
+}));
+
 import { query } from '../src/config/database.js';
 import {
   getAll,
@@ -235,5 +243,111 @@ describe('solicitudes.service → responder()', () => {
     await expect(
       responder('no-existe', 'respuesta', 'admin-uuid')
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ─── getById() ─────────────────────────────────────────────────────────────
+
+import { getById, getArchivos, addArchivo, removeArchivo, getArchivoPresignedUrl } from '../src/modules/solicitudes/solicitudes.service.js';
+import { isPublicUrl, extractKey, getPresignedUrl } from '../src/config/r2.js';
+
+describe('solicitudes.service → getById()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('admin puede ver cualquier solicitud (sin filtro usuario_id)', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...SOL, solicitante: 'Juan' }] });
+    const result = await getById(SOL.id, 'other-user', 'admin_sig');
+    const sql = query.mock.calls[0][0];
+    const params = query.mock.calls[0][1];
+    expect(params).toHaveLength(1);
+  });
+
+  it('usuario normal solo ve sus propias solicitudes', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...SOL, solicitante: 'Juan' }] });
+    const result = await getById(SOL.id, SOL.usuario_id, 'investigador');
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/usuario_id/);
+    expect(result).toBeDefined();
+  });
+
+  it('lanza 404 si la solicitud no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(getById('no-existe', 'u1', 'investigador')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('solicitudes.service → getArchivos()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna los archivos de la solicitud', async () => {
+    const archivos = [{ id: 'a1', nombre: 'doc.pdf' }];
+    query.mockResolvedValueOnce({ rows: archivos });
+    const result = await getArchivos(SOL.id);
+    expect(result).toEqual(archivos);
+  });
+
+  it('retorna lista vacía si no hay archivos', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const result = await getArchivos(SOL.id);
+    expect(result).toEqual([]);
+  });
+});
+
+describe('solicitudes.service → addArchivo()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('inserta el archivo y retorna el registro creado', async () => {
+    const arch = { id: 'a1', nombre: 'doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf', creado_en: new Date() };
+    query.mockResolvedValueOnce({ rows: [arch] });
+    const result = await addArchivo(SOL.id, { nombre: 'doc.pdf', archivo_url: 'https://r2.local/doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf' }, 'u1');
+    expect(result.nombre).toBe('doc.pdf');
+  });
+});
+
+describe('solicitudes.service → removeArchivo()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('elimina el archivo y retorna la url', async () => {
+    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://r2.local/doc.pdf' }] });
+    const result = await removeArchivo(SOL.id, 'a1');
+    expect(result.archivo_url).toContain('doc.pdf');
+  });
+
+  it('lanza 404 si el archivo no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(removeArchivo(SOL.id, 'no-existe')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('solicitudes.service → getArchivoPresignedUrl()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna la URL pública directamente si isPublicUrl=true', async () => {
+    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] });
+    isPublicUrl.mockReturnValueOnce(true);
+    const result = await getArchivoPresignedUrl(SOL.id, 'a1');
+    expect(result.url).toBe('https://files.test.local/doc.pdf');
+    expect(getPresignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('genera URL prefirmada para archivo privado', async () => {
+    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://private.r2.local/doc.pdf' }] });
+    isPublicUrl.mockReturnValueOnce(false);
+    extractKey.mockReturnValueOnce('doc.pdf');
+    const result = await getArchivoPresignedUrl(SOL.id, 'a1');
+    expect(getPresignedUrl).toHaveBeenCalledWith('doc.pdf', 120);
+    expect(result.url).toBe('https://presigned.test.local/file');
+  });
+
+  it('lanza 404 si el archivo no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(getArchivoPresignedUrl(SOL.id, 'no-existe')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('lanza 500 si extractKey retorna null', async () => {
+    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://private.r2.local/doc.pdf' }] });
+    isPublicUrl.mockReturnValueOnce(false);
+    extractKey.mockReturnValueOnce(null);
+    await expect(getArchivoPresignedUrl(SOL.id, 'a1')).rejects.toMatchObject({ status: 500 });
   });
 });

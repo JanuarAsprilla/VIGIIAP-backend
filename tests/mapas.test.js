@@ -4,11 +4,12 @@ import jwt from 'jsonwebtoken';
 import app from '../src/app.js';
 
 vi.mock('../src/modules/mapas/mapas.service.js', () => ({
-  getAll:     vi.fn(),
-  getBySlug:  vi.fn(),
-  create:     vi.fn(),
-  update:     vi.fn(),
-  remove:     vi.fn(),
+  getAll:    vi.fn(),
+  getBySlug: vi.fn(),
+  create:    vi.fn(),
+  update:    vi.fn(),
+  setActivo: vi.fn(),
+  remove:    vi.fn(),
 }));
 
 vi.mock('../src/config/database.js', () => ({
@@ -97,5 +98,66 @@ describe('DELETE /api/mapas/:id', () => {
       .delete('/api/mapas/uuid-1')
       .set('Authorization', `Bearer ${publicToken}`);
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── Direct tests for update/patchActivo/destroy ──────────────────────────
+
+import { update, patchActivo, destroy } from '../src/modules/mapas/mapas.controller.js';
+
+describe('mapas.controller → update()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('actualiza mapa y responde con el resultado', async () => {
+    
+    mapaService.update.mockResolvedValueOnce({ id: 'uuid-m1', titulo: 'Mapa Bio' });
+    const req = { params: { id: 'uuid-m1' }, body: { titulo: 'Mapa Bio' }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    const r = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+    await update(req, r, vi.fn());
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ titulo: 'Mapa Bio' }));
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    
+    const next = vi.fn();
+    mapaService.update.mockRejectedValueOnce(new Error('not found'));
+    const req = { params: { id: 'x' }, body: {}, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    await update(req, { json: vi.fn() }, next);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('mapas.controller → patchActivo()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('publica el mapa y responde con el resultado', async () => {
+    
+    mapaService.setActivo.mockResolvedValueOnce({ id: 'uuid-m1', titulo: 'Bio', activo: true });
+    const req = { params: { id: 'uuid-m1' }, body: { activo: true }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    const r = { json: vi.fn() };
+    await patchActivo(req, r, vi.fn());
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ activo: true }));
+  });
+
+  it('despublica el mapa (activo=false)', async () => {
+    
+    mapaService.setActivo.mockResolvedValueOnce({ id: 'uuid-m1', titulo: 'Bio', activo: false });
+    const req = { params: { id: 'uuid-m1' }, body: { activo: false }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    const r = { json: vi.fn() };
+    await patchActivo(req, r, vi.fn());
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ activo: false }));
+  });
+});
+
+describe('mapas.controller → destroy()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('elimina mapa y responde 204', async () => {
+    
+    mapaService.remove.mockResolvedValueOnce(undefined);
+    const req = { params: { id: 'uuid-m1' }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    const r = { status: vi.fn().mockReturnThis(), end: vi.fn() };
+    await destroy(req, r, vi.fn());
+    expect(r.status).toHaveBeenCalledWith(204);
   });
 });

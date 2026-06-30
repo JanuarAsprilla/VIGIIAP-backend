@@ -5,11 +5,12 @@ export default defineConfig({
     setupFiles: ['./tests/setup.js'],
     environment: 'node',
     globals: false,
+    exclude: ['node_modules/**', '.claude/**'],
     coverage: {
-      provider: 'v8',
+      provider: 'istanbul',
       reporter: ['text', 'html'],
       include: ['src/**/*.js'],
-      exclude: ['src/config/**', 'src/utils/logger.js'],
+      exclude: ['src/config/**', 'src/utils/logger.js', '.claude/**'],
       thresholds: {
         statements: 80,
         branches: 80,

@@ -4,15 +4,29 @@ import jwt from 'jsonwebtoken';
 import app from '../src/app.js';
 
 vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
-  getAll:        vi.fn(),
-  getMine:       vi.fn(),
-  create:        vi.fn(),
-  updateEstado:  vi.fn(),
+  getAll:                  vi.fn(),
+  getMine:                 vi.fn(),
+  getById:                 vi.fn(),
+  create:                  vi.fn(),
+  updateEstado:            vi.fn(),
+  responder:               vi.fn(),
+  addArchivo:              vi.fn(),
+  getArchivos:             vi.fn(),
+  getArchivoPresignedUrl:  vi.fn(),
+  removeArchivo:           vi.fn(),
 }));
 
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn().mockResolvedValue({ rows: [] }),
   getClient: vi.fn(),
+}));
+
+vi.mock('../src/config/r2.js', () => ({
+  uploadFile:      vi.fn().mockResolvedValue('https://files.test.local/solicitudes/archivo.pdf'),
+  deleteFile:      vi.fn(),
+  extractKey:      vi.fn((url) => url?.split('/').pop() ?? null),
+  isPublicUrl:     vi.fn(() => true),
+  getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.test.local/file'),
 }));
 
 import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
@@ -161,5 +175,144 @@ describe('PATCH /api/solicitudes/:id/estado', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ estado: 'estado_inventado' });
     expect(res.status).toBe(422);
+  });
+});
+
+describe('POST /api/solicitudes/:id/responder', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/responder')
+      .send({ respuesta: 'texto' });
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 con rol publico', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/responder')
+      .set('Authorization', `Bearer ${pubToken}`)
+      .send({ respuesta: 'texto' });
+    expect(res.status).toBe(403);
+  });
+
+  it('admin resuelve solicitud — retorna 200', async () => {
+    const { responder } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    responder.mockResolvedValue({ ...SOL_FIXTURE, estado: 'resuelta', nota_admin: 'Aprobado' });
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/responder')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ respuesta: 'Su solicitud ha sido procesada favorablemente' });
+    expect(res.status).toBe(200);
+    expect(res.body.estado).toBe('resuelta');
+  });
+
+  it('retorna 422 si falta la respuesta', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/responder')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({});
+    expect(res.status).toBe(422);
+  });
+});
+
+describe('POST /api/solicitudes/:id/archivos', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos');
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 400 sin archivo', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${pubToken}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('usuario sube archivo adjunto — retorna 201', async () => {
+    const { addArchivo } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    addArchivo.mockResolvedValue({
+      id: 'uuid-archivo-1', nombre: 'documento.pdf',
+      mime_type: 'application/pdf', tamano_bytes: 1024,
+      creado_en: new Date().toISOString(),
+    });
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${pubToken}`)
+      .attach('archivo', Buffer.from('%PDF-1.4 fake'), 'documento.pdf');
+    expect(res.status).toBe(201);
+    expect(res.body.nombre).toBe('documento.pdf');
+  });
+});
+
+describe('GET /api/solicitudes/:id/archivos', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app).get('/api/solicitudes/uuid-sol-1/archivos');
+    expect(res.status).toBe(401);
+  });
+
+  it('usuario ve archivos de su solicitud — retorna 200', async () => {
+    const { getArchivos } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    getArchivos.mockResolvedValue([
+      { id: 'uuid-archivo-1', nombre: 'doc.pdf', mime_type: 'application/pdf', tamano_bytes: 1024 },
+    ]);
+    const res = await request(app)
+      .get('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${pubToken}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('GET /api/solicitudes/:id/archivos/:archivoId/download', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app)
+      .get('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1/download');
+    expect(res.status).toBe(401);
+  });
+
+  it('usuario obtiene URL prefirmada — retorna 200', async () => {
+    const { getArchivoPresignedUrl } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    getArchivoPresignedUrl.mockResolvedValue({
+      url: 'https://r2.example.com/presigned?token=abc', nombre: 'doc.pdf',
+    });
+    const res = await request(app)
+      .get('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1/download')
+      .set('Authorization', `Bearer ${pubToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('url');
+  });
+});
+
+describe('DELETE /api/solicitudes/:id/archivos/:archivoId', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app)
+      .delete('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1');
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 con rol publico', async () => {
+    const res = await request(app)
+      .delete('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1')
+      .set('Authorization', `Bearer ${pubToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('admin elimina archivo — retorna 204', async () => {
+    const { removeArchivo } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    removeArchivo.mockResolvedValue(undefined);
+    const res = await request(app)
+      .delete('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(204);
   });
 });

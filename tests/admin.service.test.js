@@ -376,3 +376,172 @@ describe('admin.service → setConfiguracion()', () => {
     expect(registrarAuditoria).toHaveBeenCalledOnce();
   });
 });
+
+// ─── Additional imports ────────────────────────────────────────────────────
+import { getNotificaciones, getAuditLog, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
+import { query } from '../src/config/database.js';
+
+describe('admin.service → getNotificaciones()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna lista de notificaciones combinadas y ordenadas', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', creado_en: new Date() }] })
+      .mockResolvedValueOnce({ rows: [{ id: 's1', tipo: 'agua', estado: 'pendiente', creado_en: new Date(), solicitante: 'Juan' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'n1', titulo: 'Noticia', slug: 'noticia-1', creado_en: new Date() }] });
+    const result = await getNotificaciones();
+    expect(Array.isArray(result)).toBe(true);
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('retorna lista vacía si no hay datos', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    const result = await getNotificaciones();
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe('admin.service → getAuditLog()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna log paginado sin filtros', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'log1', accion: 'login' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+    const result = await getAuditLog({});
+    expect(result.data).toHaveLength(1);
+    expect(result.meta.total).toBe(1);
+  });
+
+  it('filtra por modulo cuando se pasa', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    const result = await getAuditLog({ modulo: 'mapas' });
+    const params = query.mock.calls[0][1];
+    expect(params).toContain('mapas');
+    expect(result.data).toHaveLength(0);
+  });
+
+  it('filtra por accion cuando se pasa', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({ accion: 'login' });
+    const params = query.mock.calls[0][1];
+    expect(params).toContain('login');
+  });
+});
+
+describe('admin.service → getSuperStats()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna estadísticas de usuarios por rol', async () => {
+    query.mockResolvedValueOnce({ rows: [{ total_usuarios: '100', admins: '5', investigadores: '20' }] });
+    const result = await getSuperStats();
+    expect(result).toHaveProperty('total_usuarios');
+  });
+});
+
+describe('admin.service → getAdminEmails()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna lista de emails de admins activos', async () => {
+    query.mockResolvedValueOnce({ rows: [{ email: 'admin@iiap.org.co' }] });
+    const result = await getAdminEmails();
+    expect(result).toContain('admin@iiap.org.co');
+  });
+
+  it('retorna lista vacía si no hay admins', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const result = await getAdminEmails();
+    expect(result).toEqual([]);
+  });
+});
+
+describe('admin.service → crearAdminSig()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('crea un admin_sig con password temporal y retorna el registro', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.hash.mockResolvedValue('hashed_password');
+    query
+      .mockResolvedValueOnce({ rows: [] }) // Check email duplicado
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'Admin', email: 'a@a.co', rol: 'admin_sig', activo: true }] }); // INSERT
+    const result = await crearAdminSig({ nombre: 'Admin', email: 'a@a.co', superAdminId: 's1' });
+    expect(result).toBeDefined();
+  });
+});
+
+describe('admin.service → listarUsuarios() — filtro activo', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('filtra por activo=true', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await listarUsuarios({ activo: 'true' });
+    const params = query.mock.calls[0][1];
+    expect(params).toContain(true);
+  });
+
+  it('filtra por activo=false', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await listarUsuarios({ activo: 'false' });
+    const params = query.mock.calls[0][1];
+    expect(params).toContain(false);
+  });
+
+  it('combina filtros rol + activo + q', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await listarUsuarios({ rol: 'investigador', activo: 'true', q: 'Juan' });
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/WHERE/);
+  });
+});
+
+describe('admin.service → crearAdminSig() — email duplicado', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('lanza 409 si el email ya existe', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'existing-u1' }] });
+    await expect(
+      crearAdminSig({ nombre: 'Admin', email: 'a@a.co', superAdminId: 's1' })
+    ).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('admin.service → crearUsuario() — branches adicionales', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('lanza 400 si el rol es inválido', async () => {
+    await expect(
+      crearUsuario({ nombre: 'X', email: 'x@x.co', rol: 'rol_inventado', adminId: 'a1', adminEmail: 'a@a.co' })
+    ).rejects.toMatchObject({ status: 400 });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('lanza 409 si el email ya existe', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'u1' }] });
+    await expect(
+      crearUsuario({ nombre: 'X', email: 'dup@x.co', rol: 'investigador', adminId: 'a1', adminEmail: 'a@a.co' })
+    ).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('admin.service → actualizarUsuario() — branches', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('lanza 400 si el rol es inválido', async () => {
+    await expect(
+      actualizarUsuario({ id: 'u1', rol: 'rol_inventado', adminId: 'a1', adminEmail: 'a@a.co' })
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});

@@ -91,3 +91,51 @@ describe('categorias.service → remove()', () => {
     expect(deleteFile).not.toHaveBeenCalled();
   });
 });
+
+// ─── Additional imports ────────────────────────────────────────────────────
+import { updateThumbnail } from '../src/modules/categorias/categorias.service.js';
+import { extractKey, deleteFile } from '../src/config/r2.js';
+
+describe('categorias.service → updateThumbnail()', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    deleteFile.mockResolvedValue(undefined);
+  });
+
+  it('actualiza thumbnail y borra el anterior de R2 si cambió', async () => {
+    const OLD_URL = 'https://files.test.local/old.jpg';
+    const NEW_URL = 'https://files.test.local/new.jpg';
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: OLD_URL }] })  // SELECT anterior
+      .mockResolvedValueOnce({ rows: [{ nombre: 'Bio', thumbnail_url: NEW_URL }] }); // upsert
+    extractKey.mockReturnValue('old.jpg');
+    const result = await updateThumbnail('Bio', NEW_URL);
+    expect(deleteFile).toHaveBeenCalledOnce();
+    expect(result.thumbnail_url).toBe(NEW_URL);
+  });
+
+  it('no borra R2 si la URL no cambió', async () => {
+    const SAME_URL = 'https://files.test.local/same.jpg';
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: SAME_URL }] })
+      .mockResolvedValueOnce({ rows: [{ nombre: 'Bio', thumbnail_url: SAME_URL }] });
+    await updateThumbnail('Bio', SAME_URL);
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('no borra R2 si no había thumbnail anterior', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: null }] })
+      .mockResolvedValueOnce({ rows: [{ nombre: 'Bio', thumbnail_url: 'https://files.test.local/new.jpg' }] });
+    await updateThumbnail('Bio', 'https://files.test.local/new.jpg');
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+
+  it("no borra R2 (branch: oldUrl==newUrl con path diferente)", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: "https://files.test.local/old.jpg" }] })
+      .mockResolvedValueOnce({ rows: [{ nombre: "Bio", thumbnail_url: "https://files.test.local/old.jpg" }] });
+    await updateThumbnail("Bio", "https://files.test.local/old.jpg");
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+});
