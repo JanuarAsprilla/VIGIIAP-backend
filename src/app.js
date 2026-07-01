@@ -39,8 +39,6 @@ const allowedOrigins = (process.env.CORS_ORIGIN ?? '')
 // ─── Security headers (Helmet hardening) ─────────────────────────────────────
 app.use(
   helmet({
-    // Evita que el navegador "adivine" el content-type → protege contra MIME sniffing
-    contentTypeOptions: true,
     // Previene clickjacking incrustando la app en iframes de terceros
     frameguard: { action: 'deny' },
     // HSTS: fuerza HTTPS por 1 año + incluye subdominios
@@ -51,8 +49,6 @@ app.use(
     },
     // Oculta el header X-Powered-By para no revelar el stack
     hidePoweredBy: true,
-    // Evita que la página se abra en frames (protección adicional XFO)
-    xssFilter: true,
     // Referrer limitado al mismo origen
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     // CSP: permite solo recursos del propio origen + CDNs declarados

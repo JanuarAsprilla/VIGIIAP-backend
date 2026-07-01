@@ -69,4 +69,20 @@ describe('errorHandler middleware', () => {
     errorHandler(err, req, r, next);
     expect(r.status).toHaveBeenCalledWith(400);
   });
+
+  it('usa err.message como fallback cuando err.stack no existe en 500', () => {
+    const err = { message: 'sin stack', status: 500 };
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(500);
+    expect(r.json.mock.calls[0][0].error).toBe('sin stack');
+  });
+
+  it('usa fallback "Error del servidor" cuando el error < 500 no tiene message', () => {
+    const err = { status: 400 };
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toBe('Error del servidor');
+  });
 });

@@ -1,18 +1,22 @@
--- Tabla de archivos adjuntos a solicitudes.
--- Permite a usuarios y administradores adjuntar documentos de soporte.
+-- 024: Archivos adjuntos para solicitudes
+-- Permite a los solicitantes adjuntar documentación de soporte (PDF, imágenes)
+-- que los administradores pueden revisar y descargar para procesar el trámite.
+-- Los archivos se almacenan en R2 (bucket privado) y se sirven via URL prefirmada.
 
-CREATE TABLE solicitud_archivos (
-  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  solicitud_id UUID NOT NULL REFERENCES solicitudes(id) ON DELETE CASCADE,
-  nombre       TEXT NOT NULL,
-  archivo_url  TEXT NOT NULL,
-  tamano_bytes BIGINT NOT NULL DEFAULT 0,
-  mime_type    TEXT NOT NULL DEFAULT 'application/octet-stream',
-  subido_por   UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+CREATE TABLE IF NOT EXISTS solicitud_archivos (
+  id           UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  solicitud_id UUID        NOT NULL REFERENCES solicitudes(id) ON DELETE CASCADE,
+  nombre       TEXT        NOT NULL,
+  url          TEXT        NOT NULL,
+  mime_type    TEXT        NOT NULL,
+  tamano_bytes INTEGER,
+  subido_por   UUID        REFERENCES usuarios(id) ON DELETE SET NULL,
   creado_en    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_solicitud_archivos_solicitud_id ON solicitud_archivos(solicitud_id);
+CREATE INDEX IF NOT EXISTS idx_sol_archivos_solicitud ON solicitud_archivos(solicitud_id);
 
 COMMENT ON TABLE solicitud_archivos IS
-  'Archivos adjuntos por usuarios o admins a una solicitud. Almacenados en R2.';
+  'Archivos de soporte adjuntados a una solicitud de trámite';
+COMMENT ON COLUMN solicitud_archivos.url IS
+  'URL R2 del archivo — acceso solo via URL prefirmada (bucket privado)';

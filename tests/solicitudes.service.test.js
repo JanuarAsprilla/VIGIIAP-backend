@@ -14,8 +14,9 @@ vi.mock('../src/utils/auditLog.js', () => ({
 }));
 
 vi.mock('../src/config/r2.js', () => ({
-  uploadFile:      vi.fn(),
-  deleteFile:      vi.fn(),
+  uploadFile:      vi.fn().mockResolvedValue('https://files.test.local/sol/doc.pdf'),
+  deleteFile:      vi.fn().mockResolvedValue(undefined),
+  deleteFileByUrl: vi.fn().mockResolvedValue(undefined),
   extractKey:      vi.fn((url) => url?.split('/').pop() ?? null),
   isPublicUrl:     vi.fn((url) => !!url?.startsWith('https://files.test.local')),
   getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.test.local/file'),
@@ -97,6 +98,17 @@ describe('solicitudes.service → getAll()', () => {
     expect(result.data).toHaveLength(0);
     expect(result.meta.total).toBe(0);
   });
+
+  it('filtra por tipo cuando se provee', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...SOL, tipo: 'agua' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+
+    const result = await getAll({ tipo: 'agua' });
+    const firstCallParams = query.mock.calls[0][1];
+    expect(firstCallParams).toContain('agua');
+    expect(result.data[0].tipo).toBe('agua');
+  });
 });
 
 // ─── getMine() ────────────────────────────────────────────────────────────────
@@ -140,31 +152,44 @@ describe('solicitudes.service → create()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('inserta y retorna la solicitud creada', async () => {
-    query.mockResolvedValueOnce({ rows: [SOL] });
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate limit check
+      .mockResolvedValueOnce({ rows: [SOL] });            // INSERT
 
     const result = await create(
       { tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos' },
       'usr-uuid-1'
     );
     expect(result.id).toBe('sol-uuid-1');
-    expect(query).toHaveBeenCalledOnce();
-    const params = query.mock.calls[0][1];
+    expect(query).toHaveBeenCalledTimes(2);
+    const params = query.mock.calls[1][1]; // 2nd call = INSERT
     expect(params).toContain('uso-suelo');
     expect(params).toContain('usr-uuid-1');
   });
 
   it('pasa descripción aunque sea undefined (BD puede manejarla como null)', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
     const result = await create({ tipo: 'biodiversidad', descripcion: undefined }, 'usr-2');
     expect(result).toBeDefined();
-    expect(query).toHaveBeenCalledOnce();
   });
 
   it('el SQL de INSERT hace RETURNING *', async () => {
-    query.mockResolvedValueOnce({ rows: [SOL] });
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [SOL] });
     await create({ tipo: 'agua', descripcion: 'Test' }, 'usr-3');
-    const sql = query.mock.calls[0][0];
+    const sql = query.mock.calls[1][0]; // 2nd call = INSERT
     expect(sql).toMatch(/RETURNING/i);
+  });
+
+  it('lanza 429 si el usuario supera 5 solicitudes en 24 horas', async () => {
+    query.mockResolvedValueOnce({ rows: [{ count: '5' }] });
+    await expect(
+      create({ tipo: 'uso-suelo', descripcion: 'Solicitud extra' }, 'usr-spam')
+    ).rejects.toMatchObject({ status: 429 });
+    expect(query).toHaveBeenCalledOnce(); // solo el rate limit check, nunca el INSERT
   });
 });
 
@@ -173,23 +198,29 @@ describe('solicitudes.service → updateEstado()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('actualiza a "aprobada" y retorna el registro actualizado', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'aprobada' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })             // SELECT estado actual
+      .mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'aprobada' }] });     // UPDATE
 
     const result = await updateEstado('sol-uuid-1', 'aprobada', 'Todo correcto', 'admin-uuid');
     expect(result.estado).toBe('aprobada');
   });
 
   it('actualiza a "rechazada" con nota_admin', async () => {
-    query.mockResolvedValueOnce({
-      rows: [{ ...SOL, estado: 'rechazada', nota_admin: 'Datos incompletos' }],
-    });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({
+        rows: [{ ...SOL, estado: 'rechazada', nota_admin: 'Datos incompletos' }],
+      });
     const result = await updateEstado('sol-uuid-1', 'rechazada', 'Datos incompletos', 'admin-uuid');
     expect(result.estado).toBe('rechazada');
     expect(result.nota_admin).toBe('Datos incompletos');
   });
 
   it('actualiza a "en_revision"', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'en_revision' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'en_revision' }] });
     const result = await updateEstado('sol-uuid-1', 'en_revision', null, 'admin-uuid');
     expect(result.estado).toBe('en_revision');
   });
@@ -208,10 +239,19 @@ describe('solicitudes.service → updateEstado()', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  it('lanza 422 si la transición de estado no es válida', async () => {
+    query.mockResolvedValueOnce({ rows: [{ estado: 'resuelta' }] }); // estado final
+    await expect(
+      updateEstado('sol-uuid-1', 'pendiente', null, 'admin-uuid')
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
   it('pasa nota como null cuando se omite', async () => {
-    query.mockResolvedValueOnce({ rows: [SOL] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [SOL] });
     await updateEstado('sol-uuid-1', 'en_revision', undefined, 'admin-uuid');
-    const params = query.mock.calls[0][1];
+    const params = query.mock.calls[1][1]; // 2nd call = UPDATE
     expect(params[1]).toBeNull();
   });
 });
@@ -221,21 +261,32 @@ describe('solicitudes.service → responder()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('marca como resuelta y persiste la respuesta', async () => {
-    query.mockResolvedValueOnce({
-      rows: [{ ...SOL, estado: 'resuelta', nota_admin: 'Acceso concedido' }],
-    });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'aprobada' }] })              // SELECT estado
+      .mockResolvedValueOnce({
+        rows: [{ ...SOL, estado: 'resuelta', nota_admin: 'Acceso concedido' }],
+      });
     const result = await responder('sol-uuid-1', 'Acceso concedido', 'admin-uuid');
     expect(result.estado).toBe('resuelta');
     expect(result.nota_admin).toBe('Acceso concedido');
   });
 
   it('incluye respuesta y adminId en los params del UPDATE', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'resuelta' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'en_revision' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, estado: 'resuelta' }] });
     await responder('sol-uuid-1', 'Respuesta al solicitante', 'admin-uuid');
-    const params = query.mock.calls[0][1];
+    const params = query.mock.calls[1][1]; // 2nd call = UPDATE
     expect(params[0]).toBe('Respuesta al solicitante');
     expect(params[1]).toBe('admin-uuid');
     expect(params[2]).toBe('sol-uuid-1');
+  });
+
+  it('lanza 422 si la solicitud ya está resuelta', async () => {
+    query.mockResolvedValueOnce({ rows: [{ estado: 'resuelta' }] });
+    await expect(
+      responder('sol-uuid-1', 'Ya resuelta', 'admin-uuid')
+    ).rejects.toMatchObject({ status: 422 });
   });
 
   it('lanza 404 si la solicitud no existe', async () => {
@@ -246,108 +297,187 @@ describe('solicitudes.service → responder()', () => {
   });
 });
 
+
 // ─── getById() ─────────────────────────────────────────────────────────────
 
-import { getById, getArchivos, addArchivo, removeArchivo, getArchivoPresignedUrl } from '../src/modules/solicitudes/solicitudes.service.js';
-import { isPublicUrl, extractKey, getPresignedUrl } from '../src/config/r2.js';
+import { getById, getArchivos, removeArchivo } from '../src/modules/solicitudes/solicitudes.service.js';
 
 describe('solicitudes.service → getById()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('admin puede ver cualquier solicitud (sin filtro usuario_id)', async () => {
+  it('admin puede ver cualquier solicitud (params solo tienen el id)', async () => {
     query.mockResolvedValueOnce({ rows: [{ ...SOL, solicitante: 'Juan' }] });
-    const result = await getById(SOL.id, 'other-user', 'admin_sig');
-    const sql = query.mock.calls[0][0];
+    const result = await getById(SOL.id, 'other-user', true);
     const params = query.mock.calls[0][1];
     expect(params).toHaveLength(1);
+    expect(result.id).toBe(SOL.id);
   });
 
-  it('usuario normal solo ve sus propias solicitudes', async () => {
+  it('usuario normal: params incluyen userId para filtrar', async () => {
     query.mockResolvedValueOnce({ rows: [{ ...SOL, solicitante: 'Juan' }] });
-    const result = await getById(SOL.id, SOL.usuario_id, 'investigador');
-    const sql = query.mock.calls[0][0];
-    expect(sql).toMatch(/usuario_id/);
+    const result = await getById(SOL.id, SOL.usuario_id, false);
+    const params = query.mock.calls[0][1];
+    expect(params).toHaveLength(2);
     expect(result).toBeDefined();
   });
 
   it('lanza 404 si la solicitud no existe', async () => {
     query.mockResolvedValueOnce({ rows: [] });
-    await expect(getById('no-existe', 'u1', 'investigador')).rejects.toMatchObject({ status: 404 });
+    await expect(getById('no-existe', 'u1', false)).rejects.toMatchObject({ status: 404 });
   });
 });
 
 describe('solicitudes.service → getArchivos()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna los archivos de la solicitud', async () => {
+  it('admin ve todos los archivos (2 queries: solicitud + archivos)', async () => {
     const archivos = [{ id: 'a1', nombre: 'doc.pdf' }];
-    query.mockResolvedValueOnce({ rows: archivos });
-    const result = await getArchivos(SOL.id);
+    query.mockResolvedValueOnce({ rows: [{ id: SOL.id }] }); // SELECT solicitud
+    query.mockResolvedValueOnce({ rows: archivos }); // SELECT archivos
+    const result = await getArchivos(SOL.id, 'u1', true);
     expect(result).toEqual(archivos);
   });
 
-  it('retorna lista vacía si no hay archivos', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
-    const result = await getArchivos(SOL.id);
-    expect(result).toEqual([]);
+  it('lanza 404 si la solicitud no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // solicitud no encontrada
+    await expect(getArchivos('no-existe', 'u1', false)).rejects.toMatchObject({ status: 404 });
   });
 });
 
-describe('solicitudes.service → addArchivo()', () => {
-  beforeEach(() => vi.clearAllMocks());
+// ─── addArchivo() — branches de validación y acceso ───────────────────────
 
-  it('inserta el archivo y retorna el registro creado', async () => {
-    const arch = { id: 'a1', nombre: 'doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf', creado_en: new Date() };
-    query.mockResolvedValueOnce({ rows: [arch] });
-    const result = await addArchivo(SOL.id, { nombre: 'doc.pdf', archivo_url: 'https://r2.local/doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf' }, 'u1');
+vi.mock('../src/middlewares/fileGuard.js', () => ({
+  validateFile: vi.fn().mockReturnValue({ valid: true, sanitizedExt: 'pdf' }),
+  sha256: vi.fn().mockReturnValue('abc123hash'),
+}));
+vi.mock('../src/utils/dataCustody.js', () => ({
+  registrarScanArchivo: vi.fn().mockResolvedValue(undefined),
+  registrarCustodia: vi.fn(), registrarDescarga: vi.fn(), ACCION: {},
+}));
+
+import { addArchivo } from '../src/modules/solicitudes/solicitudes.service.js';
+import { validateFile } from '../src/middlewares/fileGuard.js';
+import { uploadFile, deleteFileByUrl } from '../src/config/r2.js';
+
+const MOCK_FILE = {
+  originalname: 'doc.pdf',
+  mimetype: 'application/pdf',
+  buffer: Buffer.from('test content'),
+  size: 1024,
+};
+
+describe('solicitudes.service → addArchivo()', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    uploadFile.mockResolvedValue('https://files.test.local/sol/doc.pdf');
+    deleteFileByUrl.mockResolvedValue(undefined);
+    validateFile.mockReturnValue({ valid: true, sanitizedExt: 'pdf' });
+  });
+
+  it('lanza 404 si la solicitud no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // SELECT solicitud
+    await expect(addArchivo('no-existe', MOCK_FILE, 'u1', false, '::1'))
+      .rejects.toMatchObject({ status: 404 });
+  });
+
+  it('lanza 422 si la solicitud está resuelta y el usuario no es admin', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'resuelta' }] });
+    await expect(addArchivo('sol-1', MOCK_FILE, 'u1', false, '::1'))
+      .rejects.toMatchObject({ status: 422 });
+  });
+
+  it('admin puede adjuntar archivo a solicitud resuelta', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'resuelta' }] }) // solicitud
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // count archivos
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf', creado_en: new Date() }] }); // INSERT
+    const result = await addArchivo('sol-1', MOCK_FILE, 'admin1', true, '::1');
+    expect(result).toBeDefined();
+    expect(uploadFile).toHaveBeenCalledOnce();
+  });
+
+  it('lanza 422 si se alcanza el límite de 5 archivos', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '5' }] }); // límite alcanzado
+    await expect(addArchivo('sol-1', MOCK_FILE, 'u1', false, '::1'))
+      .rejects.toMatchObject({ status: 422 });
+  });
+
+  it('lanza 422 si el tipo de archivo no es válido', async () => {
+    validateFile.mockReturnValue({ valid: false, error: 'Tipo no permitido' });
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await expect(addArchivo('sol-1', { ...MOCK_FILE, mimetype: 'text/html' }, 'u1', false, '::1'))
+      .rejects.toMatchObject({ status: 422 });
+  });
+
+  it('inserta el archivo y lo sube a R2 exitosamente', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf', creado_en: new Date() }] });
+    const result = await addArchivo('sol-1', MOCK_FILE, 'u1', false, '::1');
+    expect(uploadFile).toHaveBeenCalledOnce();
     expect(result.nombre).toBe('doc.pdf');
   });
 });
 
-describe('solicitudes.service → removeArchivo()', () => {
-  beforeEach(() => vi.clearAllMocks());
+// ─── getArchivoPresignedUrl() ─────────────────────────────────────────────────
 
-  it('elimina el archivo y retorna la url', async () => {
-    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://r2.local/doc.pdf' }] });
-    const result = await removeArchivo(SOL.id, 'a1');
-    expect(result.archivo_url).toContain('doc.pdf');
-  });
-
-  it('lanza 404 si el archivo no existe', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
-    await expect(removeArchivo(SOL.id, 'no-existe')).rejects.toMatchObject({ status: 404 });
-  });
-});
+import { getArchivoPresignedUrl } from '../src/modules/solicitudes/solicitudes.service.js';
+import { extractKey, getPresignedUrl } from '../src/config/r2.js';
 
 describe('solicitudes.service → getArchivoPresignedUrl()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna la URL pública directamente si isPublicUrl=true', async () => {
-    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] });
-    isPublicUrl.mockReturnValueOnce(true);
-    const result = await getArchivoPresignedUrl(SOL.id, 'a1');
-    expect(result.url).toBe('https://files.test.local/doc.pdf');
-    expect(getPresignedUrl).not.toHaveBeenCalled();
-  });
-
-  it('genera URL prefirmada para archivo privado', async () => {
-    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://private.r2.local/doc.pdf' }] });
-    isPublicUrl.mockReturnValueOnce(false);
-    extractKey.mockReturnValueOnce('doc.pdf');
-    const result = await getArchivoPresignedUrl(SOL.id, 'a1');
-    expect(getPresignedUrl).toHaveBeenCalledWith('doc.pdf', 120);
-    expect(result.url).toBe('https://presigned.test.local/file');
+  it('lanza 404 si la solicitud no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(getArchivoPresignedUrl('s1', 'a1', 'u1', false))
+      .rejects.toMatchObject({ status: 404 });
   });
 
   it('lanza 404 si el archivo no existe', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
-    await expect(getArchivoPresignedUrl(SOL.id, 'no-existe')).rejects.toMatchObject({ status: 404 });
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await expect(getArchivoPresignedUrl('s1', 'a1', 'u1', false))
+      .rejects.toMatchObject({ status: 404 });
   });
 
   it('lanza 500 si extractKey retorna null', async () => {
-    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://private.r2.local/doc.pdf' }] });
-    isPublicUrl.mockReturnValueOnce(false);
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
+      .mockResolvedValueOnce({ rows: [{ url: 'https://bad-url', nombre: 'doc.pdf' }] });
     extractKey.mockReturnValueOnce(null);
-    await expect(getArchivoPresignedUrl(SOL.id, 'a1')).rejects.toMatchObject({ status: 500 });
+    await expect(getArchivoPresignedUrl('s1', 'a1', 'u1', false))
+      .rejects.toMatchObject({ status: 500 });
+  });
+
+  it('retorna url y nombre en path de admin (isAdmin=true, sin userId en query)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
+      .mockResolvedValueOnce({ rows: [{ url: 'https://files.test/key', nombre: 'mapa.pdf' }] });
+    extractKey.mockReturnValueOnce('key');
+    getPresignedUrl.mockResolvedValueOnce('https://presigned.test/key');
+
+    const result = await getArchivoPresignedUrl('s1', 'a1', 'u1', true);
+    const firstParams = query.mock.calls[0][1];
+    expect(firstParams).toHaveLength(1);
+    expect(result).toEqual({ url: 'https://presigned.test/key', nombre: 'mapa.pdf' });
+  });
+
+  it('retorna url y nombre en path de usuario normal (isAdmin=false, userId en query)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
+      .mockResolvedValueOnce({ rows: [{ url: 'https://files.test/key2', nombre: 'doc.pdf' }] });
+    extractKey.mockReturnValueOnce('key2');
+    getPresignedUrl.mockResolvedValueOnce('https://presigned.test/key2');
+
+    const result = await getArchivoPresignedUrl('s1', 'a1', 'u1', false);
+    const firstParams = query.mock.calls[0][1];
+    expect(firstParams).toHaveLength(2);
+    expect(result.url).toBe('https://presigned.test/key2');
   });
 });

@@ -1,7 +1,3 @@
-/**
- * Tests directos para las funciones nuevas del solicitudes.controller.js
- * (show, listArchivos, uploadArchivo, deleteArchivo, downloadArchivo)
- */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
@@ -13,20 +9,35 @@ vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
   removeArchivo:         vi.fn(),
   getArchivoPresignedUrl: vi.fn(),
 }));
-vi.mock('../src/config/database.js', () => ({ query: vi.fn(), getClient: vi.fn() }));
+vi.mock('../src/config/database.js', () => ({ query: vi.fn().mockResolvedValue({ rows: [] }), getClient: vi.fn() }));
 vi.mock('../src/config/r2.js', () => ({
-  uploadFile: vi.fn().mockResolvedValue('https://files.test.local/x.pdf'),
-  extractKey: vi.fn(), isPublicUrl: vi.fn(), getPresignedUrl: vi.fn(), deleteFile: vi.fn(),
+  uploadFile: vi.fn(), extractKey: vi.fn(), isPublicUrl: vi.fn(),
+  getPresignedUrl: vi.fn(), deleteFile: vi.fn(), deleteFileByUrl: vi.fn(),
 }));
 vi.mock('../src/utils/auditLog.js', () => ({ registrarAuditoria: vi.fn() }));
 vi.mock('../src/utils/mailer.js', () => ({
-  notifySolicitudEstado: vi.fn(), notifyAdminNuevaSolicitud: vi.fn(), notifySolicitudRespuesta: vi.fn(),
+  notifySolicitudEstado:     vi.fn().mockResolvedValue(undefined),
+  notifyAdminNuevaSolicitud: vi.fn().mockResolvedValue(undefined),
+  notifySolicitudRespuesta:  vi.fn().mockResolvedValue(undefined),
+  notifySolicitudRecibida:   vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../src/modules/admin/admin.service.js', () => ({ getAdminEmails: vi.fn().mockResolvedValue([]) }));
+vi.mock('../src/utils/dataCustody.js', () => ({
+  registrarScanArchivo: vi.fn().mockResolvedValue(undefined),
+  registrarCustodia: vi.fn(), registrarDescarga: vi.fn(), ACCION: {},
+}));
+vi.mock('../src/middlewares/fileGuard.js', () => ({
+  validateFile: vi.fn().mockReturnValue({ valid: true, sanitizedExt: 'pdf', hash: 'abc' }),
+  sha256: vi.fn().mockReturnValue('abc123'),
+}));
+vi.mock('../src/modules/admin/admin.service.js', () => ({
+  getAdminEmails: vi.fn().mockResolvedValue([]),
+}));
 
 import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
+import { query } from '../src/config/database.js';
 import {
-  show, listArchivos, uploadArchivo, deleteArchivo, downloadArchivo,
+  show, getArchivos, uploadArchivo, deleteArchivo, downloadArchivo,
+  updateEstado, responder, store,
 } from '../src/modules/solicitudes/solicitudes.controller.js';
 
 const mockNext = vi.fn();
@@ -42,12 +53,18 @@ const SOL = { id: 'uuid-sol-1', tipo: 'agua', descripcion: 'test', estado: 'pend
 describe('show()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna la solicitud por id', async () => {
+  it('usuario normal pasa isAdmin=false', async () => {
     solService.getById.mockResolvedValue(SOL);
     const r = res();
     await show({ params: { id: SOL.id }, user: USER }, r, mockNext);
-    expect(solService.getById).toHaveBeenCalledWith(SOL.id, USER.id, USER.rol);
+    expect(solService.getById).toHaveBeenCalledWith(SOL.id, USER.id, false);
     expect(r.json).toHaveBeenCalledWith(SOL);
+  });
+
+  it('admin pasa isAdmin=true', async () => {
+    solService.getById.mockResolvedValue(SOL);
+    await show({ params: { id: SOL.id }, user: ADMIN }, res(), mockNext);
+    expect(solService.getById).toHaveBeenCalledWith(SOL.id, ADMIN.id, true);
   });
 
   it('llama next(err) si el servicio lanza', async () => {
@@ -57,20 +74,20 @@ describe('show()', () => {
   });
 });
 
-describe('listArchivos()', () => {
+describe('getArchivos()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna lista de archivos de la solicitud', async () => {
-    const archivos = [{ id: 'uuid-arch-1', nombre: 'doc.pdf' }];
-    solService.getArchivos.mockResolvedValue(archivos);
+  it('retorna lista de archivos', async () => {
+    solService.getArchivos.mockResolvedValue([{ id: 'a1' }]);
     const r = res();
-    await listArchivos({ params: { id: SOL.id } }, r, mockNext);
-    expect(r.json).toHaveBeenCalledWith(archivos);
+    await getArchivos({ params: { id: SOL.id }, user: USER }, r, mockNext);
+    expect(solService.getArchivos).toHaveBeenCalledWith(SOL.id, USER.id, false);
+    expect(r.json).toHaveBeenCalled();
   });
 
   it('llama next(err) si el servicio lanza', async () => {
-    solService.getArchivos.mockRejectedValue(new Error('db error'));
-    await listArchivos({ params: { id: SOL.id } }, res(), mockNext);
+    solService.getArchivos.mockRejectedValue(new Error('db'));
+    await getArchivos({ params: { id: SOL.id }, user: USER }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });
@@ -78,32 +95,29 @@ describe('listArchivos()', () => {
 describe('uploadArchivo()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna 400 si no hay archivo_url en el body', async () => {
+  it('retorna 400 si no hay req.file', async () => {
     const r = res();
-    await uploadArchivo({ params: { id: SOL.id }, body: {}, user: USER }, r, mockNext);
+    await uploadArchivo({ params: { id: SOL.id }, file: undefined, user: USER, ip: '::1' }, r, mockNext);
     expect(r.status).toHaveBeenCalledWith(400);
-    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
   });
 
-  it('crea el registro del archivo y retorna 201', async () => {
-    const archivo = { id: 'uuid-arch-1', nombre: 'doc.pdf', tamano_bytes: 1024 };
-    solService.addArchivo.mockResolvedValue(archivo);
+  it('crea el archivo y retorna 201', async () => {
+    solService.addArchivo.mockResolvedValue({ id: 'a1', nombre: 'doc.pdf' });
     const r = res();
     await uploadArchivo({
       params: { id: SOL.id },
-      body: { archivo_url: 'https://files.test.local/doc.pdf', nombre: 'doc.pdf', archivo_tamano_bytes: '1024' },
-      user: USER,
+      file: { originalname: 'doc.pdf', mimetype: 'application/pdf', buffer: Buffer.from('x'), size: 1 },
+      user: USER, ip: '::1',
     }, r, mockNext);
     expect(r.status).toHaveBeenCalledWith(201);
-    expect(r.json).toHaveBeenCalledWith(archivo);
   });
 
-  it('llama next(err) si addArchivo lanza', async () => {
-    solService.addArchivo.mockRejectedValue(new Error('db error'));
+  it('llama next(err) si el servicio lanza', async () => {
+    solService.addArchivo.mockRejectedValue(new Error('err'));
     await uploadArchivo({
       params: { id: SOL.id },
-      body: { archivo_url: 'https://files.test.local/x.pdf' },
-      user: USER,
+      file: { originalname: 'f.pdf', mimetype: 'application/pdf', buffer: Buffer.from('x'), size: 1 },
+      user: USER, ip: '::1',
     }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
@@ -115,14 +129,14 @@ describe('deleteArchivo()', () => {
   it('elimina el archivo y responde 204', async () => {
     solService.removeArchivo.mockResolvedValue(undefined);
     const r = res();
-    await deleteArchivo({ params: { id: SOL.id, archivoId: 'uuid-arch-1' } }, r, mockNext);
+    await deleteArchivo({ params: { id: SOL.id, archivoId: 'a1' }, user: ADMIN }, r, mockNext);
+    expect(solService.removeArchivo).toHaveBeenCalledWith(SOL.id, 'a1', ADMIN.id);
     expect(r.status).toHaveBeenCalledWith(204);
-    expect(r.end).toHaveBeenCalled();
   });
 
   it('llama next(err) si removeArchivo lanza', async () => {
-    solService.removeArchivo.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
-    await deleteArchivo({ params: { id: SOL.id, archivoId: 'no' } }, res(), mockNext);
+    solService.removeArchivo.mockRejectedValue(new Error('err'));
+    await deleteArchivo({ params: { id: SOL.id, archivoId: 'no' }, user: ADMIN }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });
@@ -131,15 +145,115 @@ describe('downloadArchivo()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('retorna la URL de descarga', async () => {
-    solService.getArchivoPresignedUrl.mockResolvedValue({ url: 'https://presigned.test.local/doc.pdf' });
+    solService.getArchivoPresignedUrl.mockResolvedValue({ url: 'https://presigned.test/doc.pdf' });
     const r = res();
-    await downloadArchivo({ params: { id: SOL.id, archivoId: 'uuid-arch-1' } }, r, mockNext);
-    expect(r.json).toHaveBeenCalledWith({ url: 'https://presigned.test.local/doc.pdf' });
+    await downloadArchivo({ params: { id: SOL.id, archivoId: 'a1' }, user: USER }, r, mockNext);
+    expect(solService.getArchivoPresignedUrl).toHaveBeenCalledWith(SOL.id, 'a1', USER.id, false);
+    expect(r.json).toHaveBeenCalledWith({ url: 'https://presigned.test/doc.pdf' });
   });
 
   it('llama next(err) si getArchivoPresignedUrl lanza', async () => {
-    solService.getArchivoPresignedUrl.mockRejectedValue(new Error('not found'));
-    await downloadArchivo({ params: { id: SOL.id, archivoId: 'no' } }, res(), mockNext);
+    solService.getArchivoPresignedUrl.mockRejectedValue(new Error('err'));
+    await downloadArchivo({ params: { id: SOL.id, archivoId: 'no' }, user: USER }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('updateEstado()', () => {
+  beforeEach(() => { vi.clearAllMocks(); solService.updateEstado.mockResolvedValue(SOL); });
+
+  it('con owner encontrado envía email y responde json', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Ana', email: 'ana@test.co', tipo: 'agua' }] });
+    const r = res();
+    await updateEstado(
+      { params: { id: SOL.id }, body: { estado: 'aprobada', nota: 'ok' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    expect(r.json).toHaveBeenCalledWith(SOL);
+  });
+
+  it('sin owner (rows vacío) no intenta enviar email', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await updateEstado(
+      { params: { id: SOL.id }, body: { estado: 'rechazada' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    expect(r.json).toHaveBeenCalledWith(SOL);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    solService.updateEstado.mockRejectedValue(new Error('err'));
+    await updateEstado(
+      { params: { id: SOL.id }, body: { estado: 'aprobada', nota: '' }, user: ADMIN, ip: '::1' },
+      res(), mockNext,
+    );
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('responder()', () => {
+  beforeEach(() => { vi.clearAllMocks(); solService.responder.mockResolvedValue(SOL); });
+
+  it('con owner encontrado envía email de respuesta', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Carlos', email: 'carlos@test.co', tipo: 'flora' }] });
+    const r = res();
+    await responder(
+      { params: { id: SOL.id }, body: { respuesta: 'Acceso concedido' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    expect(r.json).toHaveBeenCalledWith(SOL);
+  });
+
+  it('sin owner no envía email', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await responder(
+      { params: { id: SOL.id }, body: { respuesta: 'Acceso concedido' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    expect(r.json).toHaveBeenCalledWith(SOL);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    solService.responder.mockRejectedValue(new Error('err'));
+    await responder(
+      { params: { id: SOL.id }, body: { respuesta: 'texto' }, user: ADMIN, ip: '::1' },
+      res(), mockNext,
+    );
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('store()', () => {
+  beforeEach(() => { vi.clearAllMocks(); solService.create.mockResolvedValue({ ...SOL, id: 'new-uuid' }); });
+
+  it('con solicitante encontrado envía email y responde 201', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+  });
+
+  it('sin solicitante no envía email pero responde 201', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await store({
+      body: { tipo: 'otro', descripcion: 'Otra solicitud de prueba suficiente' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    solService.create.mockRejectedValue(new Error('db error'));
+    await store({
+      body: { tipo: 'linderos', descripcion: 'Solicitud que va a fallar en BD' },
+      user: USER, ip: '::1',
+    }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

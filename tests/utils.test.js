@@ -161,3 +161,4 @@ describe('notFound middleware', () => {
     expect(res.json.mock.calls[0][0].error).toContain('/api/algo');
   });
 });
+

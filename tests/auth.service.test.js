@@ -490,3 +490,57 @@ describe('register() — perfilToRol branches', () => {
     expect(insertParams).toContain('institucional');
   });
 });
+
+// ─── login() 2FA branch ───────────────────────────────────────────────────────
+describe('login() — 2FA activo', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna requiresTwoFactor=true cuando totp_enabled está activo', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValueOnce(true);
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser }] })  // SELECT usuario
+      .mockResolvedValueOnce({ rows: [] })                  // UPDATE last_login_at
+      .mockResolvedValueOnce({ rows: [] })                  // SELECT configuracion (password expiry)
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: true }] }); // SELECT totp_enabled
+
+    const { login } = await import('../src/modules/auth/auth.service.js');
+    const result = await login(mockUser.email, 'Pass', '::1', 'agent');
+    expect(result).toMatchObject({ requiresTwoFactor: true });
+    expect(result.twoFactorToken).toBeTruthy();
+  });
+});
+
+// ─── resetPassword() — token expirado ────────────────────────────────────────
+describe('resetPassword() — token expirado', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('lanza 400 con code TOKEN_EXPIRED cuando la fecha de expiración pasó', async () => {
+    const expired = new Date(Date.now() - 1000).toISOString();
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'u1', email: 'test@test.co', password_reset_expires: expired }],
+    });
+    const { resetPassword } = await import('../src/modules/auth/auth.service.js');
+    await expect(resetPassword('valid-token', 'NuevaPass123!')).rejects.toMatchObject({
+      status: 400,
+      code: 'TOKEN_EXPIRED',
+    });
+  });
+});
+
+// ─── refreshTokens() — token robado ──────────────────────────────────────────
+describe('refreshTokens() — token reutilizado (stolen)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('revoca sesiones y lanza 401 cuando detecta reutilización de token', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })  // UPDATE principal — sin filas (token inválido)
+      .mockResolvedValueOnce({ rows: [{ usuario_id: 'u-victim' }] }) // stolen check — revocado!
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE revocación masiva
+
+    const { refreshTokens } = await import('../src/modules/auth/auth.service.js');
+    await expect(refreshTokens('stolen-token', { ip: '::1', userAgent: 'bot' }))
+      .rejects.toMatchObject({ status: 401 });
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+});

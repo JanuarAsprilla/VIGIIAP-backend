@@ -430,6 +430,40 @@ export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta 
   });
 }
 
+/** Confirma al solicitante que su solicitud fue recibida y está pendiente de revisión */
+export async function notifySolicitudRecibida({ email, nombre, tipo }) {
+  const eNombre    = escHtml(nombre);
+  const eTipoLabel = escHtml(TIPO_LABEL[tipo] ?? tipo);
+  await send({
+    to: email,
+    subject: `[VIGI-IIAP] Solicitud recibida — ${TIPO_LABEL[tipo] ?? tipo}`,
+    html: baseTemplate('Solicitud recibida', `
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Hola <strong>${eNombre}</strong>,
+      </p>
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Hemos recibido tu solicitud de tipo <strong>"${eTipoLabel}"</strong>.
+        El equipo del IIAP la revisará y te notificará por este correo sobre el avance.
+      </p>
+      <div style="background:#F0FDF4;border-left:4px solid #16A34A;padding:12px 16px;border-radius:6px;margin:20px 0;">
+        <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">
+          <strong>Estado actual:</strong> Pendiente de revisión.
+          Recibirás un correo cada vez que el estado de tu solicitud cambie.
+        </p>
+      </div>
+      <p style="color:#6B7280;font-size:13px;line-height:1.6;">
+        Puedes consultar el estado de todas tus solicitudes en el portal en cualquier momento.
+      </p>
+      <div style="text-align:center;margin:24px 0 16px;">
+        <a href="${BASE_URL}/solicitudes"
+           style="display:inline-block;background:#1B4332;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
+          Ver mis solicitudes
+        </a>
+      </div>
+    `),
+  });
+}
+
 /** Notifica nueva solicitud creada al admin */
 export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email, tipo, descripcion }) {
   const eSolicitante  = escHtml(solicitante);
