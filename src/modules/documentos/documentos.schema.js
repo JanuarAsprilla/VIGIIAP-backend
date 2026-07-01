@@ -26,3 +26,5 @@ export const updateDocumentoSchema = z.object({
   (d) => Object.values(d).some((v) => v !== undefined),
   { message: 'Debe enviar al menos un campo a actualizar' },
 );
+
+export const toggleDocumentoSchema = z.object({ activo: z.coerce.boolean() });

@@ -1,4 +1,4 @@
-import { createDocumentoSchema, updateDocumentoSchema } from './documentos.schema.js';
+import { createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema } from './documentos.schema.js';
 import * as docService from './documentos.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
@@ -84,5 +84,30 @@ export async function destroy(req, res, next) {
       ip:           req.ip,
     });
     res.status(204).end();
+  } catch (err) { next(err); }
+}
+
+export async function patchActivo(req, res, next) {
+  try {
+    const { activo } = toggleDocumentoSchema.parse(req.body);
+    const doc = await docService.setActivo(req.params.id, activo);
+    registrarAuditoria({
+      accion:       activo ? 'publish_documento' : 'unpublish_documento',
+      modulo:       'documentos',
+      entidadId:    doc.id,
+      descripcion:  `Documento ${activo ? 'activado' : 'desactivado'}: ${doc.titulo}`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+    registrarCustodia({
+      tipoRecurso:  'documento',
+      recursoId:    doc.id,
+      accion:       activo ? ACCION.PUBLICACION : ACCION.DESPUBLICACION,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+    res.json(doc);
   } catch (err) { next(err); }
 }

@@ -1,4 +1,4 @@
-import { createNoticiaSchema, updateNoticiaSchema } from './noticias.schema.js';
+import { createNoticiaSchema, updateNoticiaSchema, toggleNoticiaSchema } from './noticias.schema.js';
 import * as noticiaService from './noticias.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
@@ -57,5 +57,22 @@ export async function destroy(req, res, next) {
       ip:           req.ip,
     });
     res.status(204).end();
+  } catch (err) { next(err); }
+}
+
+export async function patchPublicado(req, res, next) {
+  try {
+    const { publicado } = toggleNoticiaSchema.parse(req.body);
+    const noticia = await noticiaService.setPublicado(req.params.id, publicado);
+    registrarAuditoria({
+      accion:       publicado ? 'publish_noticia' : 'unpublish_noticia',
+      modulo:       'noticias',
+      entidadId:    noticia.id,
+      descripcion:  `Noticia ${publicado ? 'publicada' : 'despublicada'}: ${noticia.titulo}`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+    res.json(noticia);
   } catch (err) { next(err); }
 }

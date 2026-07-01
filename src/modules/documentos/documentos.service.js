@@ -119,3 +119,12 @@ export async function remove(id) {
   await query('UPDATE documentos SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1', [id]);
   if (existing[0].archivo_url) await deleteFileByUrl(existing[0].archivo_url).catch(() => {});
 }
+
+export async function setActivo(id, activo) {
+  const { rows } = await query(
+    'UPDATE documentos SET activo=$1, actualizado_en=NOW() WHERE id=$2 RETURNING *',
+    [activo, id],
+  );
+  if (!rows[0]) throw Object.assign(new Error('Documento no encontrado'), { status: 404 });
+  return rows[0];
+}

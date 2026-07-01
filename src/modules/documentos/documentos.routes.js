@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { index, show, store, update, destroy } from './documentos.controller.js';
+import { index, show, store, update, destroy, patchActivo } from './documentos.controller.js';
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
@@ -25,6 +25,7 @@ router.put(
   uploadSingle('archivo', 'documentos', 20, 'document'),
   update,
 );
+router.patch('/:id/activo', authenticate, authorize('admin_sig'), patchActivo);
 router.delete('/:id', authenticate, authorize('admin_sig'), destroy);
 
 export default router;

@@ -130,3 +130,12 @@ export async function remove(id) {
   const key = extractKey(existing[0].imagen_url);
   if (key) await deleteFile(key).catch(() => {});
 }
+
+export async function setPublicado(id, publicado) {
+  const { rows } = await query(
+    'UPDATE noticias SET publicado=$1, actualizado_en=NOW() WHERE id=$2 RETURNING *',
+    [publicado, id],
+  );
+  if (!rows[0]) throw Object.assign(new Error('Noticia no encontrada'), { status: 404 });
+  return rows[0];
+}

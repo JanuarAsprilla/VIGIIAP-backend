@@ -24,3 +24,5 @@ export const updateNoticiaSchema = noticiaBase.partial().refine(
   (d) => Object.values(d).some((v) => v !== undefined),
   { message: 'Debe enviar al menos un campo a actualizar' },
 );
+
+export const toggleNoticiaSchema = z.object({ publicado: z.coerce.boolean() });
