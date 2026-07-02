@@ -29,7 +29,8 @@ export async function listarUsuarios(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rol, activo, q } = reqQuery;
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
-  const conditions = [];
+  // super_admin nunca visible para admin_sig — siempre excluido de la lista
+  const conditions = ["rol != 'super_admin'"];
   const params = [];
 
   if (rol && ROLES.includes(rol)) {
@@ -45,7 +46,7 @@ export async function listarUsuarios(reqQuery) {
     conditions.push(`(nombre ILIKE $${params.length} OR email ILIKE $${params.length})`);
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = `WHERE ${conditions.join(' AND ')}`;
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
@@ -287,13 +288,16 @@ export async function getNotificaciones() {
 export async function getAuditLog(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { modulo, accion } = reqQuery;
-  const conditions = [];
+  // Excluir acciones del super_admin — su email nunca debe aparecer en el log para admin_sig
+  const conditions = [
+    `usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`
+  ];
   const params = [];
 
   if (modulo) { params.push(modulo); conditions.push(`modulo = $${params.length}`); }
   if (accion) { params.push(accion); conditions.push(`accion = $${params.length}`); }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = `WHERE ${conditions.join(' AND ')}`;
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([

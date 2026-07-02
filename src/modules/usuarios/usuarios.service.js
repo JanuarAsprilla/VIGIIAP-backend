@@ -18,13 +18,14 @@ export async function getProfile(userId) {
 export async function getAll(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rol, activo } = reqQuery;
-  const conditions = [];
+  // super_admin siempre excluido — invisible para admin_sig
+  const conditions = ["rol != 'super_admin'"];
   const params = [];
 
   if (rol && ROLES.includes(rol)) { params.push(rol); conditions.push(`rol = $${params.length}`); }
   if (activo !== undefined) { params.push(activo === 'true'); conditions.push(`activo = $${params.length}`); }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = `WHERE ${conditions.join(' AND ')}`;
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([
