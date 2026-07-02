@@ -17,7 +17,6 @@ import { notFound } from './middlewares/notFound.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import mapassRoutes from './modules/mapas/mapas.routes.js';
 import documentosRoutes from './modules/documentos/documentos.routes.js';
-import noticiasRoutes from './modules/noticias/noticias.routes.js';
 import solicitudesRoutes from './modules/solicitudes/solicitudes.routes.js';
 import usuariosRoutes from './modules/usuarios/usuarios.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
@@ -142,7 +141,6 @@ if (process.env.NODE_ENV !== 'production') {
 app.use('/api/auth', authRoutes);
 app.use('/api/mapas', mapassRoutes);
 app.use('/api/documentos', documentosRoutes);
-app.use('/api/noticias', noticiasRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/admin', adminRoutes);
