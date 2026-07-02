@@ -3,10 +3,13 @@ import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
 import { deleteFileByUrl } from '../../config/r2.js';
 
-/** Devuelve los valores de visibilidad accesibles según el rol del usuario. */
+/** Devuelve los valores de visibilidad accesibles según el rol del usuario.
+ *  - visitante/publico: solo contenido público
+ *  - investigador/tecnico/institucional/admin_sig/super_admin: sin filtro (acceso total)
+ */
 function visibilidadPermitida(user) {
-  if (!user || user.rol === 'visitante') return ['publico'];
-  if (['admin_sig', 'investigador'].includes(user.rol)) return null; // sin filtro
+  if (!user || user.rol === 'visitante' || user.rol === 'publico') return ['publico'];
+  if (['admin_sig', 'super_admin', 'investigador', 'tecnico', 'institucional'].includes(user.rol)) return null;
   return ['publico', 'usuarios'];
 }
 

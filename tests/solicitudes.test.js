@@ -39,6 +39,10 @@ const pubToken = jwt.sign(
   { id: 'uuid-pub', email: 'pub@iiap.org.co', rol: 'publico' },
   process.env.JWT_SECRET,
 );
+const invToken = jwt.sign(
+  { id: 'uuid-inv', email: 'inv@iiap.org.co', rol: 'investigador' },
+  process.env.JWT_SECRET,
+);
 
 const SOL_FIXTURE = {
   id: 'uuid-sol-1', tipo: 'Acceso a datos',
@@ -103,19 +107,27 @@ describe('POST /api/solicitudes', () => {
     expect(res.status).toBe(401);
   });
 
-  it('retorna 422 si falta el tipo', async () => {
+  it('retorna 403 si el rol es publico (no verificado)', async () => {
     const res = await request(app)
       .post('/api/solicitudes')
       .set('Authorization', `Bearer ${pubToken}`)
+      .send({ tipo: 'uso-suelo', descripcion: 'test' });
+    expect(res.status).toBe(403);
+  });
+
+  it('retorna 422 si falta el tipo (investigador)', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes')
+      .set('Authorization', `Bearer ${invToken}`)
       .send({ descripcion: 'Sin tipo' });
     expect(res.status).toBe(422);
   });
 
-  it('usuario autenticado crea solicitud — retorna 201', async () => {
+  it('investigador crea solicitud — retorna 201', async () => {
     solService.create.mockResolvedValue(SOL_FIXTURE);
     const res = await request(app)
       .post('/api/solicitudes')
-      .set('Authorization', `Bearer ${pubToken}`)
+      .set('Authorization', `Bearer ${invToken}`)
       .send({ tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos de biodiversidad' });
     expect(res.status).toBe(201);
   });

@@ -3,9 +3,12 @@ import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
 import { deleteFileByUrl } from '../../config/r2.js';
 
+/** Visibilidad según rol: visitante/publico solo ven contenido público.
+ *  Usuarios verificados (investigador, tecnico, institucional, admin) acceso total.
+ */
 function visibilidadPermitida(user) {
-  if (!user || user.rol === 'visitante') return ['publico'];
-  if (['admin_sig', 'investigador'].includes(user.rol)) return null;
+  if (!user || user.rol === 'visitante' || user.rol === 'publico') return ['publico'];
+  if (['admin_sig', 'super_admin', 'investigador', 'tecnico', 'institucional'].includes(user.rol)) return null;
   return ['publico', 'usuarios'];
 }
 

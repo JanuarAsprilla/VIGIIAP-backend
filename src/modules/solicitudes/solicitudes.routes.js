@@ -12,7 +12,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 router.get('/', authenticate, authorize('admin_sig'), index);
 router.get('/mis-solicitudes', authenticate, mine);
-router.post('/', authenticate, authorize('publico', 'investigador', 'tecnico', 'institucional', 'admin_sig', 'super_admin'), store);
+// 'publico' y 'visitante' no pueden crear solicitudes — son roles no verificados
+router.post('/', authenticate, authorize('investigador', 'tecnico', 'institucional', 'admin_sig', 'super_admin'), store);
 router.get('/:id', authenticate, show);
 router.patch('/:id/estado', authenticate, authorize('admin_sig'), updateEstado);
 router.post('/:id/responder', authenticate, authorize('admin_sig'), responder);
