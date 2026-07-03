@@ -51,7 +51,6 @@ describe('GET /api/admin/stats', () => {
     expect(res.body).toHaveProperty('usuarios');
     expect(res.body).toHaveProperty('solicitudesPendientes');
     expect(res.body).toHaveProperty('documentos');
-    expect(res.body).toHaveProperty('noticias');
     expect(res.body).toHaveProperty('visitantesUltimos30d');
   });
 });

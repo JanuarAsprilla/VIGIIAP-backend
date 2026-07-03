@@ -387,16 +387,14 @@ describe('admin.service → getNotificaciones()', () => {
   it('retorna lista de notificaciones combinadas y ordenadas', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', creado_en: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ id: 's1', tipo: 'agua', estado: 'pendiente', creado_en: new Date(), solicitante: 'Juan' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'n1', titulo: 'Noticia', slug: 'noticia-1', creado_en: new Date() }] });
+      .mockResolvedValueOnce({ rows: [{ id: 's1', tipo: 'agua', estado: 'pendiente', creado_en: new Date(), solicitante: 'Juan' }] });
     const result = await getNotificaciones();
     expect(Array.isArray(result)).toBe(true);
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('retorna lista vacía si no hay datos', async () => {
     query
-      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
     const result = await getNotificaciones();

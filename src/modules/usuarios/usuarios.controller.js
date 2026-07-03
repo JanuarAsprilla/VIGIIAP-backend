@@ -18,7 +18,7 @@ export async function index(req, res, next) {
 export async function updateRol(req, res, next) {
   try {
     const { rol, activo } = updateRolSchema.parse(req.body);
-    const usuario = await userService.updateRol(req.params.id, rol, activo);
+    const usuario = await userService.updateRol(req.params.id, rol, activo, { id: req.user.id, rol: req.user.rol });
     registrarAuditoria({
       accion:      'update_rol',
       modulo:      'usuarios',

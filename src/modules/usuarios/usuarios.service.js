@@ -42,12 +42,21 @@ export async function getAll(reqQuery) {
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
 }
 
-export async function updateRol(id, rol, activo) {
+export async function updateRol(id, rol, activo, caller = {}) {
   if (!ROLES.includes(rol)) throw Object.assign(new Error('Rol inválido'), { status: 400 });
+  // Nadie puede modificar su propia cuenta desde este panel
+  if (id === caller.id) {
+    throw Object.assign(new Error('No puedes modificar tu propia cuenta desde este panel'), { status: 400 });
+  }
   const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [id]);
   if (!target[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  // El super_admin es invisible e intocable para admin_sig
   if (target[0].rol === 'super_admin') {
     throw Object.assign(new Error('No se puede modificar una cuenta de Super Administrador'), { status: 403 });
+  }
+  // Solo el super_admin puede modificar cuentas admin_sig o asignar ese rol
+  if ((target[0].rol === 'admin_sig' || rol === 'admin_sig') && caller.rol !== 'super_admin') {
+    throw Object.assign(new Error('Solo el Super Administrador puede gestionar cuentas de administrador'), { status: 403 });
   }
   const { rows } = await query(
     'UPDATE usuarios SET rol=$1, activo=$2, actualizado_en=NOW() WHERE id=$3 RETURNING id,nombre,email,rol,activo',

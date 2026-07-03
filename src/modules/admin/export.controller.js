@@ -64,7 +64,7 @@ export async function exportUsuarios(req, res, next) {
     const { rows } = await query(
       `SELECT id, nombre, email, rol, tipo_acceso, institucion, activo,
               email_verified, last_login_at, creado_en
-       FROM usuarios ORDER BY creado_en DESC LIMIT $1`,
+       FROM usuarios WHERE rol != 'super_admin' ORDER BY creado_en DESC LIMIT $1`,
       [MAX_ROWS]
     );
     if (rows.length === MAX_ROWS) {
@@ -108,9 +108,12 @@ export async function exportSolicitudes(req, res, next) {
 export async function exportAudit(req, res, next) {
   try {
     const formato = req.query.formato === 'json' ? 'json' : 'csv';
-    const params = [], conditions = [];
+    // Excluir acciones del super_admin — nunca visibles para admin_sig
+    const params = [], conditions = [
+      `usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`,
+    ];
     dateFilter(req.query.desde, req.query.hasta, 'creado_en', params, conditions);
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = `WHERE ${conditions.join(' AND ')}`;
     params.push(MAX_ROWS);
     const { rows } = await query(
       `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, creado_en

@@ -93,7 +93,7 @@ describe('GET /api/solicitudes/mis-solicitudes', () => {
     });
     const res = await request(app)
       .get('/api/solicitudes/mis-solicitudes')
-      .set('Authorization', `Bearer ${pubToken}`);
+      .set('Authorization', `Bearer ${invToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
   });
@@ -240,7 +240,7 @@ describe('POST /api/solicitudes/:id/archivos', () => {
   it('retorna 400 sin archivo', async () => {
     const res = await request(app)
       .post('/api/solicitudes/uuid-sol-1/archivos')
-      .set('Authorization', `Bearer ${pubToken}`);
+      .set('Authorization', `Bearer ${invToken}`);
     expect(res.status).toBe(400);
   });
 
@@ -253,7 +253,7 @@ describe('POST /api/solicitudes/:id/archivos', () => {
     });
     const res = await request(app)
       .post('/api/solicitudes/uuid-sol-1/archivos')
-      .set('Authorization', `Bearer ${pubToken}`)
+      .set('Authorization', `Bearer ${invToken}`)
       .attach('archivo', Buffer.from('%PDF-1.4 fake'), 'documento.pdf');
     expect(res.status).toBe(201);
     expect(res.body.nombre).toBe('documento.pdf');
@@ -275,7 +275,7 @@ describe('GET /api/solicitudes/:id/archivos', () => {
     ]);
     const res = await request(app)
       .get('/api/solicitudes/uuid-sol-1/archivos')
-      .set('Authorization', `Bearer ${pubToken}`);
+      .set('Authorization', `Bearer ${invToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
@@ -297,7 +297,7 @@ describe('GET /api/solicitudes/:id/archivos/:archivoId/download', () => {
     });
     const res = await request(app)
       .get('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1/download')
-      .set('Authorization', `Bearer ${pubToken}`);
+      .set('Authorization', `Bearer ${invToken}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('url');
   });

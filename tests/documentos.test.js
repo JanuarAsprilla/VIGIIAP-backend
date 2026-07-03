@@ -104,14 +104,13 @@ describe('POST /api/documentos', () => {
     expect(res.status).toBe(422);
   });
 
-  it('investigador puede subir documento — retorna 201', async () => {
-    docService.create.mockResolvedValue(DOC_FIXTURE);
+  it('investigador NO puede subir documento — retorna 403', async () => {
+    // Política: solo admin_sig/super_admin gestionan contenido; investigador solo consume
     const res = await request(app)
       .post('/api/documentos')
       .set('Authorization', `Bearer ${invToken}`)
       .send({ titulo: 'Informe Biodiversidad 2024', tipo: 'Estudios Ambientales' });
-    expect(res.status).toBe(201);
-    expect(res.body.titulo).toBe('Informe Biodiversidad 2024');
+    expect(res.status).toBe(403);
   });
 
   it('admin puede subir documento — retorna 201', async () => {

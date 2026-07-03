@@ -36,12 +36,12 @@ router.delete('/sessions/:id', authenticate, revokeSession);
 router.delete('/sessions',     authenticate, revokeAllSessions);
 
 // Cambio de contraseña expirada (usa cookie vigiiap_expired_temp)
-router.post('/change-expired-password', changeExpiredPassword);
+router.post('/change-expired-password', authRateLimiter, changeExpiredPassword);
 
 // 2FA TOTP
 router.post('/2fa/setup',    authenticate, tfSetup);
 router.post('/2fa/verify',   authenticate, tfVerify);
 router.post('/2fa/disable',  authenticate, tfDisable);
-router.post('/2fa/confirm',  tfConfirm); // usa cookie vigiiap_2fa_temp, sin authenticate
+router.post('/2fa/confirm',  authRateLimiter, tfConfirm); // usa cookie vigiiap_2fa_temp, sin authenticate
 
 export default router;

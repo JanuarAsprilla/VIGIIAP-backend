@@ -105,14 +105,27 @@ export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso
 }
 
 /** Activa o desactiva un usuario, opcionalmente cambia su rol */
-export async function actualizarUsuario({ id, rol, activo, adminId, adminEmail }) {
+export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, adminEmail }) {
   if (rol && !ROLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
   }
-  // admin_sig no puede modificar cuentas super_admin
+  // Nadie puede modificar su propia cuenta desde el panel de administración
+  if (id === adminId) {
+    throw Object.assign(new Error('No puedes modificar tu propia cuenta desde este panel'), { status: 400 });
+  }
   const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [id]);
-  if (target[0]?.rol === 'super_admin') {
+  if (!target[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  // El super_admin es invisible e intocable para admin_sig
+  if (target[0].rol === 'super_admin') {
     throw Object.assign(new Error('No se puede modificar una cuenta de Super Administrador'), { status: 403 });
+  }
+  // Solo el super_admin puede modificar cuentas admin_sig
+  if (target[0].rol === 'admin_sig' && adminRol !== 'super_admin') {
+    throw Object.assign(new Error('Solo el Super Administrador puede modificar cuentas de administrador'), { status: 403 });
+  }
+  // Solo el super_admin puede asignar el rol admin_sig
+  if (rol === 'admin_sig' && adminRol !== 'super_admin') {
+    throw Object.assign(new Error('Solo el Super Administrador puede asignar el rol de administrador'), { status: 403 });
   }
 
   // Construir SET dinámico solo con los campos proporcionados
@@ -158,14 +171,19 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminEmail }
 }
 
 /** Elimina un usuario del sistema */
-export async function eliminarUsuario({ id, adminId, adminEmail }) {
+export async function eliminarUsuario({ id, adminId, adminRol, adminEmail }) {
   if (id === adminId) {
     throw Object.assign(new Error('No puedes eliminar tu propia cuenta'), { status: 400 });
   }
-  // admin_sig no puede eliminar cuentas super_admin
   const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [id]);
-  if (target[0]?.rol === 'super_admin') {
+  if (!target[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  // El super_admin es invisible e intocable para admin_sig
+  if (target[0].rol === 'super_admin') {
     throw Object.assign(new Error('No se puede eliminar una cuenta de Super Administrador'), { status: 403 });
+  }
+  // Solo el super_admin puede eliminar cuentas admin_sig
+  if (target[0].rol === 'admin_sig' && adminRol !== 'super_admin') {
+    throw Object.assign(new Error('Solo el Super Administrador puede eliminar cuentas de administrador'), { status: 403 });
   }
 
   const { rows } = await query(
@@ -228,7 +246,7 @@ export async function getAdminEmails() {
 
 /** Devuelve notificaciones recientes para el panel del admin */
 export async function getNotificaciones() {
-  const [usuariosRes, solicitudesRes, noticiasRes] = await Promise.all([
+  const [usuariosRes, solicitudesRes] = await Promise.all([
     query(`
       SELECT id, nombre, email, creado_en
       FROM usuarios
@@ -241,12 +259,6 @@ export async function getNotificaciones() {
       LEFT JOIN usuarios u ON u.id = s.usuario_id
       WHERE s.estado IN ('pendiente', 'en_revision')
       ORDER BY s.creado_en DESC LIMIT 5
-    `),
-    query(`
-      SELECT id, titulo, slug, creado_en
-      FROM noticias
-      WHERE publicado = true
-      ORDER BY creado_en DESC LIMIT 3
     `),
   ]);
 
@@ -268,16 +280,6 @@ export async function getNotificaciones() {
       meta:  s.tipo,
       link:  '/admin/solicitudes',
       time:  s.creado_en,
-    })),
-    ...noticiasRes.rows.map((n) => ({
-      id:    `not-${n.id}`,
-      type:  'noticia',
-      tag:   'Noticia',
-      title: n.titulo,
-      meta:  null,
-      link:  `/noticias/${n.slug}`,
-      slug:  n.slug,
-      time:  n.creado_en,
     })),
   ].sort((a, b) => new Date(b.time) - new Date(a.time));
 

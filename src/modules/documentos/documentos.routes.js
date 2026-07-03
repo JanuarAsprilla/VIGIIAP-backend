@@ -12,7 +12,7 @@ router.get('/:slug', cacheMiddleware(300), optionalAuthenticate, show);
 router.post(
   '/',
   authenticate,
-  authorize('admin_sig', 'investigador'),
+  authorize('admin_sig'),
   uploadRateLimiter,
   uploadSingle('archivo', 'documentos', 20, 'document'),
   store,

@@ -63,11 +63,10 @@ export async function setConfiguracion(req, res, next) {
 /** GET /api/admin/stats */
 export async function stats(req, res, next) {
   try {
-    const [usuarios, solicitudes, documentos, noticias, visitantes] = await Promise.all([
-      query('SELECT COUNT(*) FROM usuarios WHERE activo = true'),
+    const [usuarios, solicitudes, documentos, visitantes] = await Promise.all([
+      query("SELECT COUNT(*) FROM usuarios WHERE activo = true AND rol != 'super_admin'"),
       query("SELECT COUNT(*) FROM solicitudes WHERE estado IN ('pendiente','en_revision')"),
       query('SELECT COUNT(*) FROM documentos WHERE activo = true'),
-      query('SELECT COUNT(*) FROM noticias WHERE publicado = true'),
       query("SELECT COUNT(*) FROM visitantes WHERE creado_en >= NOW() - INTERVAL '30 days'"),
     ]);
 
@@ -75,7 +74,6 @@ export async function stats(req, res, next) {
       usuarios:              Number(usuarios.rows[0].count),
       solicitudesPendientes: Number(solicitudes.rows[0].count),
       documentos:            Number(documentos.rows[0].count),
-      noticias:              Number(noticias.rows[0].count),
       visitantesUltimos30d:  Number(visitantes.rows[0].count),
     });
   } catch (err) {
@@ -125,6 +123,7 @@ export async function actualizarUsuario(req, res, next) {
       rol,
       activo:     activo !== undefined ? Boolean(activo) : undefined,
       adminId:    req.user.id,
+      adminRol:   req.user.rol,
       adminEmail: req.user.email,
     });
     res.json(usuario);
@@ -139,6 +138,7 @@ export async function eliminarUsuario(req, res, next) {
     await adminService.eliminarUsuario({
       id:         req.params.id,
       adminId:    req.user.id,
+      adminRol:   req.user.rol,
       adminEmail: req.user.email,
     });
     res.status(204).end();
