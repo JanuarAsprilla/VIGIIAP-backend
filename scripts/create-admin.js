@@ -7,10 +7,16 @@ import bcrypt from 'bcryptjs';
 import { query, connectDB } from '../src/config/database.js';
 import logger from '../src/utils/logger.js';
 
+const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD;
+if (!ADMIN_PASSWORD) {
+  console.error('ERROR: Define ADMIN_SEED_PASSWORD en el entorno antes de ejecutar este script.');
+  process.exit(1);
+}
+
 const ADMIN = {
   nombre:    'Administrador VIGI-IIAP',
-  email:     'admin@iiap.gov.co',
-  password:  'Admin@IIAP2026!',
+  email:     process.env.ADMIN_SEED_EMAIL || 'admin@iiap.gov.co',
+  password:  ADMIN_PASSWORD,
   rol:       'admin_sig',
   institucion: 'Instituto de Investigaciones Ambientales del Pacífico',
 };
@@ -44,7 +50,7 @@ async function createAdmin() {
   logger.info('');
   logger.info('  CAMBIA LA CONTRASEÑA después del primer login:');
   logger.info(`  Email:    ${ADMIN.email}`);
-  logger.info(`  Password: ${ADMIN.password}`);
+  logger.info('  Password: [ver variable ADMIN_SEED_PASSWORD]');
 
   process.exit(0);
 }
