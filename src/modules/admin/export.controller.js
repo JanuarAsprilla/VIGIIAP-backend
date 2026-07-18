@@ -156,6 +156,9 @@ export async function exportDescargas(req, res, next) {
        FROM descarga_log ORDER BY descargado_en DESC LIMIT $1`,
       [MAX_ROWS]
     );
+    if (rows.length === MAX_ROWS) {
+      return res.status(400).json({ error: `Más de ${MAX_ROWS} registros. Usa filtros de fecha para reducir el rango.` });
+    }
     registrarAuditoria({
       accion: 'export_descargas', modulo: 'admin',
       descripcion: `Export descargas (${rows.length} registros, ${formato})`,

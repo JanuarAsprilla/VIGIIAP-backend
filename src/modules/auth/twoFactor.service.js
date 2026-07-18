@@ -6,6 +6,7 @@ import * as OTPAuth from 'otpauth';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query, getClient } from '../../config/database.js';
+import { encryptTotpSecret, decryptTotpSecret, isTotpEncryptionEnabled } from '../../utils/totpEncryption.js';
 
 const APP_NAME = 'VIGIIAP';
 
@@ -25,7 +26,9 @@ export async function setupTotp(userId, email) {
   const totp       = new OTPAuth.TOTP({ issuer: APP_NAME, label: email, secret, period: 30 });
   const otpauthUrl = totp.toString();
 
-  await query('UPDATE usuarios SET totp_secret = $1 WHERE id = $2', [secretB32, userId]);
+  // Cifrar el secret antes de almacenar — si BD es comprometida, el secret no es usable sin la clave AES
+  const storedSecret = isTotpEncryptionEnabled() ? encryptTotpSecret(secretB32) : secretB32;
+  await query('UPDATE usuarios SET totp_secret = $1 WHERE id = $2', [storedSecret, userId]);
   return { secret: secretB32, otpauthUrl };
 }
 
@@ -40,7 +43,8 @@ export async function enableTotp(userId, code) {
   if (rows[0].totp_enabled) {
     throw Object.assign(new Error('2FA ya está activado'), { status: 409 });
   }
-  if (!checkTotp(code, rows[0].totp_secret)) {
+  const plainSecret = decryptTotpSecret(rows[0].totp_secret);
+  if (!checkTotp(code, plainSecret)) {
     throw Object.assign(new Error('Código TOTP inválido'), { status: 401 });
   }
 
@@ -66,7 +70,8 @@ export async function verifyTotpOrBackup(userId, code) {
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
   // Intentar TOTP primero
-  const totpResult = checkTotpWithCounter(code, rows[0].totp_secret, rows[0].totp_last_counter);
+  const plainSecret = decryptTotpSecret(rows[0].totp_secret);
+  const totpResult = checkTotpWithCounter(code, plainSecret, rows[0].totp_last_counter);
   if (totpResult.valid) {
     // Registrar contador usado para bloquear replay en la misma ventana de 30s
     await query(
@@ -117,7 +122,8 @@ export async function disableTotp(userId, code) {
     'SELECT totp_secret FROM usuarios WHERE id = $1 AND totp_enabled = true', [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('2FA no está activado'), { status: 400 });
-  if (!checkTotp(code, rows[0].totp_secret)) {
+  const plainSecret = decryptTotpSecret(rows[0].totp_secret);
+  if (!checkTotp(code, plainSecret)) {
     throw Object.assign(new Error('Código TOTP inválido'), { status: 401 });
   }
   await query(
