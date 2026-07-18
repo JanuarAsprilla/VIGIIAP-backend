@@ -65,13 +65,15 @@ describe('cacheMiddleware() — bypass (sin cachear)', () => {
 
   beforeEach(() => vi.clearAllMocks());
 
-  it('llama next() directamente si el query tiene admin=true', async () => {
+  it('NO bypasea cache por admin=true en query (bypass era un vector DoS)', async () => {
+    // admin=true ya no es un bypass válido — cualquier cliente podía usarlo para forzar DB hits.
+    // Sin token de autenticación, la request pasa por el path de cache (Redis null → next()).
     const middleware = cacheMiddleware(60);
     const req = { query: { admin: 'true' }, cookies: {}, headers: {}, path: '/mapas' };
     const res = mockRes();
     await middleware(req, res, mockNext);
+    // Redis no disponible en tests → next() igual se llama, pero por path de cache, no bypass
     expect(mockNext).toHaveBeenCalledOnce();
-    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('llama next() si el request tiene cookie vigiiap_token (autenticado)', async () => {

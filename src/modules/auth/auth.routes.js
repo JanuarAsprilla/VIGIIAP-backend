@@ -39,9 +39,10 @@ router.delete('/sessions',     authenticate, revokeAllSessions);
 router.post('/change-expired-password', authRateLimiter, changeExpiredPassword);
 
 // 2FA TOTP
-router.post('/2fa/setup',    authenticate, tfSetup);
-router.post('/2fa/verify',   authenticate, tfVerify);
-router.post('/2fa/disable',  authenticate, tfDisable);
+// authRateLimiter en todos los endpoints 2FA — previene fuerza bruta con token robado
+router.post('/2fa/setup',    authenticate, authRateLimiter, tfSetup);
+router.post('/2fa/verify',   authenticate, authRateLimiter, tfVerify);
+router.post('/2fa/disable',  authenticate, authRateLimiter, tfDisable);
 router.post('/2fa/confirm',  authRateLimiter, tfConfirm); // usa cookie vigiiap_2fa_temp, sin authenticate
 
 export default router;

@@ -5,7 +5,7 @@
 import * as OTPAuth from 'otpauth';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
-import { query } from '../../config/database.js';
+import { query, getClient } from '../../config/database.js';
 
 const APP_NAME = 'VIGIIAP';
 
@@ -55,24 +55,57 @@ export async function enableTotp(userId, code) {
   return { backupCodes: rawCodes };
 }
 
-/** Verifica un código TOTP o backup code durante el login. */
+/** Verifica un código TOTP o backup code durante el login.
+ *  - TOTP: previene replay guardando el último contador usado (periodo de 30s).
+ *  - Backup codes: consumo atómico con SELECT FOR UPDATE para evitar race conditions.
+ */
 export async function verifyTotpOrBackup(userId, code) {
   const { rows } = await query(
-    'SELECT totp_secret, totp_backup_codes FROM usuarios WHERE id = $1', [userId]
+    'SELECT totp_secret, totp_backup_codes, totp_last_counter FROM usuarios WHERE id = $1', [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
-  if (checkTotp(code, rows[0].totp_secret)) return true;
+  // Intentar TOTP primero
+  const totpResult = checkTotpWithCounter(code, rows[0].totp_secret, rows[0].totp_last_counter);
+  if (totpResult.valid) {
+    // Registrar contador usado para bloquear replay en la misma ventana de 30s
+    await query(
+      'UPDATE usuarios SET totp_last_counter = $1 WHERE id = $2',
+      [totpResult.counter, userId]
+    );
+    return true;
+  }
 
-  const codes = rows[0].totp_backup_codes ?? [];
-  for (let i = 0; i < codes.length; i++) {
-    if (await bcrypt.compare(code, codes[i])) {
-      await query(
-        'UPDATE usuarios SET totp_backup_codes = $1 WHERE id = $2',
-        [codes.filter((_, idx) => idx !== i), userId]
-      );
-      return true;
+  // Intentar backup code con SELECT FOR UPDATE para evitar race condition.
+  // Verificar primero que hay códigos disponibles — evita abrir transacción en vano.
+  const codesSnapshot = rows[0].totp_backup_codes ?? [];
+  if (codesSnapshot.length === 0) {
+    throw Object.assign(new Error('Código de autenticación inválido'), { status: 401 });
+  }
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows: locked } = await client.query(
+      'SELECT totp_backup_codes FROM usuarios WHERE id = $1 FOR UPDATE', [userId]
+    );
+    const codes = locked[0]?.totp_backup_codes ?? [];
+    for (let i = 0; i < codes.length; i++) {
+      if (await bcrypt.compare(code, codes[i])) {
+        await client.query(
+          'UPDATE usuarios SET totp_backup_codes = $1 WHERE id = $2',
+          [codes.filter((_, idx) => idx !== i), userId]
+        );
+        await client.query('COMMIT');
+        return true;
+      }
     }
+    await client.query('ROLLBACK');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 
   throw Object.assign(new Error('Código de autenticación inválido'), { status: 401 });
@@ -93,13 +126,26 @@ export async function disableTotp(userId, code) {
   );
 }
 
-/** Verifica un token TOTP con ventana de ±1 paso (30s de tolerancia). */
-function checkTotp(token, secretB32) {
+/** Verifica TOTP y retorna { valid, counter } donde counter es el paso absoluto usado.
+ *  counter se persiste en BD para bloquear replay del mismo código en la ventana de 90s.
+ */
+function checkTotpWithCounter(token, secretB32, lastCounter = null) {
   try {
     const totp  = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secretB32), period: 30 });
     const delta = totp.validate({ token, window: 1 });
-    return delta !== null;
+    if (delta === null) return { valid: false };
+    const currentCounter = Math.floor(Date.now() / 1000 / 30) + delta;
+    // Rechazar si el mismo contador ya fue usado (replay en ventana de 90s)
+    if (lastCounter !== null && lastCounter !== undefined && currentCounter <= Number(lastCounter)) {
+      return { valid: false };
+    }
+    return { valid: true, counter: currentCounter };
   } catch {
-    return false;
+    return { valid: false };
   }
+}
+
+/** Verifica TOTP sin tracking de counter (para setup/enable/disable — no son flujos de login). */
+function checkTotp(token, secretB32) {
+  return checkTotpWithCounter(token, secretB32).valid;
 }

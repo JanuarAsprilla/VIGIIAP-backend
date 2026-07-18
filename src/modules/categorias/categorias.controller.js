@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import * as categoriasService from './categorias.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
@@ -21,13 +22,19 @@ export async function upsertThumbnail(req, res, next) {
   } catch (err) { next(err); }
 }
 
+const nombreSchema = z.string()
+  .min(2, 'Mínimo 2 caracteres')
+  .max(100, 'Máximo 100 caracteres')
+  .regex(/^[\p{L}\p{N}\s\-_.]+$/u, 'Solo se permiten letras, números, espacios y - _ .');
+
 export async function create(req, res, next) {
   try {
-    const { nombre } = req.body;
-    if (!nombre?.trim()) {
-      return res.status(400).json({ error: 'El nombre de la categoría es obligatorio' });
+    const parseResult = nombreSchema.safeParse(req.body?.nombre?.trim());
+    if (!parseResult.success) {
+      return res.status(400).json({ error: parseResult.error.errors[0].message });
     }
-    const result = await categoriasService.upsert(nombre.trim());
+    const nombre = parseResult.data;
+    const result = await categoriasService.upsert(nombre);
     registrarAuditoria({
       accion: 'create_categoria', modulo: 'categorias', entidadId: nombre.trim(),
       descripcion: `Categoría creada: ${nombre.trim()}`,

@@ -26,7 +26,11 @@ export async function getAll(reqQuery) {
     params.push(estado);
     conditions.push(`s.estado = $${params.length}`);
   }
+  const TIPOS_VALIDOS = ['uso-suelo', 'linderos', 'estudio-ambiental', 'validacion', 'aprovechamiento', 'otro'];
   if (tipo) {
+    if (!TIPOS_VALIDOS.includes(tipo)) {
+      throw Object.assign(new Error(`tipo inválido. Valores permitidos: ${TIPOS_VALIDOS.join(', ')}`), { status: 400 });
+    }
     params.push(tipo);
     conditions.push(`s.tipo = $${params.length}`);
   }
@@ -200,7 +204,8 @@ export async function addArchivo(solicitudId, file, userId, isAdmin, ip) {
     throw Object.assign(new Error(validation.error), { status: 422 });
   }
 
-  const ext = (file.originalname ?? 'file').split('.').pop().toLowerCase();
+  const MIME_TO_EXT = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  const ext = MIME_TO_EXT[file.mimetype] ?? 'bin';
   const key = `solicitudes/${solicitudId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
   const url = await uploadFile(key, file.buffer, file.mimetype, false);
 
