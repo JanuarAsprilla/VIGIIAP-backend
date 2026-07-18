@@ -91,7 +91,9 @@ describe('login()', () => {
     await expect(login('noexiste@iiap.gob.pe', 'pass', '127.0.0.1', 'jest')).rejects.toMatchObject({
       status: 401,
     });
-    expect(bcrypt.compare).not.toHaveBeenCalled();
+    // bcrypt.compare DEBE llamarse con el hash dummy para igualar el tiempo de respuesta
+    // y evitar que un atacante distinga emails registrados de los que no existen (timing attack).
+    expect(bcrypt.compare).toHaveBeenCalledOnce();
   });
 
   it('lanza 401 cuando la contraseña es incorrecta', async () => {

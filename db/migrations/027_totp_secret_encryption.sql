@@ -1,0 +1,23 @@
+-- 027_totp_secret_encryption.sql
+-- Documentación del cambio de formato de totp_secret.
+--
+-- A partir de esta migración, el campo totp_secret almacena el secret TOTP
+-- cifrado con AES-256-GCM cuando TOTP_ENCRYPTION_KEY está configurada en el entorno.
+--
+-- Formato cifrado: "iv_hex:tag_hex:ciphertext_hex" (distinguible del Base32 legacy)
+-- Formato legacy (sin clave): secret Base32 en texto plano (sin ":")
+--
+-- La capa de aplicación (totpEncryption.js) detecta el formato automáticamente:
+--   - Si contiene ":" → descifrar con AES-256-GCM
+--   - Si no contiene ":" → tratar como Base32 plaintext (compatibilidad retroactiva)
+--
+-- ACCIÓN REQUERIDA en producción:
+-- 1. Configurar TOTP_ENCRYPTION_KEY en Render (64 hex chars):
+--    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+-- 2. Los secrets existentes se re-cifrarán la próxima vez que el usuario
+--    pase por el flujo de 2FA (setup nuevo). No es necesaria migración de datos
+--    ya que este deploy es pre-lanzamiento con cero usuarios activos.
+
+-- Sin cambios estructurales en esta migración — el cifrado es transparente
+-- a nivel de columna (TEXT). El cambio es únicamente en la capa de aplicación.
+SELECT 1; -- no-op para mantener la numeración de migraciones

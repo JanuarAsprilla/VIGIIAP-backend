@@ -109,9 +109,10 @@ describe('changeExpiredPassword()', () => {
   it('verifica TOTP si 2FA está activo y se envía código', async () => {
     const token = makeToken({ id: 'user-uuid', scope: 'password-change' });
     query
-      .mockResolvedValueOnce({ rows: [{ totp_enabled: true }] })  // SELECT totp_enabled
-      .mockResolvedValueOnce({ rows: [] })                         // UPDATE password
-      .mockResolvedValueOnce({ rows: [USER_ROW] });                // SELECT user
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: true }] })              // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti' }] }) // SELECT for jti check
+      .mockResolvedValueOnce({ rows: [] })                                    // UPDATE password
+      .mockResolvedValueOnce({ rows: [USER_ROW] });                           // SELECT user
 
     verifyTotpOrBackup.mockResolvedValueOnce(true);
     issueTokenPair.mockResolvedValueOnce({
@@ -137,9 +138,10 @@ describe('changeExpiredPassword()', () => {
   it('actualiza contraseña y emite nuevas cookies cuando no hay 2FA', async () => {
     const token = makeToken({ id: 'user-uuid', scope: 'password-change' });
     query
-      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
-      .mockResolvedValueOnce({ rows: [] })                         // UPDATE password
-      .mockResolvedValueOnce({ rows: [USER_ROW] });                // SELECT user
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })             // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti' }] }) // SELECT for jti check
+      .mockResolvedValueOnce({ rows: [] })                                    // UPDATE password
+      .mockResolvedValueOnce({ rows: [USER_ROW] });                           // SELECT user
 
     revokeAllRefreshTokens.mockResolvedValueOnce(undefined);
     issueTokenPair.mockResolvedValueOnce({

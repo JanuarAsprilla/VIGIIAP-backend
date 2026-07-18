@@ -103,6 +103,10 @@ export async function revokeAllRefreshTokens(userId) {
 const MAX_INTENTOS = 5;
 const LOCKOUT_MINS = 15;
 
+// Hash dummy precalculado — previene timing attack: si el email no existe,
+// bcrypt.compare() corre igualmente para que el tiempo de respuesta sea indistinguible.
+const DUMMY_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj0D4U0W5mFS';
+
 export async function login(email, password, ip, userAgent) {
   const { rows } = await query(
     `SELECT id, nombre, email, password_hash, rol, activo, email_verified,
@@ -112,7 +116,11 @@ export async function login(email, password, ip, userAgent) {
   );
 
   const user = rows[0];
-  if (!user) throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
+  if (!user) {
+    // Comparación dummy para igualar tiempo de respuesta con cuentas inexistentes
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
+  }
 
   // Bloqueo temporal por intentos fallidos
   if (user.bloqueado_hasta && new Date() < new Date(user.bloqueado_hasta)) {
@@ -176,8 +184,14 @@ export async function login(email, password, ip, userAgent) {
     const changedAt  = user.password_changed_at ?? user.creado_en;
     const expired    = new Date(changedAt) < new Date(Date.now() - expiryDays * 86_400_000);
     if (expired) {
+      const expiredJti = generateSecureToken();
+      // Almacenar jti en BD para invalidar el token una vez usado (previene replay)
+      await query(
+        'UPDATE usuarios SET expired_token_jti = $1 WHERE id = $2',
+        [expiredJti, user.id]
+      );
       const expiredToken = jwt.sign(
-        { id: user.id, email: user.email, rol: user.rol, scope: 'password-change' },
+        { id: user.id, email: user.email, rol: user.rol, scope: 'password-change', jti: expiredJti },
         process.env.JWT_SECRET,
         { expiresIn: '15m', algorithm: 'HS256' }
       );

@@ -1,5 +1,5 @@
 import { query } from '../../config/database.js';
-import { deleteFile } from '../../config/r2.js';
+import { deleteFile, extractKey } from '../../config/r2.js';
 
 /** Devuelve todas las categorías con su thumbnail_url. */
 export async function getAll() {
@@ -60,9 +60,3 @@ export async function remove(nombre) {
   if (key) await deleteFile(key).catch(() => {});
 }
 
-function extractKey(url) {
-  if (!url) return null;
-  const publicUrl = process.env.R2_PUBLIC_URL;
-  if (publicUrl && url.startsWith(publicUrl)) return url.slice(publicUrl.length + 1);
-  return url.split('/').slice(-1)[0];
-}

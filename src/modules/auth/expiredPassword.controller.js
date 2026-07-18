@@ -41,10 +41,26 @@ export async function changeExpiredPassword(req, res, next) {
 
     const { password } = resetPasswordSchema.pick({ password: true }).parse(req.body);
 
+    // Verificar que el token no fue ya consumido (previene replay del JWT temporal)
+    const { rows: check } = await query(
+      'SELECT password_hash, expired_token_jti FROM usuarios WHERE id = $1', [payload.id]
+    );
+    if (!check[0]) return res.status(401).json({ error: 'Usuario no encontrado' });
+    if (payload.jti && check[0].expired_token_jti !== payload.jti) {
+      return res.status(401).json({ error: 'Token de cambio ya utilizado. Inicia sesión de nuevo.' });
+    }
+
+    // Verificar que la nueva contraseña es diferente a la actual
+    const isSame = await bcrypt.compare(password, check[0].password_hash);
+    if (isSame) {
+      return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual.' });
+    }
+
     const hash = await bcrypt.hash(password, 12);
     await query(
       `UPDATE usuarios
-       SET password_hash = $1, password_changed_at = NOW(), actualizado_en = NOW()
+       SET password_hash = $1, password_changed_at = NOW(),
+           expired_token_jti = NULL, actualizado_en = NOW()
        WHERE id = $2`,
       [hash, payload.id]
     );

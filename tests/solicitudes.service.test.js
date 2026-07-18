@@ -99,15 +99,19 @@ describe('solicitudes.service → getAll()', () => {
     expect(result.meta.total).toBe(0);
   });
 
-  it('filtra por tipo cuando se provee', async () => {
+  it('filtra por tipo válido cuando se provee', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ ...SOL, tipo: 'agua' }] })
+      .mockResolvedValueOnce({ rows: [{ ...SOL, tipo: 'uso-suelo' }] })
       .mockResolvedValueOnce({ rows: [{ count: '1' }] });
 
-    const result = await getAll({ tipo: 'agua' });
+    const result = await getAll({ tipo: 'uso-suelo' });
     const firstCallParams = query.mock.calls[0][1];
-    expect(firstCallParams).toContain('agua');
-    expect(result.data[0].tipo).toBe('agua');
+    expect(firstCallParams).toContain('uso-suelo');
+    expect(result.data[0].tipo).toBe('uso-suelo');
+  });
+
+  it('lanza 400 para tipo inválido (no en whitelist)', async () => {
+    await expect(getAll({ tipo: 'agua' })).rejects.toMatchObject({ status: 400 });
   });
 });
 

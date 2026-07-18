@@ -264,6 +264,11 @@ export async function batchUsuarios(req, res, next) {
     if (ids.length > 50) {
       return res.status(400).json({ error: 'Máximo 50 usuarios por operación batch' });
     }
+    // Validar formato UUID — sin esto, IDs malformados generan error 500 de Postgres
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!ids.every((id) => typeof id === 'string' && UUID_RE.test(id))) {
+      return res.status(400).json({ error: 'Todos los ids deben ser UUIDs válidos' });
+    }
     const ACCIONES = ['activar', 'desactivar', 'cambiar-rol'];
     if (!ACCIONES.includes(accion)) {
       return res.status(400).json({ error: `accion debe ser uno de: ${ACCIONES.join(', ')}` });

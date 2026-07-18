@@ -12,6 +12,12 @@ import logger from './logger.js';
  * @param {unknown} value
  * @returns {string}
  */
+/** Elimina caracteres de control CRLF de valores que van en headers SMTP (Subject, To, etc.).
+ *  escHtml no es suficiente — escapa HTML pero no elimina \r\n que inyectan headers. */
+function sanitizeSMTP(value) {
+  return String(value ?? '').replace(/[\r\n\t\x00-\x08\x0B-\x1F\x7F]/g, ' ').trim().slice(0, 250);
+}
+
 function escHtml(value) {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -35,7 +41,9 @@ function createTransport() {
   });
 }
 
-const FROM = `"${process.env.MAIL_FROM_NAME || 'VIGI-IIAP'}" <${process.env.MAIL_USER}>`;
+// Sanitizar MAIL_FROM_NAME: eliminar CRLF y comillas que podrían inyectar headers SMTP
+const MAIL_FROM_SAFE = (process.env.MAIL_FROM_NAME || 'VIGI-IIAP').replace(/[\r\n"\\]/g, '');
+const FROM = `"${MAIL_FROM_SAFE}" <${process.env.MAIL_USER}>`;
 const BASE_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co';
 
 const TIPO_LABEL = {
@@ -121,7 +129,7 @@ export async function notifyAdminNewRegistro({ adminEmail, nombre, email, instit
   const eMotivo     = escHtml(motivo) || 'No especificado';
   await send({
     to: adminEmail,
-    subject: `[VIGI-IIAP] Nuevo registro: ${eNombre}`,
+    subject: `[VIGI-IIAP] Nuevo registro: ${sanitizeSMTP(nombre)}`,
     html: baseTemplate('Nuevo registro de usuario', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Un nuevo usuario se ha registrado en VIGI-IIAP y requiere revisión:
@@ -159,7 +167,7 @@ export async function notifyUsuarioActivacion({ email, nombre, activo, rol }) {
   const eRolLabel = escHtml(rolLabel);
   await send({
     to: email,
-    subject: `[VIGI-IIAP] Cuenta ${estado}`,
+    subject: `[VIGI-IIAP] Cuenta ${sanitizeSMTP(estado)}`,
     html: baseTemplate(`Tu cuenta ha sido ${estado}`, `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${eNombre}</strong>,
@@ -343,7 +351,7 @@ export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, 
   const eEmail  = escHtml(email);
   await send({
     to: adminEmail,
-    subject: `[VIGI-IIAP] ✅ Usuario listo para activar: ${eNombre}`,
+    subject: `[VIGI-IIAP] ✅ Usuario listo para activar: ${sanitizeSMTP(eNombre)}`,
     html: baseTemplate('Usuario verificado — pendiente de activación', `
       <div style="background:#ECFDF5;border-left:4px solid #059669;padding:14px 18px;border-radius:4px;margin-bottom:20px;">
         <p style="margin:0;font-size:14px;color:#065F46;font-weight:600;">
@@ -398,7 +406,7 @@ export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta 
   const eRespuesta = escHtml(respuesta);
   await send({
     to: email,
-    subject: `[VIGI-IIAP] Tu solicitud fue tramitada — ${eTipoLabel}`,
+    subject: `[VIGI-IIAP] Tu solicitud fue tramitada — ${sanitizeSMTP(eTipoLabel)}`,
     html: baseTemplate('Tu solicitud ha sido tramitada', `
       <p style="color:#374151;font-size:14px;line-height:1.6;">
         Hola <strong>${eNombre}</strong>,

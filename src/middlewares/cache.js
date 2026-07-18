@@ -23,15 +23,23 @@ export function getRedisClient() {
  */
 export function cacheMiddleware(ttlSeconds) {
   return async (req, res, next) => {
-    // No cachear requests autenticados ni admin views
-    if (req.query.admin === 'true' || req.cookies?.vigiiap_token || req.headers.authorization) {
+    // No cachear requests autenticados.
+    // admin=true en query string era un bypass de cache controlado por el cliente
+    // → cualquier usuario podía forzar hits directos a BD (DoS). Eliminado.
+    if (req.cookies?.vigiiap_token || req.headers.authorization) {
       return next();
     }
 
     const client = getRedisClient();
     if (!client?.isReady) return next();
 
-    const key = `cache:${req.path}:${new URLSearchParams(req.query).toString()}`;
+    // Whitelist de params en la cache key — previene flooding de keys únicas en Redis.
+    const safeParams = new URLSearchParams();
+    const ALLOWED_PARAMS = ['page', 'limit', 'categoria', 'q', 'anio', 'tipo'];
+    for (const p of ALLOWED_PARAMS) {
+      if (req.query[p]) safeParams.set(p, String(req.query[p]).slice(0, 100));
+    }
+    const key = `cache:${req.path}:${safeParams.toString()}`.slice(0, 256);
 
     try {
       const cached = await client.get(key);

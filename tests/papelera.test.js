@@ -77,15 +77,11 @@ describe('getPapelera()', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [] }));
   });
 
-  it('retorna datos para tipo=noticia', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
-
+  it('retorna 400 para tipo=noticia (módulo eliminado del proyecto)', async () => {
     const req = { query: { tipo: 'noticia' } };
     const res = mockRes();
     await getPapelera(req, res, mockNext);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [] }));
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('retorna datos para tipo=categoria', async () => {
@@ -135,9 +131,9 @@ describe('restaurar()', () => {
   });
 
   it('restaura un mapa y responde con mensaje', async () => {
-    query.mockResolvedValueOnce({ rows: [{ id: 'uuid-m1' }] });
+    query.mockResolvedValueOnce({ rows: [{ id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' }] });
 
-    const req = { params: { tipo: 'mapa', id: 'uuid-m1' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const req = { params: { tipo: 'mapa', id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' }, user: ADMIN_USER, ip: '10.0.0.1' };
     const res = mockRes();
     await restaurar(req, res, mockNext);
 
@@ -153,8 +149,8 @@ describe('restaurar()', () => {
   });
 
   it('restaura un documento', async () => {
-    query.mockResolvedValueOnce({ rows: [{ id: 'uuid-d1' }] });
-    const req = { params: { tipo: 'documento', id: 'uuid-d1' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    query.mockResolvedValueOnce({ rows: [{ id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901' }] });
+    const req = { params: { tipo: 'documento', id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901' }, user: ADMIN_USER, ip: '10.0.0.1' };
     const res = mockRes();
     await restaurar(req, res, mockNext);
     const [sql] = query.mock.calls[0];
@@ -172,7 +168,7 @@ describe('restaurar()', () => {
 
   it('retorna 404 si el recurso no existe en la papelera', async () => {
     query.mockResolvedValueOnce({ rows: [] });
-    const req = { params: { tipo: 'mapa', id: 'uuid-inexistente' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const req = { params: { tipo: 'mapa', id: 'c3d4e5f6-a7b8-9012-cdef-123456789012' }, user: ADMIN_USER, ip: '10.0.0.1' };
     const res = mockRes();
     await restaurar(req, res, mockNext);
     expect(res.status).toHaveBeenCalledWith(404);
@@ -181,7 +177,7 @@ describe('restaurar()', () => {
 
   it('llama next(err) ante error de DB', async () => {
     query.mockRejectedValueOnce(new Error('DB fail'));
-    const req = { params: { tipo: 'mapa', id: 'uuid-1' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const req = { params: { tipo: 'mapa', id: 'd4e5f6a7-b8c9-0123-def0-234567890123' }, user: ADMIN_USER, ip: '10.0.0.1' };
     const res = mockRes();
     await restaurar(req, res, mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));

@@ -34,8 +34,9 @@ export async function getAll(reqQuery, user) {
     conditions.push(`m.categoria = $${params.length}`);
   }
   if (q) {
-    params.push(`%${q}%`);
-    conditions.push(`(m.titulo ILIKE $${params.length} OR m.descripcion ILIKE $${params.length})`);
+    const qEsc = q.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${qEsc}%`);
+    conditions.push(`(m.titulo ILIKE $${params.length} ESCAPE '\\\\' OR m.descripcion ILIKE $${params.length} ESCAPE '\\\\')`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

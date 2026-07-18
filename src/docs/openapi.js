@@ -72,7 +72,7 @@ export const openApiSpec = {
           id:          { type: 'string', format: 'uuid' },
           nombre:      { type: 'string' },
           email:       { type: 'string', format: 'email' },
-          rol:         { type: 'string', enum: ['super_admin', 'admin_sig', 'investigador', 'institucional', 'publico', 'visitante'] },
+          rol:         { type: 'string', enum: ['admin_sig', 'investigador', 'institucional', 'publico', 'visitante'] },
           institucion: { type: 'string', nullable: true },
           activo:      { type: 'boolean' },
           creado_en:   { type: 'string', format: 'date-time' },
@@ -360,7 +360,7 @@ export const openApiSpec = {
       },
       post: {
         tags: ['Documentos'],
-        summary: 'Subir documento (admin_sig, investigador)',
+        summary: 'Subir documento (solo admin_sig)',
         requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', required: ['titulo'], properties: { titulo: { type: 'string' }, tipo: { type: 'string' }, anio: { type: 'integer' }, autores: { type: 'string' }, resumen: { type: 'string' }, visibilidad: { type: 'string', enum: ['publico', 'usuarios', 'acreditados'] }, archivo: { type: 'string', format: 'binary' } } } } } },
         responses: { 201: { description: 'Documento creado' }, 401: { description: 'No autenticado' }, 403: { description: 'Sin permisos' } },
       },
@@ -594,7 +594,7 @@ export const openApiSpec = {
       get: {
         tags: ['Admin'],
         summary: 'Ver elementos eliminados (papelera)',
-        description: 'Solo super_admin. Filtra por tipo: mapa | documento | noticia | categoria',
+        description: 'Solo super_admin. Filtra por tipo: mapa | documento | categoria',
         security: [{ cookieAuth: [] }, { bearerAuth: [] }],
         parameters: [
           { name: 'tipo', in: 'query', required: true, schema: { type: 'string', enum: ['mapa', 'documento', 'noticia', 'categoria'] } },

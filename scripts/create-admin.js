@@ -3,6 +3,12 @@
  * Uso: node scripts/create-admin.js
  */
 import 'dotenv/config';
+
+if (process.env.NODE_ENV === 'production') {
+  console.error('ERROR: No ejecutar scripts de seed en producción.');
+  process.exit(1);
+}
+
 import bcrypt from 'bcryptjs';
 import { query, connectDB } from '../src/config/database.js';
 import logger from '../src/utils/logger.js';

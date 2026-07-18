@@ -9,12 +9,14 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  // rejectUnauthorized: true valida el certificado SSL del servidor de BD.
-  // Para deshabilitar en desarrollo local establece DB_SSL=false en .env.
-  // En producción (Supabase/RDS) SIEMPRE debe ser true.
-  ssl: process.env.DB_SSL === 'true'
-    ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
-    : false,
+  // Producción: SSL siempre activo con validación de certificado (Supabase lo requiere).
+  // Desarrollo: controlado por DB_SSL=true en .env para PostgreSQL local sin TLS.
+  // Nunca desactivar rejectUnauthorized en producción — aceptaría certs falsos (MITM).
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: true }
+    : (process.env.DB_SSL === 'true'
+        ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
+        : false),
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

@@ -35,7 +35,15 @@ export function initEmailQueue() {
     return;
   }
 
-  emailQueue = new Queue('emails', { connection });
+  emailQueue = new Queue('emails', {
+    connection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: 100,
+      removeOnFail: 200,
+    },
+  });
 
   const transporter = buildTransporter();
 

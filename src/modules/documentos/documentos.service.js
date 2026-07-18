@@ -33,8 +33,10 @@ export async function getAll(reqQuery, user) {
   if (tipo)  { params.push(tipo);         conditions.push(`d.tipo = $${params.length}`); }
   if (anio)  { params.push(anio);         conditions.push(`d.anio = $${params.length}`); }
   if (q) {
-    params.push(`%${q}%`);
-    conditions.push(`(d.titulo ILIKE $${params.length} OR d.autores ILIKE $${params.length})`);
+    // Escapar metacaracteres LIKE (% y _) para evitar bypass de filtrado
+    const qEsc = q.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${qEsc}%`);
+    conditions.push(`(d.titulo ILIKE $${params.length} ESCAPE '\\' OR d.autores ILIKE $${params.length} ESCAPE '\\')`);
   }
 
   const where = conditions.join(' AND ');
@@ -66,7 +68,9 @@ export async function getBySlug(slug, user) {
   const params = permitida ? [slug, permitida] : [slug];
 
   const { rows } = await query(
-    `SELECT d.*, u.nombre AS autor
+    `SELECT d.id, d.titulo, d.slug, d.tipo, d.anio, d.autores, d.resumen,
+            d.archivo_url, d.tamano_bytes, d.visibilidad, d.activo, d.creado_en, d.actualizado_en,
+            u.nombre AS autor
      FROM documentos d
      LEFT JOIN usuarios u ON u.id = d.creado_por
      WHERE d.slug = $1 AND d.activo = true ${visFilter}`,

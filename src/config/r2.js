@@ -71,11 +71,9 @@ export function extractKey(url) {
   if (PUBLIC_URL && url.startsWith(PUBLIC_URL)) {
     return url.slice(PUBLIC_URL.length).replace(/^\//, '');
   }
-  try {
-    return new URL(url).pathname.replace(/^\//, '');
-  } catch {
-    return null;
-  }
+  // No aceptar URLs de otros dominios como keys R2 — podría causar borrado arbitrario de objetos.
+  // Si la URL no pertenece a ninguno de nuestros buckets configurados, retornar null.
+  return null;
 }
 
 /** Retorna true si la URL pertenece al bucket público. */
