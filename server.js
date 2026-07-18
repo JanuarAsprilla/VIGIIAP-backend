@@ -15,6 +15,12 @@ function validateEnv() {
     logger.error('[startup] FATAL: JWT_SECRET no está definida. El servidor no puede arrancar de forma segura.');
     process.exit(1);
   }
+  // HS256 requiere al menos 256 bits de entropía (32 bytes → 64 hex chars o 43+ base64 chars).
+  // Un secreto débil ("secret", "admin") es vulnerable a ataques de diccionario sobre JWTs.
+  if (process.env.JWT_SECRET.length < 32) {
+    logger.error('[startup] FATAL: JWT_SECRET demasiado corta (mínimo 32 caracteres para HS256). Genera una con: openssl rand -hex 32');
+    process.exit(1);
+  }
 
   const required = [
     'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',

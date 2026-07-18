@@ -9,11 +9,12 @@ import {
   batchUsuarios,
 } from './admin.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
+import { adminRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 
 // admin_sig Y super_admin acceden a todo (authorize ya lo incluye automáticamente)
-router.use(authenticate, authorize('admin_sig'));
+router.use(authenticate, authorize('admin_sig'), adminRateLimiter);
 
 router.get('/stats',            stats);
 router.get('/notificaciones',   notificaciones);

@@ -9,7 +9,9 @@ import swaggerUi from 'swagger-ui-express';
 import { openApiSpec } from './docs/openapi.js';
 
 import { query } from './config/database.js';
+import logger from './utils/logger.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
+import { optionalAuthenticate } from './middlewares/auth.js';
 import { requestId } from './middlewares/requestId.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { notFound } from './middlewares/notFound.js';
@@ -112,10 +114,30 @@ app.use(
   }),
 );
 app.use(compression());
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+// Token personalizado que redacta tokens sensibles de la URL antes de loguear.
+// Previene que tokens de reset/verificación (64 chars hex) aparezcan en los logs de Render.
+morgan.token('safe-url', (req) =>
+  req.originalUrl.replace(
+    /(\/(?:reset-password|verificar-email)\/)[A-Fa-f0-9]{32,}/g,
+    '$1[REDACTED]',
+  ),
+);
+
+const morganFormat = process.env.NODE_ENV === 'production'
+  ? ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'
+  : 'dev';
+
+app.use(morgan(morganFormat, { stream: { write: (msg) => logger.info(msg.trim()) } }));
 app.use(cookieParser());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Límite conservador: la API solo maneja JSON de texto; los archivos van vía multipart (multer).
+app.use(express.json({ limit: '1mb' }));
+// express.urlencoded deshabilitado: API JSON pura.
+// Con SameSite=None habilitado, urlencoded permitiría CSRF vía simple-form POST sin preflight.
+// Ningún endpoint lo requiere — multipart/form-data es procesado por multer.
+
+// optionalAuthenticate antes del rateLimiter para que req.user sea visible y el
+// límite por usuario (500 req/15min) se active correctamente en lugar de usar solo IP.
+app.use(optionalAuthenticate);
 app.use(rateLimiter);
 
 // ─── Health check (Render, load balancers, uptime monitors) ──────────────────
@@ -147,12 +169,16 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/categorias', categoriasRoutes);
 app.use('/api/descargar', descargasRoutes);
 
-// Redirect de seguridad: si el link del email apunta al backend, redirige al frontend
+// Redirect de seguridad: si el link del email apunta al backend, redirige al frontend.
+// El token se valida como hex puro — previene path traversal e inyección de headers.
+const HEX_TOKEN_RE = /^[A-Fa-f0-9]{40,128}$/;
 app.get('/verificar-email/:token', (req, res) => {
+  if (!HEX_TOKEN_RE.test(req.params.token)) return res.status(400).json({ error: 'Token inválido' });
   const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co').replace(/\/$/, '');
   res.redirect(302, `${base}/verificar-email/${req.params.token}`);
 });
 app.get('/reset-password/:token', (req, res) => {
+  if (!HEX_TOKEN_RE.test(req.params.token)) return res.status(400).json({ error: 'Token inválido' });
   const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co').replace(/\/$/, '');
   res.redirect(302, `${base}/reset-password/${req.params.token}`);
 });

@@ -52,9 +52,24 @@ function sendExport(res, rows, filename, formato) {
   res.send('﻿' + toCSV(clean)); // BOM para compatibilidad con Excel
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z?)?$/;
+
+function parseDateParam(raw, fieldName) {
+  if (!raw) return null;
+  if (!ISO_DATE_RE.test(raw) || isNaN(Date.parse(raw))) {
+    throw Object.assign(
+      new Error(`Parámetro '${fieldName}' no es una fecha válida (usa formato ISO 8601: YYYY-MM-DD)`),
+      { status: 422 },
+    );
+  }
+  return raw;
+}
+
 function dateFilter(desde, hasta, col, params, conditions) {
-  if (desde) { params.push(desde); conditions.push(`${col} >= $${params.length}`); }
-  if (hasta) { params.push(hasta); conditions.push(`${col} <= $${params.length}`); }
+  const d = parseDateParam(desde, 'desde');
+  const h = parseDateParam(hasta, 'hasta');
+  if (d) { params.push(d); conditions.push(`${col} >= $${params.length}`); }
+  if (h) { params.push(h); conditions.push(`${col} <= $${params.length}`); }
 }
 
 /** GET /api/admin/export/usuarios?formato=csv|json */
