@@ -6,16 +6,7 @@ export const loginSchema = z.object({
   password: z.string().min(8, 'Contraseña mínimo 8 caracteres').max(72, 'Contraseña máximo 72 caracteres'),
 });
 
-const strongPassword = z
-  .string()
-  .min(8, 'La contraseña debe tener al menos 8 caracteres')
-  .refine((v) => /[A-Z]/.test(v), 'Debe incluir al menos una letra mayúscula')
-  .refine((v) => /[a-z]/.test(v), 'Debe incluir al menos una letra minúscula')
-  .refine((v) => /[0-9]/.test(v), 'Debe incluir al menos un número')
-  .refine(
-    (v) => /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>/?`~]/.test(v),
-    'Debe incluir al menos un carácter especial (!@#$%...)'
-  );
+import { strongPassword } from '../../utils/passwordPolicy.js';
 
 export const registerSchema = z.object({
   nombre:      z.string().min(2, 'Nombre requerido').max(150),

@@ -46,7 +46,7 @@ export async function runMigrations() {
 }
 
 // CLI entrypoint: node db/migrate.js
-const isCLI = process.argv[1] && fileURLToPath(import.meta.url).endsWith(process.argv[1].split('/').pop());
+const isCLI = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isCLI) {
   connectDB()
     .then(runMigrations)

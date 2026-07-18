@@ -184,8 +184,14 @@ export async function login(email, password, ip, userAgent) {
     const changedAt  = user.password_changed_at ?? user.creado_en;
     const expired    = new Date(changedAt) < new Date(Date.now() - expiryDays * 86_400_000);
     if (expired) {
+      const expiredJti = generateSecureToken();
+      // Almacenar jti en BD para invalidar el token una vez usado (previene replay)
+      await query(
+        'UPDATE usuarios SET expired_token_jti = $1 WHERE id = $2',
+        [expiredJti, user.id]
+      );
       const expiredToken = jwt.sign(
-        { id: user.id, email: user.email, rol: user.rol, scope: 'password-change' },
+        { id: user.id, email: user.email, rol: user.rol, scope: 'password-change', jti: expiredJti },
         process.env.JWT_SECRET,
         { expiresIn: '15m', algorithm: 'HS256' }
       );

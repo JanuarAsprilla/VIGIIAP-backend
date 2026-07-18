@@ -8,6 +8,12 @@
  * Requiere que la migración 012_add_super_admin_role.sql ya esté aplicada.
  */
 import 'dotenv/config';
+
+if (process.env.NODE_ENV === 'production') {
+  console.error('ERROR: No ejecutar scripts de seed en producción.');
+  process.exit(1);
+}
+
 import bcrypt from 'bcryptjs';
 import { query, connectDB } from '../src/config/database.js';
 import logger from '../src/utils/logger.js';
@@ -18,10 +24,17 @@ const args = Object.fromEntries(
     .map((a) => a.slice(2).split('='))
 );
 
+// Contraseña desde variable de entorno — nunca como argumento CLI (visible en ps aux)
+const password = process.env.SUPERADMIN_SEED_PASSWORD;
+if (!password || password.length < 12) {
+  console.error('ERROR: SUPERADMIN_SEED_PASSWORD debe tener al menos 12 caracteres.');
+  console.error('Genera una con: node -e \'console.log(require("crypto").randomBytes(16).toString("hex"))\'');
+  process.exit(1);
+}
 const SUPERADMIN = {
-  nombre:     args.nombre     ?? 'Super Administrador VIGI-IIAP',
-  email:      args.email      ?? 'superadmin@iiap.gov.co',
-  password:   args.password   ?? `SuperAdmin@IIAP${new Date().getFullYear()}!`,
+  nombre:     args.nombre ?? 'Super Administrador VIGI-IIAP',
+  email:      args.email  ?? 'superadmin@iiap.gov.co',
+  password,
   institucion: 'Instituto de Investigaciones Ambientales del Pacífico',
 };
 
@@ -57,7 +70,7 @@ async function run() {
     logger.info('');
     logger.warn('  ⚠️  CAMBIA LA CONTRASEÑA inmediatamente tras el primer login:');
     logger.warn(`  Email:    ${SUPERADMIN.email}`);
-    logger.warn(`  Password: ${SUPERADMIN.password}`);
+    // Contraseña NO se imprime en logs — fue provista por SUPERADMIN_SEED_PASSWORD
   }
 
   process.exit(0);
