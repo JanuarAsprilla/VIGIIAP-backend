@@ -21,7 +21,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 const mapaBase = z.object({
   titulo:          z.string().min(3, 'Título requerido (mín. 3 caracteres)'),
   categoria:       z.string().min(2, 'Categoría requerida'),
-  anio:            z.coerce.number().int().min(1900).max(2100).optional(),
+  anio:            z.coerce.number().int().min(1900).max(CURRENT_YEAR + 1).optional(),
   descripcion:     z.string().optional(),
   thumbnail_url:   optionalUrl,
   archivo_pdf_url: optionalUrl,

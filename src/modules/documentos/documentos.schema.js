@@ -27,7 +27,7 @@ export const createDocumentoSchema = z.object({
 export const updateDocumentoSchema = z.object({
   titulo:               z.string().min(3, 'Título requerido (mín. 3 caracteres)').optional(),
   tipo:                 z.string().min(2).optional(),
-  anio:                 z.coerce.number().int().min(1900).max(2100).nullable().optional(),
+  anio:                 z.coerce.number().int().min(1900).max(CURRENT_YEAR + 1).nullable().optional(),
   autores:              z.string().optional(),
   resumen:              z.string().optional(),
   archivo_url:          r2Url,

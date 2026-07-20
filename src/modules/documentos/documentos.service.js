@@ -1,6 +1,7 @@
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
+import logger from '../../utils/logger.js';
 import { deleteFileByUrl } from '../../config/r2.js';
 
 /** Devuelve los valores de visibilidad accesibles según el rol del usuario.
@@ -121,10 +122,12 @@ export async function update(id, data) {
 }
 
 export async function remove(id) {
-  const { rows: existing } = await query('SELECT archivo_url FROM documentos WHERE id=$1 AND deleted_at IS NULL', [id]);
+  const { rows: existing } = await query(
+    `UPDATE documentos SET deleted_at = NOW(), actualizado_en = NOW()
+     WHERE id = $1 AND deleted_at IS NULL RETURNING archivo_url`, [id]
+  );
   if (!existing[0]) throw Object.assign(new Error('Documento no encontrado'), { status: 404 });
-  await query('UPDATE documentos SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1', [id]);
-  if (existing[0].archivo_url) await deleteFileByUrl(existing[0].archivo_url).catch(() => {});
+  if (existing[0].archivo_url) await deleteFileByUrl(existing[0].archivo_url).catch((err) => logger.warn('[r2] delete failed', { error: err.message }));
 }
 
 export async function setActivo(id, activo) {

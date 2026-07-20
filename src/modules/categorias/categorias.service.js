@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { deleteFile, extractKey } from '../../config/r2.js';
+import logger from '../../utils/logger.js';
 
 /** Devuelve todas las categorías con su thumbnail_url. */
 export async function getAll() {
@@ -37,7 +38,7 @@ export async function updateThumbnail(nombre, newUrl) {
 
   if (oldUrl && oldUrl !== newUrl) {
     const key = extractKey(oldUrl);
-    if (key) await deleteFile(key).catch(() => {});
+    if (key) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
   }
 
   return result;
@@ -57,6 +58,6 @@ export async function remove(nombre) {
   );
 
   const key = extractKey(existing[0].thumbnail_url);
-  if (key) await deleteFile(key).catch(() => {});
+  if (key) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
 }
 

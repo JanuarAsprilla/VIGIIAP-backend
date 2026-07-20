@@ -6,8 +6,9 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
+import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 import { paginate } from '../../utils/paginate.js';
-import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro } from '../../utils/mailer.js';
+import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado } from '../../utils/mailer.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /**
@@ -147,6 +148,16 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, ad
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
   const usuario = rows[0];
+
+  // Revocar sesiones activas si el rol cambia — el access token lleva el rol en el claim
+  // y quedaría stale hasta su expiración (hasta 15min de ventana de privilegio incorrecto)
+  if (rol !== undefined && rol !== target[0].rol) {
+    await revokeAllRefreshTokens(id).catch(() => {});
+    notifyRolCambiado({
+      email: usuario.email, nombre: usuario.nombre,
+      rolAnterior: target[0].rol, rolNuevo: rol,
+    }).catch(() => {});
+  }
 
   // Notificar al usuario afectado si cambia activo
   if (activo !== undefined) {

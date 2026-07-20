@@ -116,7 +116,7 @@ export async function update(id, data) {
   params.push(id);
 
   const { rows } = await query(
-    `UPDATE mapas SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`,
+    `UPDATE mapas SET ${updates.join(', ')} WHERE id = $${params.length} AND deleted_at IS NULL RETURNING *`,
     params,
   );
   if (!rows[0]) throw Object.assign(new Error('Mapa no encontrado'), { status: 404 });
@@ -125,7 +125,7 @@ export async function update(id, data) {
 
 export async function setActivo(id, activo) {
   const { rows } = await query(
-    'UPDATE mapas SET activo=$1, actualizado_en=NOW() WHERE id=$2 RETURNING *',
+    'UPDATE mapas SET activo=$1, actualizado_en=NOW() WHERE id=$2 AND deleted_at IS NULL RETURNING *',
     [activo, id],
   );
   if (!rows[0]) throw Object.assign(new Error('Mapa no encontrado'), { status: 404 });
@@ -133,11 +133,13 @@ export async function setActivo(id, activo) {
 }
 
 export async function remove(id) {
+  // UPDATE ... RETURNING elimina el SELECT previo — de 2 roundtrips a 1
   const { rows: existing } = await query(
-    'SELECT archivo_pdf_url, archivo_img_url, thumbnail_url FROM mapas WHERE id=$1 AND deleted_at IS NULL', [id]
+    `UPDATE mapas SET deleted_at = NOW(), actualizado_en = NOW()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING archivo_pdf_url, archivo_img_url, thumbnail_url`, [id]
   );
   if (!existing[0]) throw Object.assign(new Error('Mapa no encontrado'), { status: 404 });
-  await query('UPDATE mapas SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1', [id]);
   const urls = [existing[0].archivo_pdf_url, existing[0].archivo_img_url, existing[0].thumbnail_url].filter(Boolean);
   await Promise.allSettled(urls.map(url => deleteFileByUrl(url)));
 }

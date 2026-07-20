@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { query } from '../../config/database.js';
 import * as adminService from './admin.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
@@ -94,10 +95,14 @@ export async function listarUsuarios(req, res, next) {
 /** POST /api/admin/usuarios */
 export async function crearUsuario(req, res, next) {
   try {
-    const { nombre, email, rol, institucion, tipoAcceso } = req.body;
-    if (!nombre || !email || !rol) {
-      return res.status(400).json({ error: 'nombre, email y rol son obligatorios' });
-    }
+    const crearUsuarioSchema = z.object({
+      nombre:      z.string().trim().min(2).max(150),
+      email:       z.string().email('Email inválido').toLowerCase(),
+      rol:         z.enum(['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico']),
+      institucion: z.string().trim().max(200).optional(),
+      tipoAcceso:  z.enum(['institucional', 'externo']).optional(),
+    });
+    const { nombre, email, rol, institucion, tipoAcceso } = crearUsuarioSchema.parse(req.body);
     const usuario = await adminService.crearUsuario({
       nombre,
       email,
@@ -167,10 +172,12 @@ export async function superStats(req, res, next) {
 /** POST /api/admin/super/crear-admin — exclusivo super_admin */
 export async function crearAdmin(req, res, next) {
   try {
-    const { nombre, email, institucion } = req.body;
-    if (!nombre || !email) {
-      return res.status(400).json({ error: 'nombre y email son obligatorios' });
-    }
+    const crearAdminSchema = z.object({
+      nombre:      z.string().trim().min(2).max(150),
+      email:       z.string().email('Email inválido').toLowerCase(),
+      institucion: z.string().trim().max(200).optional(),
+    });
+    const { nombre, email, institucion } = crearAdminSchema.parse(req.body);
     const usuario = await adminService.crearAdminSig({
       nombre, email, institucion,
       superAdminId: req.user.id,
@@ -309,6 +316,12 @@ export async function batchUsuarios(req, res, next) {
     }
 
     const result = await query(sql, params);
+
+    // Revocar refresh tokens de todos los afectados cuando cambia el rol
+    if (accion === 'cambiar-rol') {
+      const { revokeAllRefreshTokens } = await import('../auth/auth.service.js');
+      await Promise.allSettled(ids.map((id) => revokeAllRefreshTokens(id)));
+    }
 
     registrarAuditoria({
       accion:       `batch_${accion.replace('-', '_')}`,

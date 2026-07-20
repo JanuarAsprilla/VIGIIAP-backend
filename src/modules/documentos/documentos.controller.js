@@ -1,5 +1,6 @@
 import { createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema } from './documentos.schema.js';
 import * as docService from './documentos.service.js';
+import { invalidateCache } from '../../middlewares/cache.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
@@ -83,6 +84,7 @@ export async function destroy(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    invalidateCache('/api/documentos*').catch(() => {});
     res.status(204).end();
   } catch (err) { next(err); }
 }

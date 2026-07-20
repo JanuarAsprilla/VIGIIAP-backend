@@ -17,7 +17,7 @@ const mapaUpload = uploadFields([
 router.get('/', cacheMiddleware(120), optionalAuthenticate, index);
 router.get('/:slug', cacheMiddleware(300), optionalAuthenticate, show);
 router.post('/', authenticate, authorize('admin_sig'), uploadRateLimiter, geoValidatorMiddleware, mapaUpload, store);
-router.put('/:id', authenticate, authorize('admin_sig'), uploadRateLimiter, geoValidatorMiddleware, mapaUpload, update);
+router.patch('/:id', authenticate, authorize('admin_sig'), uploadRateLimiter, geoValidatorMiddleware, mapaUpload, update);
 router.patch('/:id/activo', authenticate, authorize('admin_sig'), patchActivo);
 router.delete('/:id', authenticate, authorize('admin_sig'), destroy);
 

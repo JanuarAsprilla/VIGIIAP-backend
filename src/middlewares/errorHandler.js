@@ -18,7 +18,13 @@ export function errorHandler(err, _req, res, _next) {
   const status = err.status || err.statusCode || 500;
 
   if (status >= 500) {
-    logger.error(err.stack || err.message);
+    logger.error({
+      message: err.message,
+      stack:   err.stack,
+      requestId: _req.requestId,
+      path:    _req.path,
+      method:  _req.method,
+    });
     // En producción no exponemos detalles internos al cliente
     const publicMessage = process.env.NODE_ENV === 'production'
       ? 'Error interno del servidor'

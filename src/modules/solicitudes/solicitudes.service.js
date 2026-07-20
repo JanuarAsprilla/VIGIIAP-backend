@@ -284,14 +284,15 @@ export async function removeArchivo(solicitudId, archivoId, adminId) {
 // ─── Responder ────────────────────────────────────────────────────────────────
 
 export async function responder(id, respuesta, adminId) {
-  // Validar que no esté ya resuelta
   const { rows: current } = await query(
     'SELECT estado FROM solicitudes WHERE id = $1', [id]
   );
   if (!current[0]) throw Object.assign(new Error('Solicitud no encontrada'), { status: 404 });
-  if (current[0].estado === 'resuelta') {
+  // Validar transición FSM — responder solo es válido desde estados aprobada o en_revision
+  const ESTADOS_PERMITIDOS_RESPONDER = ['aprobada', 'en_revision'];
+  if (!ESTADOS_PERMITIDOS_RESPONDER.includes(current[0].estado)) {
     throw Object.assign(
-      new Error('Esta solicitud ya fue resuelta y no puede modificarse'),
+      new Error(`Solo se puede resolver una solicitud aprobada o en revisión. Estado actual: "${current[0].estado}"`),
       { status: 422 }
     );
   }

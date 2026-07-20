@@ -66,7 +66,7 @@ export async function login(req, res, next) {
         httpOnly: true, secure: true, sameSite: 'None',
         maxAge: 15 * 60 * 1000, path: '/api/auth/change-expired-password',
       });
-      return res.status(200).json({ passwordExpired: true });
+      return res.status(403).json({ passwordExpired: true, code: 'PASSWORD_EXPIRED' });
     }
 
     // 2FA activo — emitir token temporal y pedir segundo factor

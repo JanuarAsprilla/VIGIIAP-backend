@@ -1,5 +1,6 @@
 import { createMapaSchema, updateMapaSchema, toggleMapaSchema } from './mapas.schema.js';
 import * as mapaService from './mapas.service.js';
+import { invalidateCache } from '../../middlewares/cache.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
@@ -37,6 +38,7 @@ export async function store(req, res, next) {
       ip:           req.ip,
       metadatos:    { titulo: mapa.titulo, categoria: mapa.categoria },
     });
+    invalidateCache('/api/mapas*').catch(() => {});
     res.status(201).json(mapa);
   } catch (err) { next(err); }
 }
@@ -63,6 +65,7 @@ export async function update(req, res, next) {
       ip:           req.ip,
       metadatos:    { titulo: mapa.titulo, campos: Object.keys(data) },
     });
+    invalidateCache('/api/mapas*').catch(() => {});
     res.json(mapa);
   } catch (err) { next(err); }
 }
@@ -88,6 +91,7 @@ export async function patchActivo(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    invalidateCache('/api/mapas*').catch(() => {});
     res.json(mapa);
   } catch (err) { next(err); }
 }
@@ -112,6 +116,7 @@ export async function destroy(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    invalidateCache('/api/mapas*').catch(() => {});
     res.status(204).end();
   } catch (err) { next(err); }
 }

@@ -509,3 +509,23 @@ export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email
     `),
   });
 }
+
+/** Notifica al usuario que su rol ha sido cambiado por un administrador. */
+export async function notifyRolCambiado({ email, nombre, rolAnterior, rolNuevo }) {
+  const eNombre = escHtml(nombre);
+  const eRolAnterior = escHtml(rolAnterior);
+  const eRolNuevo = escHtml(rolNuevo);
+  return send({
+    to: email,
+    subject: `[VIGI-IIAP] Tu rol en el sistema ha sido actualizado`,
+    html: `
+      <p>Hola <strong>${eNombre}</strong>,</p>
+      <p>Tu rol en VIGIIAP ha sido actualizado:</p>
+      <table>
+        <tr><td><strong>Rol anterior:</strong></td><td>${eRolAnterior}</td></tr>
+        <tr><td><strong>Nuevo rol:</strong></td><td>${eRolNuevo}</td></tr>
+      </table>
+      <p>Si tienes dudas, contacta al administrador del sistema.</p>
+    `,
+  });
+}

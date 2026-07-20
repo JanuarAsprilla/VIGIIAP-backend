@@ -142,12 +142,34 @@ app.use(rateLimiter);
 
 // ─── Health check (Render, load balancers, uptime monitors) ──────────────────
 app.get('/health', async (_req, res) => {
+  const checks = { db: 'ok', redis: 'ok', storage: 'ok' };
+  let critical = false;
+
+  // BD — crítica: si falla, la API no puede operar
+  try { await query('SELECT 1'); }
+  catch { checks.db = 'unreachable'; critical = true; }
+
+  // Redis — opcional: cache y email queue degradan si falla, API sigue
   try {
-    await query('SELECT 1');
-    res.json({ status: 'ok', uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString(), db: 'ok' });
-  } catch {
-    res.status(503).json({ status: 'degraded', db: 'unreachable' });
-  }
+    const { getRedisClient } = await import('./middlewares/cache.js');
+    const rc = getRedisClient();
+    if (rc?.isReady) await rc.ping();
+    else checks.redis = 'not_configured';
+  } catch { checks.redis = 'unreachable'; }
+
+  // R2/S3 — opcional: uploads fallan si falla, lectura sigue
+  try {
+    const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+    const r2 = (await import('./config/r2.js')).default;
+    await r2.send(new HeadBucketCommand({ Bucket: process.env.R2_BUCKET_NAME }));
+  } catch { checks.storage = 'unreachable'; }
+
+  res.status(critical ? 503 : 200).json({
+    status:    critical ? 'degraded' : 'ok',
+    uptime:    Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    ...checks,
+  });
 });
 
 // ─── API Docs (Swagger UI) — solo en entornos no-producción ──────────────────
