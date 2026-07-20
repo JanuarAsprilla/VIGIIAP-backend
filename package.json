@@ -12,7 +12,9 @@
     "test": "vitest run --config vitest.config.js",
     "test:watch": "vitest --config vitest.config.js",
     "test:coverage": "vitest run --coverage --config vitest.config.js",
-    "lint": "eslint src/**/*.js"
+    "lint": "eslint src/**/*.js",
+    "test:integration": "vitest run --config vitest.integration.config.js",
+    "test:integration:watch": "vitest --config vitest.integration.config.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1077.0",

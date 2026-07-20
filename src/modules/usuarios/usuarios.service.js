@@ -8,7 +8,7 @@ const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico
 
 export async function getProfile(userId) {
   const { rows } = await query(
-    'SELECT id, nombre, email, rol, institucion, activo, creado_en FROM usuarios WHERE id=$1',
+    'SELECT id, nombre, email, rol, tipo_acceso, institucion, activo, creado_en, last_login_at FROM usuarios WHERE id=$1',
     [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });

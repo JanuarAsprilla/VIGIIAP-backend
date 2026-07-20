@@ -245,7 +245,7 @@ export async function setConfiguracion(config, adminId, adminEmail) {
 /** Obtiene los admins para enviar notificaciones */
 export async function getAdminEmails() {
   const { rows } = await query(
-    "SELECT email FROM usuarios WHERE rol = 'admin_sig' AND activo = true"
+    "SELECT email FROM usuarios WHERE rol IN ('admin_sig', 'super_admin') AND activo = true"
   );
   const dbEmails = rows.map((r) => r.email);
   // Fallback: ADMIN_EMAIL env var (separado por comas) — cubre el caso donde el

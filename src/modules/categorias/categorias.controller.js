@@ -53,6 +53,6 @@ export async function destroy(req, res, next) {
       descripcion: `Categoría eliminada (soft): ${nombre}`,
       usuarioId: req.user?.id, usuarioEmail: req.user?.email, ip: req.ip,
     });
-    res.json({ ok: true });
+    res.status(204).end();
   } catch (err) { next(err); }
 }

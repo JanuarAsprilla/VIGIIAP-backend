@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { query } from '../../config/database.js';
+import { notifyUsuarioActivacion, notifyRolCambiado } from '../../utils/mailer.js';
 import * as adminService from './admin.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
@@ -62,8 +63,13 @@ export async function setConfiguracion(req, res, next) {
 }
 
 /** GET /api/admin/stats */
+let _statsCache = null;
+let _statsCacheAt = 0;
 export async function stats(req, res, next) {
   try {
+    if (_statsCache && Date.now() - _statsCacheAt < 30_000) {
+      return res.json(_statsCache);
+    }
     const [usuarios, solicitudes, documentos, visitantes] = await Promise.all([
       query("SELECT COUNT(*) FROM usuarios WHERE activo = true AND rol != 'super_admin'"),
       query("SELECT COUNT(*) FROM solicitudes WHERE estado IN ('pendiente','en_revision')"),
@@ -71,12 +77,15 @@ export async function stats(req, res, next) {
       query("SELECT COUNT(*) FROM visitantes WHERE creado_en >= NOW() - INTERVAL '30 days'"),
     ]);
 
-    res.json({
+    const result = {
       usuarios:              Number(usuarios.rows[0].count),
       solicitudesPendientes: Number(solicitudes.rows[0].count),
       documentos:            Number(documentos.rows[0].count),
       visitantesUltimos30d:  Number(visitantes.rows[0].count),
-    });
+    };
+    _statsCache = result;
+    _statsCacheAt = Date.now();
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -317,10 +326,24 @@ export async function batchUsuarios(req, res, next) {
 
     const result = await query(sql, params);
 
-    // Revocar refresh tokens de todos los afectados cuando cambia el rol
+    // Revocar refresh tokens cuando cambia el rol
     if (accion === 'cambiar-rol') {
       const { revokeAllRefreshTokens } = await import('../auth/auth.service.js');
       await Promise.allSettled(ids.map((id) => revokeAllRefreshTokens(id)));
+    }
+
+    // Notificar por email a los usuarios afectados
+    const { rows: afectados } = await query(
+      'SELECT email, nombre, rol, activo FROM usuarios WHERE id = ANY($1::uuid[])', [ids]
+    );
+    for (const u of afectados) {
+      if (accion === 'activar' || accion === 'desactivar') {
+        notifyUsuarioActivacion({ email: u.email, nombre: u.nombre, activo: u.activo, rol: u.rol })
+          .catch(() => {});
+      } else if (accion === 'cambiar-rol' && rol) {
+        notifyRolCambiado({ email: u.email, nombre: u.nombre, rolAnterior: u.rol, rolNuevo: rol })
+          .catch(() => {});
+      }
     }
 
     registrarAuditoria({

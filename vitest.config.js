@@ -5,7 +5,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup.js'],
     environment: 'node',
     globals: false,
-    exclude: ['node_modules/**', '.claude/**'],
+    exclude: ['node_modules/**', '.claude/**', 'tests/integration/**'],
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'html'],
