@@ -45,7 +45,7 @@ export async function listarUsuarios(reqQuery) {
   if (q) {
     const qEsc = q.replace(/[%_\\]/g, '\\$&');
     params.push(`%${qEsc}%`);
-    conditions.push(`(nombre ILIKE $${params.length} ESCAPE '\\\\' OR email ILIKE $${params.length} ESCAPE '\\\\')`);
+    conditions.push(`(nombre ILIKE $${params.length} OR email ILIKE $${params.length})`);
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`;

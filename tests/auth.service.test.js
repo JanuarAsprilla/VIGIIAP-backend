@@ -105,7 +105,9 @@ describe('login()', () => {
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest')).rejects.toMatchObject({
       status: 401,
     });
-    expect(registrarAuditoria).not.toHaveBeenCalled();
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'login_failed', modulo: 'auth' })
+    );
   });
 
   it('lanza 403 con code EMAIL_NOT_VERIFIED si el email no está verificado', async () => {

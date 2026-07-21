@@ -22,6 +22,7 @@ vi.mock('../src/utils/mailer.js', () => ({
   notifyUsuarioCreado: vi.fn().mockResolvedValue(undefined),
   notifyUsuarioActivacion: vi.fn().mockResolvedValue(undefined),
   notifyAdminNewRegistro: vi.fn().mockResolvedValue(undefined),
+  notifyRolCambiado: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../src/utils/auditLog.js', () => ({
@@ -195,8 +196,9 @@ describe('admin.service → actualizarUsuario()', () => {
 
   it('actualiza rol del usuario y retorna el registro', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ rol: 'publico' }] })   // target check
-      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'tecnico' }] }); // UPDATE
+      .mockResolvedValueOnce({ rows: [{ rol: 'publico' }] })         // target check
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'tecnico' }] }) // UPDATE usuario
+      .mockResolvedValueOnce({ rows: [] });                            // revokeAllRefreshTokens
 
     const result = await actualizarUsuario({
       id: 'usr-uuid-1',

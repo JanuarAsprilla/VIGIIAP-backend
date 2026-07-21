@@ -55,3 +55,16 @@ export const adminRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas operaciones administrativas.' },
 });
+
+/** Recuperación de contraseña: máximo 3 solicitudes por hora por email. */
+export const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    return email ? `reset:${String(email).toLowerCase()}` : normalizeIp(req);
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes de recuperación para este correo. Intenta en 1 hora.' },
+});

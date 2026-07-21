@@ -22,6 +22,23 @@ function validateEnv() {
     process.exit(1);
   }
 
+  // Validar formato de JWT_EXPIRES_IN si está definida (ej: '15m', '1h', '7d', o segundos numéricos)
+  if (process.env.JWT_EXPIRES_IN) {
+    const validExpiry = /^\d+[smhd]$/.test(process.env.JWT_EXPIRES_IN) || /^\d+$/.test(process.env.JWT_EXPIRES_IN);
+    if (!validExpiry) {
+      logger.error(`[startup] FATAL: JWT_EXPIRES_IN="${process.env.JWT_EXPIRES_IN}" formato inválido. Usa '15m', '1h', '7d' o segundos numéricos.`);
+      process.exit(1);
+    }
+  }
+
+  // Advertir si TOTP_ENCRYPTION_KEY falta — 2FA fallará en runtime si está habilitado en BD
+  if (!process.env.TOTP_ENCRYPTION_KEY) {
+    logger.warn('[startup] TOTP_ENCRYPTION_KEY no configurada — el módulo 2FA no funcionará correctamente.');
+  } else if (process.env.TOTP_ENCRYPTION_KEY.length < 64) {
+    logger.error('[startup] FATAL: TOTP_ENCRYPTION_KEY demasiado corta (mínimo 64 hex chars = 32 bytes). Genera una con: openssl rand -hex 32');
+    process.exit(1);
+  }
+
   const required = [
     'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
     'R2_BUCKET_NAME', 'R2_PUBLIC_URL',

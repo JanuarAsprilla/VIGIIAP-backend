@@ -8,7 +8,7 @@ const SALT_ROUNDS = 12;
 
 function signToken(payload, expiresIn) {
   return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: expiresIn ?? process.env.JWT_EXPIRES_IN ?? '7d',
+    expiresIn: expiresIn ?? process.env.JWT_EXPIRES_IN ?? '15m',
   });
 }
 
@@ -148,6 +148,18 @@ export async function login(email, password, ip, userAgent) {
         user.id,
       ]
     );
+    registrarAuditoria({
+      accion:      bloquear ? 'login_blocked' : 'login_failed',
+      modulo:      'auth',
+      entidadId:   user.id,
+      descripcion: bloquear
+        ? `Cuenta bloqueada ${LOCKOUT_MINS}min por ${MAX_INTENTOS} intentos fallidos — ${user.email}`
+        : `Login fallido (intento ${nuevosIntentos}/${MAX_INTENTOS}) — ${user.email}`,
+      usuarioId:   user.id,
+      usuarioEmail: user.email,
+      ip,
+      userAgent,
+    });
     const msg = bloquear
       ? `Cuenta bloqueada ${LOCKOUT_MINS} minutos por ${MAX_INTENTOS} intentos fallidos consecutivos.`
       : 'Credenciales incorrectas';
