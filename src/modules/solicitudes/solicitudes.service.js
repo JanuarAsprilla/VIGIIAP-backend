@@ -18,7 +18,8 @@ const TRANSITIONS = {
 
 export async function getAll(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
-  const { estado, tipo } = reqQuery;
+  const { estado, tipo, q } = reqQuery;
+  if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
   const params = [];
   const conditions = [];
 
@@ -33,6 +34,11 @@ export async function getAll(reqQuery) {
     }
     params.push(tipo);
     conditions.push(`s.tipo = $${params.length}`);
+  }
+  if (q) {
+    const qEsc = q.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${qEsc}%`);
+    conditions.push(`(u.nombre ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
