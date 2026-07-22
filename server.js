@@ -39,6 +39,20 @@ function validateEnv() {
     process.exit(1);
   }
 
+  // Validar CORS_ORIGIN — si está vacío o malformado, todas las requests con Origin serán bloqueadas
+  const corsOrigin = process.env.CORS_ORIGIN ?? '';
+  if (!corsOrigin) {
+    logger.warn('[startup] CORS_ORIGIN no configurada — solo requests sin Origin (curl, Postman) serán aceptadas.');
+  } else {
+    const origins = corsOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+    const invalid = origins.filter((o) => { try { new URL(o); return false; } catch { return true; } });
+    if (invalid.length) {
+      logger.error(`[startup] FATAL: CORS_ORIGIN contiene orígenes inválidos: ${invalid.join(', ')}`);
+      process.exit(1);
+    }
+    logger.info(`[startup] CORS habilitado para ${origins.length} origen(es): ${origins.join(', ')}`);
+  }
+
   const required = [
     'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
     'R2_BUCKET_NAME', 'R2_PUBLIC_URL',
