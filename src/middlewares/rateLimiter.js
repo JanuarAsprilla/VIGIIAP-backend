@@ -1,10 +1,8 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
-/** Normaliza IP para express-rate-limit v8+ (soporta IPv4 e IPv6). */
+/** Normaliza IP usando el helper oficial de express-rate-limit (IPv4 e IPv6). */
 function normalizeIp(req) {
-  const ip = req.ip ?? req.socket?.remoteAddress ?? '0.0.0.0';
-  // IPv6-mapped IPv4: ::ffff:1.2.3.4 → 1.2.3.4
-  return ip.replace(/^::ffff:/, '');
+  return ipKeyGenerator(req);
 }
 
 export const rateLimiter = rateLimit({

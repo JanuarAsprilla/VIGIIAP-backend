@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 // Validar que archivo_url pertenezca al dominio R2 propio — previene que un admin_sig
 // comprometido apunte documentos a URLs maliciosas externas eludiendo fileGuard.
 const r2Url = z.string().url().refine(
