@@ -3,24 +3,27 @@ import logger from '../utils/logger.js';
 
 const { Pool } = pg;
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  // Supabase usa su propia CA — node-postgres rechaza el chain con rejectUnauthorized:true.
-  // La conexión sigue cifrada con TLS; solo se omite la verificación del certificado.
-  // Ajustable vía DB_SSL_REJECT_UNAUTHORIZED=true para otros proveedores con CA pública.
-  ssl: process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' }
-    : (process.env.DB_SSL === 'true'
-        ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
-        : false),
-  max: 20,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-});
+// SSL: Supabase usa su propia CA — rejectUnauthorized:false mantiene cifrado TLS sin verificar chain.
+const sslConfig = process.env.NODE_ENV === 'production'
+  ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' }
+  : (process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false);
+
+const pool = new Pool(
+  // DATABASE_URL tiene prioridad — permite configuración única en Render/AWS sin vars individuales
+  process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL, ssl: sslConfig, max: 20, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 5_000 }
+    : {
+        host:     process.env.DB_HOST,
+        port:     Number(process.env.DB_PORT) || 5432,
+        database: process.env.DB_NAME,
+        user:     process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        ssl:      sslConfig,
+        max:      20,
+        idleTimeoutMillis:     30_000,
+        connectionTimeoutMillis: 5_000,
+      }
+);
 
 pool.on('error', (err) => {
   logger.error('Error inesperado en pool de DB:', err);
