@@ -1,0 +1,24 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    # Cada 10 minutos — Render free tier duerme después de 15 min de inactividad
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping healthcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            https://vigiiap-backend.onrender.com/health)
+          echo "HTTP $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
+            echo "Unexpected status: $STATUS"
+            exit 1
+          fi
+          echo "Backend alive (cold start accepted on 503)"

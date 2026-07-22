@@ -181,15 +181,23 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
-// ─── Rutas de la API ──────────────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/mapas', mapassRoutes);
-app.use('/api/documentos', documentosRoutes);
-app.use('/api/solicitudes', solicitudesRoutes);
-app.use('/api/usuarios', usuariosRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/categorias', categoriasRoutes);
-app.use('/api/descargar', descargasRoutes);
+// ─── Rutas de la API v1 ───────────────────────────────────────────────────────
+// Todos los endpoints bajo /api/v1 — facilita versiones futuras sin romper clientes activos.
+// /api/* se mantiene como alias de transición durante el ciclo de despliegue.
+import { Router } from 'express';
+const v1 = Router();
+
+v1.use('/auth',       authRoutes);
+v1.use('/mapas',      mapassRoutes);
+v1.use('/documentos', documentosRoutes);
+v1.use('/solicitudes',solicitudesRoutes);
+v1.use('/usuarios',   usuariosRoutes);
+v1.use('/admin',      adminRoutes);
+v1.use('/categorias', categoriasRoutes);
+v1.use('/descargar',  descargasRoutes);
+
+app.use('/api/v1', v1);
+app.use('/api',    v1); // alias de transición — se retira en v2
 
 // Redirect de seguridad: si el link del email apunta al backend, redirige al frontend.
 // El token se valida como hex puro — previene path traversal e inyección de headers.
