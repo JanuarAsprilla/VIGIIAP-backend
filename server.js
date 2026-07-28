@@ -21,6 +21,19 @@ function validateEnv() {
     logger.error('[startup] FATAL: JWT_SECRET demasiado corta (mínimo 32 caracteres para HS256). Genera una con: openssl rand -hex 32');
     process.exit(1);
   }
+  // Rechazar valores placeholder conocidos que pasan el check de longitud pero son predecibles.
+  const KNOWN_WEAK_SECRETS = [
+    'REPLACE_WITH_REAL_SECRET_MIN_32_CHARS',
+    'your_jwt_secret_here',
+    'changeme',
+    'secret',
+    'supersecret',
+    'mysecret',
+  ];
+  if (KNOWN_WEAK_SECRETS.some((weak) => process.env.JWT_SECRET.toLowerCase().includes(weak.toLowerCase()))) {
+    logger.error('[startup] FATAL: JWT_SECRET contiene un valor de ejemplo o placeholder. Genera uno seguro con: openssl rand -hex 32');
+    process.exit(1);
+  }
 
   // Validar formato de JWT_EXPIRES_IN si está definida (ej: '15m', '1h', '7d', o segundos numéricos)
   if (process.env.JWT_EXPIRES_IN) {
@@ -67,6 +80,20 @@ function validateEnv() {
   const missingEmail = emailVars.filter((k) => !process.env[k]);
   if (missingEmail.length) {
     logger.warn(`[startup] Email no configurado (${missingEmail.join(', ')}) — las notificaciones por email estarán desactivadas.`);
+  } else {
+    const mailPort   = Number(process.env.MAIL_PORT);
+    const mailSecure = process.env.MAIL_SECURE === 'true';
+    // Puerto 465 requiere TLS directo (MAIL_SECURE=true); puerto 587 usa STARTTLS (MAIL_SECURE=false).
+    // Cualquier otra combinación indica una mala configuración.
+    const validCombos = (mailPort === 587 && !mailSecure) || (mailPort === 465 && mailSecure);
+    if (!validCombos) {
+      logger.error(
+        `[startup] FATAL: Combinación MAIL_PORT=${mailPort} / MAIL_SECURE=${mailSecure} inválida. ` +
+        'Usa MAIL_PORT=587 + MAIL_SECURE=false (STARTTLS) o MAIL_PORT=465 + MAIL_SECURE=true (TLS directo).',
+      );
+      process.exit(1);
+    }
+    logger.info(`[startup] Email: ${process.env.MAIL_HOST}:${mailPort} — ${mailSecure ? 'TLS directo' : 'STARTTLS'}`);
   }
 
   if (!process.env.FRONTEND_URL) {

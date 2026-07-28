@@ -97,12 +97,50 @@ app.use((_req, res, next) => {
   next();
 });
 
+// ─── Health check (antes del CORS — Render y monitores no envían Origin) ─────
+// Registrado aquí para que Render y los load balancers no sean bloqueados por
+// el CORS estricto de producción. El endpoint no devuelve datos sensibles.
+app.get('/health', async (_req, res) => {
+  const checks = { db: 'ok', redis: 'ok', storage: 'ok' };
+  let critical = false;
+
+  try { await query('SELECT 1'); }
+  catch { checks.db = 'unreachable'; critical = true; }
+
+  try {
+    const { getRedisClient } = await import('./middlewares/cache.js');
+    const rc = getRedisClient();
+    if (rc?.isReady) await rc.ping();
+    else checks.redis = 'not_configured';
+  } catch { checks.redis = 'unreachable'; }
+
+  try {
+    const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+    const r2 = (await import('./config/r2.js')).default;
+    await r2.send(new HeadBucketCommand({ Bucket: process.env.R2_BUCKET_NAME }));
+  } catch { checks.storage = 'unreachable'; }
+
+  res.status(critical ? 503 : 200).json({
+    status:    critical ? 'degraded' : 'ok',
+    uptime:    Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    ...checks,
+  });
+});
+
 // ─── CORS estricto ────────────────────────────────────────────────────────────
+const IS_PROD = process.env.NODE_ENV === 'production';
 app.use(
   cors({
     origin(origin, callback) {
-      // Permite peticiones sin origen (curl, Postman en dev, health checks)
-      if (!origin) return callback(null, true);
+      // En producción se requiere Origin explícito — bloquea peticiones server-side anónimas.
+      // En desarrollo se permiten curl y Postman (sin Origin) para facilitar el trabajo local.
+      if (!origin) {
+        if (IS_PROD) {
+          return callback(Object.assign(new Error('CORS: Origin requerido en producción'), { status: 403 }));
+        }
+        return callback(null, true);
+      }
       if (allowedOrigins.includes(origin)) return callback(null, true);
       callback(Object.assign(new Error(`CORS: origen no permitido — ${origin}`), { status: 403 }));
     },
@@ -139,38 +177,6 @@ app.use(express.json({ limit: '1mb' }));
 // límite por usuario (500 req/15min) se active correctamente en lugar de usar solo IP.
 app.use(optionalAuthenticate);
 app.use(rateLimiter);
-
-// ─── Health check (Render, load balancers, uptime monitors) ──────────────────
-app.get('/health', async (_req, res) => {
-  const checks = { db: 'ok', redis: 'ok', storage: 'ok' };
-  let critical = false;
-
-  // BD — crítica: si falla, la API no puede operar
-  try { await query('SELECT 1'); }
-  catch { checks.db = 'unreachable'; critical = true; }
-
-  // Redis — opcional: cache y email queue degradan si falla, API sigue
-  try {
-    const { getRedisClient } = await import('./middlewares/cache.js');
-    const rc = getRedisClient();
-    if (rc?.isReady) await rc.ping();
-    else checks.redis = 'not_configured';
-  } catch { checks.redis = 'unreachable'; }
-
-  // R2/S3 — opcional: uploads fallan si falla, lectura sigue
-  try {
-    const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
-    const r2 = (await import('./config/r2.js')).default;
-    await r2.send(new HeadBucketCommand({ Bucket: process.env.R2_BUCKET_NAME }));
-  } catch { checks.storage = 'unreachable'; }
-
-  res.status(critical ? 503 : 200).json({
-    status:    critical ? 'degraded' : 'ok',
-    uptime:    Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-    ...checks,
-  });
-});
 
 // ─── API Docs (Swagger UI) — solo en entornos no-producción ──────────────────
 if (process.env.NODE_ENV !== 'production') {
