@@ -193,14 +193,22 @@ if (process.env.NODE_ENV !== 'production') {
 import { Router } from 'express';
 const v1 = Router();
 
-v1.use('/auth',       authRoutes);
-v1.use('/mapas',      mapassRoutes);
-v1.use('/documentos', documentosRoutes);
-v1.use('/solicitudes',solicitudesRoutes);
-v1.use('/usuarios',   usuariosRoutes);
-v1.use('/admin',      adminRoutes);
-v1.use('/categorias', categoriasRoutes);
-v1.use('/descargar',  descargasRoutes);
+// Cache-Control: no-store en rutas que devuelven datos de sesión o privados.
+// Impide que proxies intermedios cacheen respuestas sensibles.
+// mapas/documentos/categorías son datos públicos — permanecen cacheables.
+const noStore = (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  next();
+};
+
+v1.use('/auth',        noStore, authRoutes);
+v1.use('/mapas',               mapassRoutes);
+v1.use('/documentos',          documentosRoutes);
+v1.use('/solicitudes', noStore, solicitudesRoutes);
+v1.use('/usuarios',    noStore, usuariosRoutes);
+v1.use('/admin',       noStore, adminRoutes);
+v1.use('/categorias',          categoriasRoutes);
+v1.use('/descargar',   noStore, descargasRoutes);
 
 app.use('/api/v1', v1);
 app.use('/api',    v1); // alias de transición — se retira en v2
