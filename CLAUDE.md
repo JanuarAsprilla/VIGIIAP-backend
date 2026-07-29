@@ -44,7 +44,7 @@ src/
     └── slugify.js           # Slugs en español
 db/
 ├── migrate.js              # Runner de migraciones
-└── migrations/             # 001–028 migraciones aplicadas
+└── migrations/             # 001–029 migraciones aplicadas
 server.js                   # Entry point
 scripts/
 ├── create-admin.js         # Seed inicial admin_sig (requiere ADMIN_SEED_PASSWORD en entorno)
@@ -135,7 +135,7 @@ scripts/
 ```bash
 cp .env.example .env   # Llenar credenciales
 npm install
-npm run migrate        # Crear tablas (migraciones 001–028)
+npm run migrate        # Crear tablas (migraciones 001–029)
 ADMIN_SEED_PASSWORD=TuPassword123! npm run create-admin
 npm run dev            # Servidor en puerto 4000
 ```
