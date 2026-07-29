@@ -41,9 +41,33 @@ function createTransport() {
   });
 }
 
-// Sanitizar MAIL_FROM_NAME: eliminar CRLF y comillas que podrían inyectar headers SMTP
-const MAIL_FROM_SAFE = (process.env.MAIL_FROM_NAME || 'VIGI-IIAP').replace(/[\r\n"\\]/g, '');
-const FROM = `"${MAIL_FROM_SAFE}" <${process.env.MAIL_USER}>`;
+// ─── Remitente dinámico — leído de la tabla configuracion con cache de 5 min ──
+// El super_admin puede cambiar mail_remitente y mail_remitente_nombre desde el
+// panel sin necesidad de redesplegar. MAIL_FROM env var tiene prioridad si existe.
+import { query as dbQuery } from '../config/database.js';
+let _fromCache = null;
+let _fromCacheAt = 0;
+
+async function getFromAddress() {
+  if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
+  if (_fromCache && Date.now() - _fromCacheAt < 5 * 60_000) return _fromCache;
+  try {
+    const { rows } = await dbQuery(
+      "SELECT clave, valor FROM configuracion WHERE clave IN ('mail_remitente','mail_remitente_nombre')"
+    );
+    const cfg = Object.fromEntries(rows.map((r) => [r.clave, r.valor]));
+    const addr = (cfg.mail_remitente || process.env.MAIL_USER || 'no-reply@iiap.gov.co').replace(/[\r\n]/g, '');
+    const name = (cfg.mail_remitente_nombre || 'VIGIIAP — IIAP').replace(/[\r\n"\\]/g, '');
+    _fromCache = `"${name}" <${addr}>`;
+    _fromCacheAt = Date.now();
+  } catch {
+    // BD no disponible — usar env var o default sin romper el envío
+    const safe = (process.env.MAIL_FROM_NAME || 'VIGIIAP — IIAP').replace(/[\r\n"\\]/g, '');
+    _fromCache = `"${safe}" <${process.env.MAIL_USER || 'no-reply@iiap.gov.co'}>`;
+    _fromCacheAt = Date.now();
+  }
+  return _fromCache;
+}
 const BASE_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co';
 
 const TIPO_LABEL = {
@@ -63,7 +87,7 @@ async function send({ to, subject, html }) {
   }
   try {
     const transporter = createTransport();
-    const info = await transporter.sendMail({ from: FROM, to, subject, html });
+    const info = await transporter.sendMail({ from: await getFromAddress(), to, subject, html });
     logger.info(`[mailer] Email enviado a ${to} — messageId: ${info.messageId}`);
   } catch (err) {
     // El fallo de email NO debe romper el flujo principal

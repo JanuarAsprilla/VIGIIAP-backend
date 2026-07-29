@@ -29,6 +29,9 @@ const CONFIG_SCHEMA = {
   address:              { type: 'string', maxLength: 300 },
   modoMantenimiento:    { type: 'boolean' },
   mensajeMantenimiento: { type: 'string', maxLength: 1000 },
+  // Correo remitente — editable desde el panel del super_admin
+  mail_remitente:       { type: 'string', maxLength: 254 },
+  mail_remitente_nombre: { type: 'string', maxLength: 100 },
 };
 
 /** PUT /api/admin/configuracion */
@@ -65,6 +68,8 @@ export async function setConfiguracion(req, res, next) {
 /** GET /api/admin/stats */
 let _statsCache = null;
 let _statsCacheAt = 0;
+/** Solo para tests — permite resetear el cache entre casos sin reiniciar el módulo. */
+export function resetStatsCache() { _statsCache = null; _statsCacheAt = 0; }
 export async function stats(req, res, next) {
   try {
     if (_statsCache && Date.now() - _statsCacheAt < 30_000) {

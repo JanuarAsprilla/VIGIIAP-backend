@@ -333,12 +333,14 @@ describe('update()', () => {
 
 // ─── remove() ────────────────────────────────────────────────────────────────
 describe('remove()', () => {
-  beforeEach(() => vi.clearAllMocks());
+  // resetAllMocks limpia la cola mockResolvedValueOnce entre tests — evita que
+  // mocks sobrantes de un test "contaminen" el siguiente (clearAllMocks no lo hace).
+  beforeEach(() => vi.resetAllMocks());
 
   it('hace soft delete y borra el archivo de R2', async () => {
+    // remove() ahora hace UPDATE...RETURNING en 1 sola query (no SELECT + UPDATE separados)
     query
-      .mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] }) // SELECT existing
-      .mockResolvedValueOnce({ rows: [] }); // UPDATE deleted_at
+      .mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] });
 
     deleteFileByUrl.mockResolvedValue(undefined);
 
@@ -351,9 +353,7 @@ describe('remove()', () => {
   });
 
   it('no llama a deleteFileByUrl si archivo_url es null', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ archivo_url: null }] })
-      .mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [{ archivo_url: null }] });
 
     await remove('doc-uuid-001');
 
@@ -367,10 +367,7 @@ describe('remove()', () => {
   });
 
   it('no interrumpe el flujo si deleteFileByUrl falla', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
+    query.mockResolvedValueOnce({ rows: [{ archivo_url: 'https://files.test.local/doc.pdf' }] });
     deleteFileByUrl.mockRejectedValue(new Error('R2 error'));
 
     await expect(remove('doc-uuid-001')).resolves.toBeUndefined();

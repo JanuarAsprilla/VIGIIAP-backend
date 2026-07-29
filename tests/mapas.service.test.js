@@ -300,9 +300,10 @@ describe('setActivo()', () => {
 
 // ─── remove() ────────────────────────────────────────────────────────────────
 describe('remove()', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it('hace soft delete del mapa y borra sus archivos de R2', async () => {
+    // remove() hace UPDATE...RETURNING en 1 sola query — no hay SELECT separado
     query
       .mockResolvedValueOnce({
         rows: [{
@@ -310,8 +311,7 @@ describe('remove()', () => {
           archivo_img_url: 'https://files.test.local/mapa.jpg',
           thumbnail_url: 'https://files.test.local/thumb.jpg',
         }],
-      })
-      .mockResolvedValueOnce({ rows: [] }); // UPDATE deleted_at
+      });
 
     deleteFileByUrl.mockResolvedValue(undefined);
 
@@ -323,11 +323,9 @@ describe('remove()', () => {
   });
 
   it('no llama a deleteFileByUrl si las URLs son null', async () => {
-    query
-      .mockResolvedValueOnce({
-        rows: [{ archivo_pdf_url: null, archivo_img_url: null, thumbnail_url: null }],
-      })
-      .mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({
+      rows: [{ archivo_pdf_url: null, archivo_img_url: null, thumbnail_url: null }],
+    });
 
     await remove('mapa-uuid-001');
 
@@ -343,15 +341,13 @@ describe('remove()', () => {
   });
 
   it('solo borra las URLs que no son null', async () => {
-    query
-      .mockResolvedValueOnce({
-        rows: [{
-          archivo_pdf_url: 'https://files.test.local/mapa.pdf',
-          archivo_img_url: null,
-          thumbnail_url: 'https://files.test.local/thumb.jpg',
-        }],
-      })
-      .mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({
+      rows: [{
+        archivo_pdf_url: 'https://files.test.local/mapa.pdf',
+        archivo_img_url: null,
+        thumbnail_url: 'https://files.test.local/thumb.jpg',
+      }],
+    });
 
     deleteFileByUrl.mockResolvedValue(undefined);
 

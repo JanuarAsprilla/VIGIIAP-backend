@@ -82,12 +82,12 @@ describe('GET /api/admin/usuarios', () => {
 describe('POST /api/admin/usuarios', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna 400 si faltan campos obligatorios', async () => {
+  it('retorna 422 si faltan campos obligatorios (Zod)', async () => {
     const res = await request(app)
       .post('/api/admin/usuarios')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ nombre: 'Solo nombre' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it('admin crea usuario — retorna 201', async () => {

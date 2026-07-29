@@ -32,9 +32,11 @@ import { index, create, destroy, upsertThumbnail } from '../src/modules/categori
 // ── Helper: mock Express req/res/next ──────────────────────────────────────
 
 function mockRes() {
+    // end necesario para rutas que devuelven 204 sin cuerpo (DELETE categoría)
   const res = {
     status: vi.fn().mockReturnThis(),
-    json: vi.fn().mockReturnThis(),
+    json:   vi.fn().mockReturnThis(),
+    end:    vi.fn(),
   };
   return res;
 }
@@ -113,13 +115,14 @@ describe('categorias.controller → create()', () => {
 describe('categorias.controller → destroy()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('elimina la categoría y responde { ok: true }', async () => {
+  it('elimina la categoría y responde 204 sin cuerpo', async () => {
     catService.remove.mockResolvedValue(undefined);
     const req = { params: { nombre: 'Biodiversidad' }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
     const res = mockRes();
     await destroy(req, res, mockNext);
     expect(catService.remove).toHaveBeenCalledWith('Biodiversidad');
-    expect(res.json).toHaveBeenCalledWith({ ok: true });
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalled();
   });
 
   it('decodifica el nombre del parámetro URL', async () => {

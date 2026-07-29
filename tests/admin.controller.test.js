@@ -34,7 +34,7 @@ import * as adminService from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../src/utils/dataCustody.js';
 import {
-  notificaciones, getConfiguracion, setConfiguracion, stats,
+  notificaciones, getConfiguracion, setConfiguracion, stats, resetStatsCache,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
   descargasStats,
@@ -152,7 +152,7 @@ describe('admin.controller → setConfiguracion()', () => {
 // ── stats() ───────────────────────────────────────────────────────────────
 
 describe('admin.controller → stats()', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); resetStatsCache(); });
 
   it('retorna objeto de estadísticas', async () => {
     query.mockResolvedValue({ rows: [{ count: '10' }] });
@@ -194,10 +194,11 @@ describe('admin.controller → listarUsuarios()', () => {
 describe('admin.controller → crearUsuario()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna 400 si faltan campos obligatorios', async () => {
+  it('retorna 422 si faltan campos obligatorios (Zod)', async () => {
     const r = res();
     await crearUsuario({ body: { nombre: 'Juan' }, user: ADMIN }, r, mockNext);
-    expect(r.status).toHaveBeenCalledWith(400);
+    // Zod lanza ZodError → errorHandler devuelve 422 (no 400)
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it('crea usuario y retorna 201 sin exponer _passwordTemporal', async () => {
@@ -305,10 +306,11 @@ describe('admin.controller → superStats()', () => {
 describe('admin.controller → crearAdmin()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna 400 si faltan nombre o email', async () => {
+  it('retorna 422 si faltan nombre o email (Zod)', async () => {
     const r = res();
     await crearAdmin({ body: { nombre: 'Juan' }, user: ADMIN }, r, mockNext);
-    expect(r.status).toHaveBeenCalledWith(400);
+    // Zod lanza ZodError → errorHandler devuelve 422 (no 400)
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it('crea admin y retorna 201 sin exponer _passwordTemporal', async () => {

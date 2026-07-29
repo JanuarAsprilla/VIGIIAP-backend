@@ -52,7 +52,7 @@ export function initEmailQueue() {
     async (job) => {
       const { to, subject, html, text } = job.data;
       await transporter.sendMail({
-        from: process.env.MAIL_FROM ?? 'no-reply@iiap.gob.co',
+        from: process.env.MAIL_FROM ?? 'no-reply@iiap.gov.co',
         to, subject, html, text,
       });
       logger.info(`[emailQueue] ✉ Enviado: ${subject} → ${to} (job ${job.id})`);
@@ -93,7 +93,7 @@ export async function queueEmail(data) {
   try {
     const transporter = buildTransporter();
     await transporter.sendMail({
-      from: process.env.MAIL_FROM ?? 'no-reply@iiap.gob.co',
+      from: process.env.MAIL_FROM ?? 'no-reply@iiap.gov.co',
       ...data,
     });
     logger.info(`[emailQueue] ✉ Enviado (directo): ${data.subject} → ${data.to}`);
