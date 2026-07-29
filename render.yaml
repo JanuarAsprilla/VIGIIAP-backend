@@ -75,7 +75,7 @@ services:
 
       # ─── Frontend URL (links en emails) ─────────────────────────────────────
       - key: FRONTEND_URL
-        value: https://vigiiap.onrender.com
+        value: https://vigiiap.iiap.gov.co
 
       # ─── Redis (opcional — cache + email queue con retry) ───────────────────
       # Dejar vacío si no se usa Redis; el sistema cae en fallback sin cache.
