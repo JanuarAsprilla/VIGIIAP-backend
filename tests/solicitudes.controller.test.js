@@ -35,6 +35,7 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
 
 import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
 import { query } from '../src/config/database.js';
+import { notifySolicitudEstado } from '../src/utils/mailer.js';
 import {
   show, getArchivos, uploadArchivo, deleteArchivo, downloadArchivo,
   updateEstado, responder, store,
@@ -160,26 +161,36 @@ describe('downloadArchivo()', () => {
 });
 
 describe('updateEstado()', () => {
-  beforeEach(() => { vi.clearAllMocks(); solService.updateEstado.mockResolvedValue(SOL); });
+  // El servicio ya devuelve owner_nombre/owner_email en la misma query (CTE)
+  // El controller ya no hace SELECT extra — no hay query adicional que mockear
+  beforeEach(() => {
+    vi.clearAllMocks();
+    solService.updateEstado.mockResolvedValue({
+      ...SOL,
+      owner_nombre: 'Ana',
+      owner_email: 'ana@test.co',
+    });
+  });
 
   it('con owner encontrado envía email y responde json', async () => {
-    query.mockResolvedValueOnce({ rows: [{ nombre: 'Ana', email: 'ana@test.co', tipo: 'agua' }] });
     const r = res();
     await updateEstado(
       { params: { id: SOL.id }, body: { estado: 'aprobada', nota: 'Solicitud aprobada correctamente' }, user: ADMIN, ip: '::1' },
       r, mockNext,
     );
-    expect(r.json).toHaveBeenCalledWith(SOL);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ id: SOL.id }));
+    expect(notifySolicitudEstado).toHaveBeenCalledWith(expect.objectContaining({ email: 'ana@test.co' }));
   });
 
-  it('sin owner (rows vacío) no intenta enviar email', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
+  it('sin owner_email no intenta enviar email', async () => {
+    solService.updateEstado.mockResolvedValue({ ...SOL, owner_email: null });
     const r = res();
     await updateEstado(
       { params: { id: SOL.id }, body: { estado: 'rechazada' }, user: ADMIN, ip: '::1' },
       r, mockNext,
     );
-    expect(r.json).toHaveBeenCalledWith(SOL);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ id: SOL.id }));
+    expect(notifySolicitudEstado).not.toHaveBeenCalled();
   });
 
   it('llama next(err) si el servicio lanza', async () => {

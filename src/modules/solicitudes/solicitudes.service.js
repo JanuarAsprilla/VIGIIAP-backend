@@ -135,7 +135,8 @@ export async function updateEstado(id, estado, nota, adminId) {
     throw Object.assign(new Error('Estado inválido'), { status: 400 });
   }
 
-  // Obtener estado actual para validar la transición
+  // Query 1 — leer estado actual para validar la transición en JS
+  // (el mapa TRANSITIONS vive en JS; hacerlo en SQL requeriría duplicar la lógica)
   const { rows: current } = await query(
     'SELECT estado FROM solicitudes WHERE id = $1', [id]
   );
@@ -153,9 +154,18 @@ export async function updateEstado(id, estado, nota, adminId) {
     );
   }
 
+  // Query 2 — UPDATE + JOIN en una sola CTE: elimina el SELECT extra del controller
+  // El controlador usará owner_nombre/owner_email directamente sin roundtrip adicional.
   const { rows } = await query(
-    `UPDATE solicitudes SET estado=$1, nota_admin=$2, revisado_por=$3, actualizado_en=NOW()
-     WHERE id=$4 RETURNING *`,
+    `WITH updated AS (
+       UPDATE solicitudes
+       SET estado=$1, nota_admin=$2, revisado_por=$3, actualizado_en=NOW()
+       WHERE id=$4
+       RETURNING *
+     )
+     SELECT u.*, o.nombre AS owner_nombre, o.email AS owner_email
+     FROM updated u
+     JOIN usuarios o ON o.id = u.usuario_id`,
     [estado, nota ?? null, adminId, id]
   );
   return rows[0];

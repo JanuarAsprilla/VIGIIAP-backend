@@ -74,22 +74,14 @@ export async function store(req, res, next) {
 export async function updateEstado(req, res, next) {
   try {
     const { estado, nota } = updateEstadoSchema.parse(req.body);
+    // El servicio devuelve la solicitud + owner_nombre/owner_email en un solo roundtrip
     const solicitud = await solService.updateEstado(req.params.id, estado, nota, req.user.id);
 
-    // Obtener datos del usuario dueño de la solicitud
-    const { rows } = await query(
-      `SELECT u.nombre, u.email, s.tipo
-       FROM solicitudes s JOIN usuarios u ON u.id = s.usuario_id
-       WHERE s.id = $1`,
-      [req.params.id]
-    );
-    const owner = rows[0];
-
-    if (owner) {
+    if (solicitud?.owner_email) {
       notifySolicitudEstado({
-        email:  owner.email,
-        nombre: owner.nombre,
-        tipo:   owner.tipo,
+        email:  solicitud.owner_email,
+        nombre: solicitud.owner_nombre,
+        tipo:   solicitud.tipo,
         estado,
         nota,
       }).catch(err => logger.error('[solicitudes] Email estado error:', err.message));
