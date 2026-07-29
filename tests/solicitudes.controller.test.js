@@ -166,7 +166,7 @@ describe('updateEstado()', () => {
     query.mockResolvedValueOnce({ rows: [{ nombre: 'Ana', email: 'ana@test.co', tipo: 'agua' }] });
     const r = res();
     await updateEstado(
-      { params: { id: SOL.id }, body: { estado: 'aprobada', nota: 'ok' }, user: ADMIN, ip: '::1' },
+      { params: { id: SOL.id }, body: { estado: 'aprobada', nota: 'Solicitud aprobada correctamente' }, user: ADMIN, ip: '::1' },
       r, mockNext,
     );
     expect(r.json).toHaveBeenCalledWith(SOL);
