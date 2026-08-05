@@ -15,6 +15,9 @@ import logger from './logger.js';
 /** Elimina caracteres de control CRLF de valores que van en headers SMTP (Subject, To, etc.).
  *  escHtml no es suficiente — escapa HTML pero no elimina \r\n que inyectan headers. */
 function sanitizeSMTP(value) {
+  // Rango de control chars es intencional: elimina CRLF y bytes de control
+  // que un atacante podría usar para inyectar headers SMTP adicionales.
+  // eslint-disable-next-line no-control-regex
   return String(value ?? '').replace(/[\r\n\t\x00-\x08\x0B-\x1F\x7F]/g, ' ').trim().slice(0, 250);
 }
 
