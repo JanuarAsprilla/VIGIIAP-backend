@@ -7,6 +7,8 @@ vi.mock('../src/modules/usuarios/usuarios.service.js', () => ({
   getProfile:    vi.fn(),
   updatePerfil:  vi.fn(),
   updatePassword: vi.fn(),
+  getAll:        vi.fn(),
+  updateRol:     vi.fn(),
 }));
 
 vi.mock('../src/config/database.js', () => ({
@@ -23,6 +25,10 @@ const pubToken = jwt.sign(
 // Rol verificado: único con perfil funcional que gestionar (PATCH /me, /me/password)
 const verToken = jwt.sign(
   { id: 'uuid-inv', email: 'inv@iiap.org.co', rol: 'investigador' },
+  process.env.JWT_SECRET,
+);
+const adminToken = jwt.sign(
+  { id: 'uuid-admin', email: 'admin@iiap.org.co', rol: 'admin_sig' },
   process.env.JWT_SECRET,
 );
 
@@ -145,5 +151,85 @@ describe('PATCH /api/usuarios/me/password', () => {
       .send({ currentPassword: 'OldPass1!', newPassword: 'Nueva123!' });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
+  });
+});
+
+describe('GET /api/usuarios', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app).get('/api/usuarios');
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 con rol no admin_sig', async () => {
+    const res = await request(app)
+      .get('/api/usuarios')
+      .set('Authorization', `Bearer ${verToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('retorna la lista de usuarios con rol admin_sig', async () => {
+    userService.getAll.mockResolvedValue({ data: [USER_FIXTURE], total: 1 });
+    const res = await request(app)
+      .get('/api/usuarios')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    userService.getAll.mockRejectedValue(new Error('db down'));
+    const res = await request(app)
+      .get('/api/usuarios')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('PATCH /api/usuarios/:id/rol', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app).patch('/api/usuarios/uuid-x/rol').send({ rol: 'tecnico' });
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 con rol no admin_sig', async () => {
+    const res = await request(app)
+      .patch('/api/usuarios/uuid-x/rol')
+      .set('Authorization', `Bearer ${verToken}`)
+      .send({ rol: 'tecnico' });
+    expect(res.status).toBe(403);
+  });
+
+  it('retorna 422 si el rol no es válido', async () => {
+    const res = await request(app)
+      .patch('/api/usuarios/uuid-x/rol')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ rol: 'rol-inexistente' });
+    expect(res.status).toBe(422);
+  });
+
+  it('actualiza el rol con datos válidos — retorna 200', async () => {
+    userService.updateRol.mockResolvedValue({ ...USER_FIXTURE, rol: 'tecnico' });
+    const res = await request(app)
+      .patch('/api/usuarios/uuid-inv/rol')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ rol: 'tecnico', activo: true });
+    expect(res.status).toBe(200);
+    expect(res.body.rol).toBe('tecnico');
+    expect(userService.updateRol).toHaveBeenCalledWith(
+      'uuid-inv', 'tecnico', true, expect.objectContaining({ rol: 'admin_sig' }),
+    );
+  });
+
+  it('llama next(err) si el servicio lanza (ej. protección de super_admin)', async () => {
+    userService.updateRol.mockRejectedValue(Object.assign(new Error('No autorizado'), { status: 403 }));
+    const res = await request(app)
+      .patch('/api/usuarios/uuid-super/rol')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ rol: 'tecnico' });
+    expect(res.status).toBe(403);
   });
 });
