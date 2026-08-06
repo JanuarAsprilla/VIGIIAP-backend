@@ -14,7 +14,7 @@ vi.mock('../src/modules/auth/auth.service.js', () => ({
   loginVisitante:         vi.fn(),
   verifyEmail:            vi.fn(),
   reenviarVerificacion:   vi.fn(),
-  recuperarPassword:      vi.fn(),
+  solicitarRecuperacion:  vi.fn(),
   resetPassword:          vi.fn(),
   issueTokenPair:         vi.fn(),
   getAdminEmails:         vi.fn().mockResolvedValue([]),
@@ -244,7 +244,10 @@ vi.mock('../src/modules/auth/auth.schema.js', () => ({
   loginSchema:         { parse: vi.fn((d) => d) },
   registerSchema:      { parse: vi.fn((d) => d) },
   recoverSchema:       { parse: vi.fn((d) => d) },
-  resetPasswordSchema: { pick: vi.fn(() => ({ parse: vi.fn((d) => d) })) },
+  resetPasswordSchema: {
+    parse: vi.fn((d) => d),
+    pick:  vi.fn(() => ({ parse: vi.fn((d) => d) })),
+  },
 }));
 
 // ── visitante() ───────────────────────────────────────────────────────────
@@ -435,5 +438,76 @@ describe('auth.controller → reenviarVerificacion()', () => {
     authService.reenviarVerificacion.mockRejectedValue(new Error('db'));
     await reenviarVerificacion({ body: { email: 'j@j.co' } }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── recuperarPassword() ─────────────────────────────────────────────────────
+
+import { recuperarPassword, resetPassword } from '../src/modules/auth/auth.controller.js';
+import * as mailerRecover from '../src/utils/mailer.js';
+
+describe('auth.controller → recuperarPassword()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama next(err) si el email es inválido (falla el schema)', async () => {
+    const { recoverSchema } = await import('../src/modules/auth/auth.schema.js');
+    recoverSchema.parse.mockImplementationOnce(() => { throw new Error('Email inválido'); });
+    await recuperarPassword({ body: { email: 'no-es-un-email' } }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(authService.solicitarRecuperacion).not.toHaveBeenCalled();
+  });
+
+  it('responde con mensaje genérico cuando el email no existe (resultado nulo)', async () => {
+    authService.solicitarRecuperacion.mockResolvedValue(null);
+    const r = res();
+    await recuperarPassword({ body: { email: 'x@x.co' } }, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
+    expect(mailerRecover.notifyRecuperarPassword).not.toHaveBeenCalled();
+  });
+
+  it('envía el correo de recuperación cuando el email existe', async () => {
+    authService.solicitarRecuperacion.mockResolvedValue({
+      email: 'j@j.co', nombre: 'Juan', resetToken: 'reset-tok',
+    });
+    const r = res();
+    await recuperarPassword({ body: { email: 'j@j.co' } }, r, mockNext);
+    expect(mailerRecover.notifyRecuperarPassword).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'j@j.co', nombre: 'Juan', resetToken: 'reset-tok' }),
+    );
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    authService.solicitarRecuperacion.mockRejectedValue(new Error('db'));
+    await recuperarPassword({ body: { email: 'j@j.co' } }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── resetPassword() ─────────────────────────────────────────────────────────
+
+describe('auth.controller → resetPassword()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama next(err) si el body es inválido (falla el schema)', async () => {
+    const { resetPasswordSchema } = await import('../src/modules/auth/auth.schema.js');
+    resetPasswordSchema.parse.mockImplementationOnce(() => { throw new Error('Contraseña inválida'); });
+    await resetPassword({ body: { token: 'tok' } }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(authService.resetPassword).not.toHaveBeenCalled();
+  });
+
+  it('actualiza la contraseña y responde con mensaje de éxito', async () => {
+    authService.resetPassword.mockResolvedValue(undefined);
+    const r = res();
+    await resetPassword({ body: { token: 'tok-valido', password: 'Pass1234!' } }, r, mockNext);
+    expect(authService.resetPassword).toHaveBeenCalledWith('tok-valido', 'Pass1234!');
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
+  });
+
+  it('llama next(err) si el token es inválido/expirado (el servicio lanza)', async () => {
+    authService.resetPassword.mockRejectedValue(Object.assign(new Error('Token inválido'), { status: 400 }));
+    await resetPassword({ body: { token: 'tok-malo', password: 'Pass1234!' } }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ status: 400 }));
   });
 });
