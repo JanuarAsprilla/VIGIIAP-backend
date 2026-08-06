@@ -21,6 +21,8 @@ vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+import nodemailer from 'nodemailer';
+import logger from '../src/utils/logger.js';
 import { query } from '../src/config/database.js';
 import {
   notifySolicitudEstado,
@@ -28,6 +30,13 @@ import {
   notifySolicitudRecibida,
   notifyVerificacionEmail,
   notifyRecuperarPassword,
+  notifyAdminNewRegistro,
+  notifyUsuarioActivacion,
+  notifyUsuarioCreado,
+  notifyRegistroRecibido,
+  notifyAdminUsuarioVerificado,
+  notifySolicitudRespuesta,
+  notifyRolCambiado,
 } from '../src/utils/mailer.js';
 
 // Credenciales mínimas para que send() no salga temprano
@@ -189,5 +198,346 @@ describe('notifyAdminNuevaSolicitud()', () => {
     const { to, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
     expect(to).toBe('admin@iiap.gov.co');
     expect(html).toContain('Carlos');
+  });
+
+  it('usa el tipo crudo en subject y cuerpo cuando no existe en TIPO_LABEL', async () => {
+    await notifyAdminNuevaSolicitud({
+      adminEmail:  'admin@iiap.gov.co',
+      solicitante: 'Carlos',
+      email:       'carlos@test.co',
+      tipo:        'tipo-inexistente',
+      descripcion: 'desc',
+    });
+
+    const { subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).toContain('tipo-inexistente');
+    expect(html).toContain('tipo-inexistente');
+  });
+});
+
+// ── sanitizeSMTP() — directa, vía funciones que la usan ────────────────────────
+
+describe('notifyAdminNewRegistro()', () => {
+  it('envía al admin con institución y motivo escapados cuando están presentes', async () => {
+    await notifyAdminNewRegistro({
+      adminEmail:  'admin@iiap.gov.co',
+      nombre:      'Nuevo Usuario',
+      email:       'nuevo@test.co',
+      institucion: 'Universidad <del Pacífico>',
+      motivo:      'Investigación',
+    });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('admin@iiap.gov.co');
+    expect(subject).toContain('Nuevo Usuario');
+    expect(html).toContain('&lt;del Pacífico&gt;');
+    expect(html).toContain('Investigación');
+  });
+
+  it('usa los valores por defecto cuando institución y motivo están vacíos', async () => {
+    await notifyAdminNewRegistro({
+      adminEmail:  'admin@iiap.gov.co',
+      nombre:      'Otro Usuario',
+      email:       'otro@test.co',
+      institucion: '',
+      motivo:      '',
+    });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).toContain('No especificada');
+    expect(html).toContain('No especificado');
+  });
+
+  it('elimina CRLF del nombre en el subject vía sanitizeSMTP', async () => {
+    await notifyAdminNewRegistro({
+      adminEmail:  'admin@iiap.gov.co',
+      nombre:      'Ana\r\nBcc: evil@attacker.com',
+      email:       'ana@test.co',
+      institucion: 'IIAP',
+      motivo:      'Trabajo',
+    });
+
+    const { subject } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).not.toMatch(/\r|\n/);
+  });
+
+  it('trunca valores de sanitizeSMTP a 250 caracteres', async () => {
+    await notifyAdminNewRegistro({
+      adminEmail:  'admin@iiap.gov.co',
+      nombre:      'N'.repeat(400),
+      email:       'largo@test.co',
+      institucion: 'IIAP',
+      motivo:      'Trabajo',
+    });
+
+    const { subject } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    // "[VIGI-IIAP] Nuevo registro: " + hasta 250 caracteres de nombre truncado
+    expect(subject.length).toBeLessThanOrEqual('[VIGI-IIAP] Nuevo registro: '.length + 250);
+  });
+});
+
+describe('notifyUsuarioActivacion()', () => {
+  it('notifica activación con rol conocido y muestra el CTA de ingreso', async () => {
+    await notifyUsuarioActivacion({
+      email: 'u@test.co', nombre: 'Usuario Activo', activo: true, rol: 'admin_sig',
+    });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('u@test.co');
+    expect(subject).toContain('activada');
+    expect(html).toContain('Administrador SIG');
+    expect(html).toContain('Ingresar al portal');
+  });
+
+  it('notifica desactivación sin el CTA de ingreso', async () => {
+    await notifyUsuarioActivacion({
+      email: 'u@test.co', nombre: 'Usuario Inactivo', activo: false, rol: 'admin_sig',
+    });
+
+    const { subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).toContain('desactivada');
+    expect(html).not.toContain('Ingresar al portal');
+  });
+
+  it('usa el rol crudo en el cuerpo cuando no está en el mapa de labels', async () => {
+    await notifyUsuarioActivacion({
+      email: 'u@test.co', nombre: 'Usuario Rol Custom', activo: true, rol: 'rol-custom',
+    });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).toContain('rol-custom');
+  });
+});
+
+describe('notifyUsuarioCreado()', () => {
+  it('envía credenciales con la contraseña temporal escapada', async () => {
+    await notifyUsuarioCreado({
+      email: 'creado@test.co',
+      nombre: 'Creado',
+      passwordTemporal: '<script>pwd</script>',
+      rol: 'investigador',
+    });
+
+    const { to, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('creado@test.co');
+    expect(html).toContain('Investigador');
+    expect(html).not.toContain('<script>pwd</script>');
+    expect(html).toContain('&lt;script&gt;pwd&lt;/script&gt;');
+  });
+
+  it('usa el rol crudo cuando no está en el mapa de labels', async () => {
+    await notifyUsuarioCreado({
+      email: 'creado2@test.co', nombre: 'Creado2', passwordTemporal: 'Temp123!', rol: 'externo',
+    });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).toContain('externo');
+  });
+});
+
+describe('notifyRegistroRecibido()', () => {
+  it('envía confirmación de solicitud de acceso recibida', async () => {
+    await notifyRegistroRecibido({ email: 'nuevo@test.co', nombre: 'Nuevo' });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('nuevo@test.co');
+    expect(subject).toContain('Solicitud de acceso recibida');
+    expect(html).toContain('Nuevo');
+  });
+});
+
+describe('notifyAdminUsuarioVerificado()', () => {
+  it('notifica al admin con el enlace de activación', async () => {
+    await notifyAdminUsuarioVerificado({
+      adminEmail: 'admin@iiap.gov.co',
+      nombre: 'Verificado',
+      email: 'verificado@test.co',
+      activationUrl: 'https://vigiiap.iiap.gov.co/admin/usuarios/42',
+    });
+
+    const { to, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('admin@iiap.gov.co');
+    expect(html).toContain('verificado@test.co');
+    expect(html).toContain('https://vigiiap.iiap.gov.co/admin/usuarios/42');
+  });
+
+  it('elimina CRLF del nombre en el subject vía sanitizeSMTP', async () => {
+    await notifyAdminUsuarioVerificado({
+      adminEmail: 'admin@iiap.gov.co',
+      nombre: 'Mal\r\nicioso',
+      email: 'malicioso@test.co',
+      activationUrl: 'https://vigiiap.iiap.gov.co/admin/usuarios/1',
+    });
+
+    const { subject } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).not.toMatch(/\r|\n/);
+  });
+});
+
+describe('notifySolicitudRespuesta()', () => {
+  it('envía la respuesta del administrador escapada en el cuerpo', async () => {
+    await notifySolicitudRespuesta({
+      email: 'solicitante@test.co',
+      nombre: 'Solicitante',
+      tipo: 'validacion',
+      respuesta: 'Aprobado, <b>revisar anexos</b>',
+    });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('solicitante@test.co');
+    expect(subject).toContain('Validación Cartográfica');
+    expect(html).toContain('&lt;b&gt;revisar anexos&lt;/b&gt;');
+  });
+
+  it('usa el tipo crudo cuando no está en TIPO_LABEL', async () => {
+    await notifySolicitudRespuesta({
+      email: 'solicitante@test.co', nombre: 'Solicitante', tipo: 'tipo-raro', respuesta: 'ok',
+    });
+
+    const { subject } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).toContain('tipo-raro');
+  });
+});
+
+describe('notifyRolCambiado()', () => {
+  it('notifica al usuario el rol anterior y el nuevo rol', async () => {
+    await notifyRolCambiado({
+      email: 'usuario@test.co', nombre: 'Usuario', rolAnterior: 'investigador', rolNuevo: 'admin_sig',
+    });
+
+    const { to, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('usuario@test.co');
+    expect(html).toContain('investigador');
+    expect(html).toContain('admin_sig');
+  });
+});
+
+// ── notifySolicitudEstado() — labels y colores por defecto ─────────────────────
+
+describe('notifySolicitudEstado() — casos edge de labels', () => {
+  it('usa el estado crudo, el color por defecto y el subject "actualizada" para un estado desconocido', async () => {
+    await notifySolicitudEstado({
+      email: 'u@test.co', nombre: 'U', tipo: 'otro', estado: 'archivada',
+    });
+
+    const { subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).toContain('actualizada');
+    expect(html).toContain('archivada');
+    expect(html).toContain('#1B4332');
+  });
+
+  it('usa el tipo crudo cuando no está en TIPO_LABEL', async () => {
+    await notifySolicitudEstado({
+      email: 'u@test.co', nombre: 'U', tipo: 'tipo-desconocido', estado: 'aprobada',
+    });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).toContain('tipo-desconocido');
+  });
+});
+
+describe('notifySolicitudRecibida() — tipo desconocido', () => {
+  it('usa el tipo crudo en subject y cuerpo cuando no está en TIPO_LABEL', async () => {
+    await notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'tipo-desconocido' });
+
+    const { subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(subject).toContain('tipo-desconocido');
+    expect(html).toContain('tipo-desconocido');
+  });
+});
+
+// ── send() — manejo de errores de transporte ────────────────────────────────────
+
+describe('send() — errores de transporte SMTP', () => {
+  it('no lanza y registra el error cuando sendMail rechaza', async () => {
+    sendMailSpy.mockRejectedValueOnce(new Error('SMTP connection timeout'));
+
+    await expect(
+      notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' }),
+    ).resolves.toBeUndefined();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[mailer] Error enviando email a u@test.co:'),
+      'SMTP connection timeout',
+    );
+  });
+});
+
+// ── createTransport() — valores por defecto ──────────────────────────────────────
+
+describe('createTransport() — valores por defecto de host/puerto/seguridad', () => {
+  it('usa smtp.gmail.com:587 sin TLS cuando MAIL_HOST/MAIL_PORT/MAIL_SECURE no están definidos', async () => {
+    delete process.env.MAIL_HOST;
+    delete process.env.MAIL_PORT;
+    delete process.env.MAIL_SECURE;
+
+    await notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({ host: 'smtp.gmail.com', port: 587, secure: false }),
+    );
+  });
+
+  it('usa secure:true cuando MAIL_SECURE es "true"', async () => {
+    process.env.MAIL_SECURE = 'true';
+    process.env.MAIL_PORT = '465';
+
+    await notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 465, secure: true }),
+    );
+  });
+});
+
+// ── getFromAddress() — ramas de configuración desde BD (módulo aislado) ────────
+
+describe('getFromAddress() — ramas de fallback de BD', () => {
+  async function loadMailerFresh() {
+    vi.resetModules();
+    const dbMod = await import('../src/config/database.js');
+    const mailerMod = await import('../src/utils/mailer.js');
+    return { query: dbMod.query, mailer: mailerMod };
+  }
+
+  it('usa MAIL_USER como dirección cuando mail_remitente no está en BD', async () => {
+    delete process.env.MAIL_FROM;
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({
+      rows: [{ clave: 'mail_remitente_nombre', valor: 'Solo Nombre' }],
+    });
+
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    const call = sendMailSpy.mock.calls[0]?.[0];
+    expect(call?.from).toContain(process.env.MAIL_USER);
+    expect(call?.from).toContain('Solo Nombre');
+  });
+
+  it('usa el nombre por defecto "VIGIIAP — IIAP" cuando mail_remitente_nombre no está en BD', async () => {
+    delete process.env.MAIL_FROM;
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({
+      rows: [{ clave: 'mail_remitente', valor: 'solo-addr@iiap.gov.co' }],
+    });
+
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    const call = sendMailSpy.mock.calls[0]?.[0];
+    expect(call?.from).toContain('solo-addr@iiap.gov.co');
+    expect(call?.from).toContain('VIGIIAP');
+  });
+
+  it('usa MAIL_FROM_NAME en el fallback de catch cuando está definida', async () => {
+    delete process.env.MAIL_FROM;
+    process.env.MAIL_FROM_NAME = 'Nombre De Emergencia';
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockRejectedValue(new Error('DB down'));
+
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    const call = sendMailSpy.mock.calls[0]?.[0];
+    expect(call?.from).toContain('Nombre De Emergencia');
+    delete process.env.MAIL_FROM_NAME;
   });
 });
