@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn().mockResolvedValue({ rows: [] }),
@@ -162,6 +163,72 @@ describe('changeExpiredPassword()', () => {
     expect(res.cookie).toHaveBeenCalledTimes(2); // access + refresh
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('Contraseña actualizada') })
+    );
+  });
+
+  it('retorna 401 si el usuario no existe al verificar el token consumido', async () => {
+    const token = makeToken({ id: 'user-uuid', scope: 'password-change' });
+    query
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [] });                        // SELECT check → usuario no encontrado
+
+    const req = {
+      cookies: { vigiiap_expired_temp: token },
+      body: { password: 'NuevaPassword123!' },
+      ip: '127.0.0.1',
+      headers: {},
+    };
+    const res = mockRes();
+    await changeExpiredPassword(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'Usuario no encontrado' })
+    );
+  });
+
+  it('retorna 401 si el token de cambio ya fue utilizado (jti no coincide)', async () => {
+    const token = makeToken({ id: 'user-uuid', scope: 'password-change', jti: 'jti-actual' });
+    query
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
+      .mockResolvedValueOnce({
+        rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'jti-viejo' }],
+      });
+
+    const req = {
+      cookies: { vigiiap_expired_temp: token },
+      body: { password: 'NuevaPassword123!' },
+      ip: '127.0.0.1',
+      headers: {},
+    };
+    const res = mockRes();
+    await changeExpiredPassword(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('ya utilizado') })
+    );
+  });
+
+  it('retorna 400 si la nueva contraseña es igual a la actual', async () => {
+    const samePassword = 'MismaPassword123!';
+    const existingHash = await bcrypt.hash(samePassword, 10);
+    const token = makeToken({ id: 'user-uuid', scope: 'password-change' });
+    query
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
+      .mockResolvedValueOnce({
+        rows: [{ password_hash: existingHash, expired_token_jti: null }],
+      });
+
+    const req = {
+      cookies: { vigiiap_expired_temp: token },
+      body: { password: samePassword },
+      ip: '127.0.0.1',
+      headers: {},
+    };
+    const res = mockRes();
+    await changeExpiredPassword(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('diferente') })
     );
   });
 

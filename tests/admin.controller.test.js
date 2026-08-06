@@ -30,18 +30,38 @@ vi.mock('../src/utils/dataCustody.js', () => ({
   registrarScanArchivo: vi.fn(),
 }));
 
+vi.mock('../src/utils/auditLog.js', () => ({
+  registrarAuditoria: vi.fn(),
+}));
+
+vi.mock('../src/utils/mailer.js', () => ({
+  notifyUsuarioActivacion: vi.fn().mockResolvedValue(undefined),
+  notifyRolCambiado:       vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../src/modules/auth/auth.service.js', () => ({
+  revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
+}));
+
 import * as adminService from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../src/utils/dataCustody.js';
+import { registrarAuditoria } from '../src/utils/auditLog.js';
+import { notifyUsuarioActivacion, notifyRolCambiado } from '../src/utils/mailer.js';
+import { revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import {
   notificaciones, getConfiguracion, setConfiguracion, stats, resetStatsCache,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
-  descargasStats,
+  descargasStats, scanLog, batchUsuarios,
 } from '../src/modules/admin/admin.controller.js';
 
 const mockNext = vi.fn();
 const ADMIN = { id: 'uuid-admin', email: 'admin@iiap.org.co', rol: 'admin_sig' };
+const SUPERADMIN = { id: 'uuid-super', email: 'super@iiap.org.co', rol: 'super_admin', ip: '127.0.0.1' };
+const TARGET_1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+const TARGET_2 = 'b2c3d4e5-f6a7-8901-bcde-f01234567891';
+const SUPER_TARGET = 'c3d4e5f6-a7b8-9012-cdef-012345678912';
 
 function res() {
   return { status: vi.fn().mockReturnThis(), json: vi.fn(), end: vi.fn() };
@@ -167,6 +187,19 @@ describe('admin.controller → stats()', () => {
     query.mockRejectedValue(new Error('db'));
     await stats({}, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('retorna la respuesta cacheada sin volver a consultar la BD dentro de 30s', async () => {
+    query.mockResolvedValue({ rows: [{ count: '10' }] });
+    const r1 = res();
+    await stats({}, r1, mockNext);
+    expect(query).toHaveBeenCalled();
+
+    query.mockClear();
+    const r2 = res();
+    await stats({}, r2, mockNext);
+    expect(query).not.toHaveBeenCalled();
+    expect(r2.json).toHaveBeenCalledWith(r1.json.mock.calls[0][0]);
   });
 });
 
@@ -432,5 +465,221 @@ describe('admin.controller → descargasRecurso() — success', () => {
     const r = res();
     await descargasRecurso({ query: { tipo: 'documento', id: 'uuid-d1' } }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith({ data: [] });
+  });
+});
+
+// ── scanLog() ────────────────────────────────────────────────────────────
+
+describe('admin.controller → scanLog()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna el log de escaneo sin filtros', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 1, resultado: 'clean' }] });
+    const r = res();
+    await scanLog({ query: {} }, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith({ data: [{ id: 1, resultado: 'clean' }] });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).not.toContain('WHERE');
+    expect(params).toEqual([50]);
+  });
+
+  it('filtra por resultado cuando es un valor permitido', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await scanLog({ query: { resultado: 'rejected' } }, r, mockNext);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('WHERE resultado = $1');
+    expect(params).toEqual(['rejected', 50]);
+  });
+
+  it('ignora resultado con valor no permitido', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await scanLog({ query: { resultado: 'malware' } }, r, mockNext);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).not.toContain('WHERE');
+    expect(params).toEqual([50]);
+  });
+
+  it('limita el limit a un máximo de 200', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await scanLog({ query: { limit: '9999' } }, r, mockNext);
+    const [, params] = query.mock.calls[0];
+    expect(params).toEqual([200]);
+  });
+
+  it('usa 50 como límite por defecto si limit no es numérico', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const r = res();
+    await scanLog({ query: { limit: 'abc' } }, r, mockNext);
+    const [, params] = query.mock.calls[0];
+    expect(params).toEqual([50]);
+  });
+
+  it('llama next(err) si query lanza', async () => {
+    query.mockRejectedValueOnce(new Error('db'));
+    await scanLog({ query: {} }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── batchUsuarios() ──────────────────────────────────────────────────────
+
+describe('admin.controller → batchUsuarios()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 400 si ids no es un array', async () => {
+    const r = res();
+    await batchUsuarios({ body: { ids: 'no-array', accion: 'activar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+  });
+
+  it('retorna 400 si ids es un array vacío', async () => {
+    const r = res();
+    await batchUsuarios({ body: { ids: [], accion: 'activar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+  });
+
+  it('retorna 400 si ids supera los 50 elementos', async () => {
+    const r = res();
+    const ids = Array.from({ length: 51 }, () => TARGET_1);
+    await batchUsuarios({ body: { ids, accion: 'activar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toMatch(/Máximo 50/);
+  });
+
+  it('retorna 400 si algún id no es un UUID válido', async () => {
+    const r = res();
+    await batchUsuarios({ body: { ids: ['no-uuid'], accion: 'activar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toMatch(/UUIDs válidos/);
+  });
+
+  it('retorna 400 si accion no es válida', async () => {
+    const r = res();
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'volar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toMatch(/accion debe ser/);
+  });
+
+  it('retorna 400 si accion es cambiar-rol con rol inválido', async () => {
+    const r = res();
+    await batchUsuarios({
+      body: { ids: [TARGET_1], accion: 'cambiar-rol', rol: 'super_admin' }, user: ADMIN,
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toMatch(/rol inválido/);
+  });
+
+  it('retorna 403 si admin_sig intenta asignar rol admin_sig', async () => {
+    const r = res();
+    await batchUsuarios({
+      body: { ids: [TARGET_1], accion: 'cambiar-rol', rol: 'admin_sig' }, user: ADMIN,
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.json.mock.calls[0][0].error).toMatch(/super_admin puede asignar/);
+  });
+
+  it('permite a super_admin asignar rol admin_sig', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ email: 't1@iiap.org.co', nombre: 'T1', rol: 'admin_sig', activo: true }] });
+    const r = res();
+    await batchUsuarios({
+      body: { ids: [TARGET_1], accion: 'cambiar-rol', rol: 'admin_sig' }, user: SUPERADMIN,
+    }, r, mockNext);
+    expect(r.status).not.toHaveBeenCalledWith(403);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ afectados: 1 }));
+  });
+
+  it('retorna 400 si un usuario intenta operar sobre su propia cuenta', async () => {
+    const selfAdmin = { ...ADMIN, id: TARGET_1 };
+    const r = res();
+    await batchUsuarios({
+      body: { ids: [TARGET_1], accion: 'activar' }, user: selfAdmin,
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toMatch(/propia cuenta/);
+  });
+
+  it('retorna 403 si algún target es super_admin', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: SUPER_TARGET, rol: 'super_admin' }] });
+    const r = res();
+    await batchUsuarios({ body: { ids: [SUPER_TARGET], accion: 'activar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.json.mock.calls[0][0].error).toMatch(/super_admin en batch/);
+  });
+
+  it('retorna 403 si admin_sig intenta desactivar a otro admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'admin_sig' }] });
+    const r = res();
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'desactivar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.json.mock.calls[0][0].error).toMatch(/otros admin_sig/);
+  });
+
+  it('permite a super_admin desactivar a un admin_sig', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'admin_sig' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ email: 't1@iiap.org.co', nombre: 'T1', rol: 'admin_sig', activo: false }] });
+    const r = res();
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'desactivar' }, user: SUPERADMIN }, r, mockNext);
+    expect(r.status).not.toHaveBeenCalledWith(403);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ afectados: 1 }));
+  });
+
+  it('activa usuarios en lote, notifica y registra auditoría', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }, { id: TARGET_2, rol: 'tecnico' }] })
+      .mockResolvedValueOnce({ rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [
+        { email: 't1@iiap.org.co', nombre: 'T1', rol: 'investigador', activo: true },
+        { email: 't2@iiap.org.co', nombre: 'T2', rol: 'tecnico', activo: true },
+      ] });
+    const r = res();
+    await batchUsuarios({
+      body: { ids: [TARGET_1, TARGET_2], accion: 'activar' }, user: ADMIN,
+    }, r, mockNext);
+
+    expect(r.json).toHaveBeenCalledWith({ message: '2 usuarios actualizados', afectados: 2 });
+    expect(notifyUsuarioActivacion).toHaveBeenCalledTimes(2);
+    expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'batch_activar' }));
+  });
+
+  it('desactiva usuarios en lote y notifica', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ email: 't1@iiap.org.co', nombre: 'T1', rol: 'investigador', activo: false }] });
+    const r = res();
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'desactivar' }, user: ADMIN }, r, mockNext);
+
+    expect(r.json).toHaveBeenCalledWith({ message: '1 usuarios actualizados', afectados: 1 });
+    expect(notifyUsuarioActivacion).toHaveBeenCalledOnce();
+  });
+
+  it('cambia el rol en lote, revoca refresh tokens y notifica', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ email: 't1@iiap.org.co', nombre: 'T1', rol: 'investigador', activo: true }] });
+    const r = res();
+    await batchUsuarios({
+      body: { ids: [TARGET_1], accion: 'cambiar-rol', rol: 'tecnico' }, user: ADMIN,
+    }, r, mockNext);
+
+    expect(r.json).toHaveBeenCalledWith({ message: '1 usuarios actualizados', afectados: 1 });
+    expect(revokeAllRefreshTokens).toHaveBeenCalledWith(TARGET_1);
+    expect(notifyRolCambiado).toHaveBeenCalledOnce();
+  });
+
+  it('llama next(err) si query de targets lanza', async () => {
+    query.mockRejectedValueOnce(new Error('db'));
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'activar' }, user: ADMIN }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

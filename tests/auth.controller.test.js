@@ -54,7 +54,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import * as authService from '../src/modules/auth/auth.service.js';
 import { revokeToken } from '../src/utils/tokenBlacklist.js';
-import { logout, refresh, me } from '../src/modules/auth/auth.controller.js';
+import { logout, refresh, me, login } from '../src/modules/auth/auth.controller.js';
 
 const mockNext = vi.fn();
 
@@ -142,6 +142,19 @@ describe('auth.controller → logout()', () => {
     }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it('ignora silenciosamente el error de revokeAllRefreshTokens y responde igual', async () => {
+    authService.revokeAllRefreshTokens.mockRejectedValueOnce(new Error('db down'));
+    const r = res();
+    await logout({
+      cookies: {},
+      user: { id: 'u1' },
+      headers: {},
+    }, r, mockNext);
+    expect(authService.revokeAllRefreshTokens).toHaveBeenCalledWith('u1');
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
+    expect(mockNext).not.toHaveBeenCalled();
+  });
 });
 
 // ── refresh() ─────────────────────────────────────────────────────────────
@@ -178,6 +191,48 @@ describe('auth.controller → refresh()', () => {
       ip: '::1',
       headers: { 'user-agent': 'test' },
     }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── login() ───────────────────────────────────────────────────────────────
+
+describe('auth.controller → login()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('login exitoso — emite cookies de access y refresh, responde con token y user', async () => {
+    authService.login.mockResolvedValue({
+      token: 'access.token', refreshToken: 'refresh.token', user: { id: 'u1', rol: 'investigador' },
+    });
+    const r = res();
+    await login({ body: { email: 'j@j.co', password: 'Pass1234!' }, ip: '::1', headers: {} }, r, mockNext);
+    expect(r.cookie).toHaveBeenCalledTimes(2);
+    expect(r.json).toHaveBeenCalledWith({
+      token: 'access.token', user: { id: 'u1', rol: 'investigador' },
+    });
+  });
+
+  it('retorna 403 y cookie temporal cuando la contraseña expiró', async () => {
+    authService.login.mockResolvedValue({ passwordExpired: true, expiredToken: 'expired.tok' });
+    const r = res();
+    await login({ body: { email: 'j@j.co', password: 'Pass1234!' }, ip: '::1', headers: {} }, r, mockNext);
+    expect(r.cookie).toHaveBeenCalledWith('vigiiap_expired_temp', 'expired.tok', expect.any(Object));
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.json).toHaveBeenCalledWith({ passwordExpired: true, code: 'PASSWORD_EXPIRED' });
+  });
+
+  it('retorna requiresTwoFactor y cookie temporal cuando 2FA está activo', async () => {
+    authService.login.mockResolvedValue({ requiresTwoFactor: true, twoFactorToken: 'tfa.tok' });
+    const r = res();
+    await login({ body: { email: 'j@j.co', password: 'Pass1234!' }, ip: '::1', headers: {} }, r, mockNext);
+    expect(r.cookie).toHaveBeenCalledWith('vigiiap_2fa_temp', 'tfa.tok', expect.any(Object));
+    expect(r.json).toHaveBeenCalledWith({ requiresTwoFactor: true });
+  });
+
+  it('llama next(err) si login lanza (credenciales inválidas)', async () => {
+    authService.login.mockRejectedValue(Object.assign(new Error('Credenciales inválidas'), { status: 401 }));
+    const r = res();
+    await login({ body: { email: 'j@j.co', password: 'bad' }, ip: '::1', headers: {} }, r, mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });
@@ -244,11 +299,51 @@ describe('auth.controller → register()', () => {
     await register({ body: {} }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it('notifica a los admins registrados y absorbe errores de envío de email', async () => {
+    authService.register.mockResolvedValue({
+      id: 'u1', nombre: 'Juan', email: 'j@j.co', verificationToken: 'tok',
+    });
+    mailer.notifyVerificacionEmail.mockRejectedValueOnce(new Error('smtp caído'));
+    adminService.getAdminEmails.mockResolvedValueOnce(['admin1@iiap.co', 'admin2@iiap.co']);
+    mailer.notifyAdminNewRegistro.mockRejectedValue(new Error('smtp admin caído'));
+
+    const r = res();
+    await register({
+      body: { nombre: 'Juan', email: 'j@j.co', password: 'Pass1234!', institucion: 'IIAP', motivo: 'Investigación' },
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+
+    await vi.waitFor(() => {
+      expect(mailer.notifyVerificacionEmail).toHaveBeenCalled();
+      expect(mailer.notifyAdminNewRegistro).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('registra sin admins configurados (adminEmails vacío)', async () => {
+    authService.register.mockResolvedValue({
+      id: 'u2', nombre: 'Ana', email: 'a@a.co', verificationToken: 'tok2',
+    });
+    mailer.notifyVerificacionEmail.mockResolvedValueOnce(undefined);
+    adminService.getAdminEmails.mockResolvedValueOnce([]);
+
+    const r = res();
+    await register({
+      body: { nombre: 'Ana', email: 'a@a.co', password: 'Pass1234!', institucion: 'IIAP', motivo: 'x' },
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+
+    await vi.waitFor(() => {
+      expect(adminService.getAdminEmails).toHaveBeenCalled();
+    });
+    expect(mailer.notifyAdminNewRegistro).not.toHaveBeenCalled();
+  });
 });
 
 // ── verifyEmail() ─────────────────────────────────────────────────────────
 
 import * as adminService from '../src/modules/admin/admin.service.js';
+import * as mailer from '../src/utils/mailer.js';
 
 describe('auth.controller → verifyEmail()', () => {
   beforeEach(() => {
@@ -263,6 +358,36 @@ describe('auth.controller → verifyEmail()', () => {
     // La respuesta puede ser json o next(err), verificamos que se procesó
     const called = r.json.mock.calls.length > 0 || mockNext.mock.calls.length > 0;
     expect(called).toBe(true);
+  });
+
+  it('notifica al usuario y a los admins cuando la verificación es nueva', async () => {
+    authService.verifyEmail.mockResolvedValue({ alreadyVerified: false, email: 'j@j.co', nombre: 'Juan' });
+    mailer.notifyRegistroRecibido.mockRejectedValueOnce(new Error('smtp caído'));
+    adminService.getAdminEmails.mockResolvedValueOnce(['admin1@iiap.co']);
+    mailer.notifyAdminUsuarioVerificado.mockRejectedValueOnce(new Error('smtp admin caído'));
+
+    const r = res();
+    await verifyEmail({ params: { token: 'tok-valid' } }, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ alreadyVerified: false }));
+
+    await vi.waitFor(() => {
+      expect(mailer.notifyRegistroRecibido).toHaveBeenCalled();
+      expect(mailer.notifyAdminUsuarioVerificado).toHaveBeenCalled();
+    });
+  });
+
+  it('no notifica admins cuando no hay adminEmails registrados', async () => {
+    authService.verifyEmail.mockResolvedValue({ alreadyVerified: false, email: 'j2@j.co', nombre: 'Ana' });
+    mailer.notifyRegistroRecibido.mockResolvedValueOnce(undefined);
+    adminService.getAdminEmails.mockResolvedValueOnce([]);
+
+    const r = res();
+    await verifyEmail({ params: { token: 'tok-valid-2' } }, r, mockNext);
+
+    await vi.waitFor(() => {
+      expect(adminService.getAdminEmails).toHaveBeenCalled();
+    });
+    expect(mailer.notifyAdminUsuarioVerificado).not.toHaveBeenCalled();
   });
 
   it('responde cuando ya estaba verificado', async () => {
