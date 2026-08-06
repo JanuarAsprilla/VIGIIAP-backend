@@ -26,6 +26,14 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
+// invalidateCache rechaza a propósito — ejercita el .catch(() => {}) silencioso
+// que envuelve cada llamada en el controller (no debe interrumpir la respuesta).
+vi.mock('../src/middlewares/cache.js', () => ({
+  invalidateCache: vi.fn().mockRejectedValue(new Error('redis no disponible')),
+  cacheMiddleware: () => (_req, _res, next) => next(),
+  getRedisClient:  vi.fn(() => null),
+}));
+
 import * as catService from '../src/modules/categorias/categorias.service.js';
 import { index, create, destroy, upsertThumbnail } from '../src/modules/categorias/categorias.controller.js';
 
