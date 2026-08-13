@@ -132,6 +132,40 @@ describe('cacheMiddleware() — cache MISS', () => {
       );
     }
   });
+
+  it('registra warning si setEx falla al guardar la respuesta en cache, sin interrumpir la respuesta', async () => {
+    const client = getRedisClient();
+    client.isReady = true;
+    client.setEx.mockRejectedValueOnce(new Error('setEx caído'));
+
+    const middleware = cacheMiddleware(120);
+    const req = { query: {}, cookies: {}, headers: {}, path: '/mapas' };
+    const res = mockRes();
+
+    await middleware(req, res, mockNext);
+    const data = [{ id: 1 }];
+    res.json(data);
+
+    await vi.waitFor(() => {
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Error guardando'));
+    });
+    expect(res.setHeader).toHaveBeenCalledWith('X-Cache', 'MISS');
+  });
+
+  it('registra warning y llama next() si client.get() lanza', async () => {
+    const client = getRedisClient();
+    client.isReady = true;
+    client.get.mockRejectedValueOnce(new Error('get caído'));
+
+    const middleware = cacheMiddleware(120);
+    const req = { query: {}, cookies: {}, headers: {}, path: '/mapas' };
+    const res = mockRes();
+
+    await middleware(req, res, mockNext);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Error consultando Redis'));
+    expect(mockNext).toHaveBeenCalledOnce();
+  });
 });
 
 // ─── cacheMiddleware() — cache HIT ───────────────────────────────────────────

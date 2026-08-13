@@ -32,10 +32,15 @@ vi.mock('../src/middlewares/fileGuard.js', () => ({
 vi.mock('../src/modules/admin/admin.service.js', () => ({
   getAdminEmails: vi.fn().mockResolvedValue([]),
 }));
+vi.mock('../src/utils/logger.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}));
 
 import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
 import { query } from '../src/config/database.js';
-import { notifySolicitudEstado } from '../src/utils/mailer.js';
+import { notifySolicitudEstado, notifySolicitudRecibida, notifyAdminNuevaSolicitud, notifySolicitudRespuesta } from '../src/utils/mailer.js';
+import { getAdminEmails } from '../src/modules/admin/admin.service.js';
+import logger from '../src/utils/logger.js';
 import {
   show, getArchivos, uploadArchivo, deleteArchivo, downloadArchivo,
   updateEstado, responder, store,
@@ -201,6 +206,21 @@ describe('updateEstado()', () => {
     );
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it('registra el error si el envío de email de estado falla, sin interrumpir la respuesta', async () => {
+    notifySolicitudEstado.mockRejectedValueOnce(new Error('smtp caído'));
+    const r = res();
+    await updateEstado(
+      { params: { id: SOL.id }, body: { estado: 'aprobada', nota: 'Todo en orden' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ id: SOL.id }));
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[solicitudes] Email estado error:', expect.any(String),
+      );
+    });
+  });
 });
 
 describe('responder()', () => {
@@ -234,6 +254,22 @@ describe('responder()', () => {
     );
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it('registra el error si el envío de email de respuesta falla, sin interrumpir la respuesta', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Carlos', email: 'carlos@test.co', tipo: 'flora' }] });
+    notifySolicitudRespuesta.mockRejectedValueOnce(new Error('smtp caído'));
+    const r = res();
+    await responder(
+      { params: { id: SOL.id }, body: { respuesta: 'Acceso concedido' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    expect(r.json).toHaveBeenCalledWith(SOL);
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[solicitudes] Email respuesta error:', expect.any(String),
+      );
+    });
+  });
 });
 
 describe('store()', () => {
@@ -266,5 +302,69 @@ describe('store()', () => {
       user: USER, ip: '::1',
     }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('registra el error si el email de confirmación al solicitante falla', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    notifySolicitudRecibida.mockRejectedValueOnce(new Error('smtp caído'));
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[solicitudes] Email recibida error:', expect.any(String),
+      );
+    });
+  });
+
+  it('notifica a todos los admins cuando hay adminEmails registrados', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    getAdminEmails.mockResolvedValueOnce(['admin1@iiap.co', 'admin2@iiap.co']);
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+    await vi.waitFor(() => {
+      expect(notifyAdminNuevaSolicitud).toHaveBeenCalledTimes(2);
+      expect(notifyAdminNuevaSolicitud).toHaveBeenCalledWith(
+        expect.objectContaining({ adminEmail: 'admin1@iiap.co', solicitante: 'Juan' }),
+      );
+    });
+  });
+
+  it('registra el error si el envío a un admin individual falla', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    getAdminEmails.mockResolvedValueOnce(['admin1@iiap.co']);
+    notifyAdminNuevaSolicitud.mockRejectedValueOnce(new Error('smtp admin caído'));
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[solicitudes] Email admin error:', expect.any(String),
+      );
+    });
+  });
+
+  it('registra el error si getAdminEmails() falla', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    getAdminEmails.mockRejectedValueOnce(new Error('db down'));
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[solicitudes] getAdminEmails error:', expect.any(String),
+      );
+    });
   });
 });

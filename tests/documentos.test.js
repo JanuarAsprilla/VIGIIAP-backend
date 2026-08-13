@@ -4,11 +4,12 @@ import jwt from 'jsonwebtoken';
 import app from '../src/app.js';
 
 vi.mock('../src/modules/documentos/documentos.service.js', () => ({
-  getAll:    vi.fn(),
-  getBySlug: vi.fn(),
-  create:    vi.fn(),
-  update:    vi.fn(),
-  remove:    vi.fn(),
+  getAll:     vi.fn(),
+  getBySlug:  vi.fn(),
+  create:     vi.fn(),
+  update:     vi.fn(),
+  remove:     vi.fn(),
+  setActivo:  vi.fn(),
 }));
 
 vi.mock('../src/config/database.js', () => ({
@@ -60,6 +61,12 @@ describe('GET /api/documentos', () => {
       expect.objectContaining({ tipo: 'informe', anio: '2024' }),
       undefined,
     );
+  });
+
+  it('retorna 500 y delega al error handler si el servicio lanza', async () => {
+    docService.getAll.mockRejectedValue(new Error('db down'));
+    const res = await request(app).get('/api/documentos');
+    expect(res.status).toBe(500);
   });
 });
 
@@ -181,5 +188,67 @@ describe('DELETE /api/documentos/:id', () => {
       .delete('/api/documentos/uuid-doc-1')
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(204);
+  });
+
+  it('retorna 404 si el documento no existe', async () => {
+    docService.remove.mockRejectedValue(
+      Object.assign(new Error('Documento no encontrado'), { status: 404 }),
+    );
+    const res = await request(app)
+      .delete('/api/documentos/uuid-inexistente')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('PATCH /api/documentos/:id/activo', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app)
+      .patch('/api/documentos/uuid-doc-1/activo')
+      .send({ activo: true });
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 con rol investigador', async () => {
+    const res = await request(app)
+      .patch('/api/documentos/uuid-doc-1/activo')
+      .set('Authorization', `Bearer ${invToken}`)
+      .send({ activo: true });
+    expect(res.status).toBe(403);
+  });
+
+  it('admin activa el documento — retorna 200', async () => {
+    docService.setActivo.mockResolvedValue({ ...DOC_FIXTURE, activo: true });
+    const res = await request(app)
+      .patch('/api/documentos/uuid-doc-1/activo')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ activo: true });
+    expect(res.status).toBe(200);
+    expect(docService.setActivo).toHaveBeenCalledWith('uuid-doc-1', true);
+    expect(res.body.activo).toBe(true);
+  });
+
+  it('admin desactiva el documento — retorna 200', async () => {
+    docService.setActivo.mockResolvedValue({ ...DOC_FIXTURE, activo: false });
+    const res = await request(app)
+      .patch('/api/documentos/uuid-doc-1/activo')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ activo: false });
+    expect(res.status).toBe(200);
+    expect(docService.setActivo).toHaveBeenCalledWith('uuid-doc-1', false);
+    expect(res.body.activo).toBe(false);
+  });
+
+  it('retorna 404 si el documento no existe', async () => {
+    docService.setActivo.mockRejectedValue(
+      Object.assign(new Error('Documento no encontrado'), { status: 404 }),
+    );
+    const res = await request(app)
+      .patch('/api/documentos/uuid-inexistente/activo')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ activo: true });
+    expect(res.status).toBe(404);
   });
 });

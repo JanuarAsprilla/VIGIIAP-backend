@@ -140,12 +140,20 @@ describe('mapas.controller → patchActivo()', () => {
   });
 
   it('despublica el mapa (activo=false)', async () => {
-    
+
     mapaService.setActivo.mockResolvedValueOnce({ id: 'uuid-m1', titulo: 'Bio', activo: false });
     const req = { params: { id: 'uuid-m1' }, body: { activo: false }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
     const r = { json: vi.fn() };
     await patchActivo(req, r, vi.fn());
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ activo: false }));
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    const next = vi.fn();
+    mapaService.setActivo.mockRejectedValueOnce(new Error('not found'));
+    const req = { params: { id: 'x' }, body: { activo: true }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    await patchActivo(req, { json: vi.fn() }, next);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
 });
 
@@ -153,11 +161,32 @@ describe('mapas.controller → destroy()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('elimina mapa y responde 204', async () => {
-    
+
     mapaService.remove.mockResolvedValueOnce(undefined);
     const req = { params: { id: 'uuid-m1' }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
     const r = { status: vi.fn().mockReturnThis(), end: vi.fn() };
     await destroy(req, r, vi.fn());
     expect(r.status).toHaveBeenCalledWith(204);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    const next = vi.fn();
+    mapaService.remove.mockRejectedValueOnce(new Error('not found'));
+    const req = { params: { id: 'x' }, user: { id: 'u1', email: 'a@a.co' }, ip: '::1' };
+    await destroy(req, { status: vi.fn().mockReturnThis(), end: vi.fn() }, next);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('mapas.controller → index()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama next(err) si el servicio lanza', async () => {
+    const { index } = await import('../src/modules/mapas/mapas.controller.js');
+    const next = vi.fn();
+    mapaService.getAll.mockRejectedValueOnce(new Error('db down'));
+    const req = { query: {}, user: null };
+    await index(req, { json: vi.fn() }, next);
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
 });

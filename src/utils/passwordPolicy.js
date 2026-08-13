@@ -12,6 +12,6 @@ export const strongPassword = z
   .refine((v) => /[a-z]/.test(v), 'Debe incluir al menos una letra minúscula')
   .refine((v) => /[0-9]/.test(v), 'Debe incluir al menos un número')
   .refine(
-    (v) => /[!@#$%^&*()\-_=+\[\]{};:'",.<>/?`~|]/.test(v),
+    (v) => /[!@#$%^&*()\-_=+[\]{};:'",.<>/?`~|]/.test(v),
     'Debe incluir al menos un carácter especial (!@#$%^&* etc.)',
   );
