@@ -21,7 +21,15 @@ ALTER TABLE descarga_log      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE revoked_tokens    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE refresh_tokens    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE solicitud_archivos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE spatial_ref_sys   ENABLE ROW LEVEL SECURITY;
+
+-- spatial_ref_sys queda fuera: es tabla de sistema de PostGIS y el rol con el
+-- que conecta la API (aunque se llame "postgres" en Supabase) no es su dueño
+-- — solo el rol interno que instaló la extensión lo es. Cualquier ALTER TABLE
+-- sobre ella revienta con "must be owner of table spatial_ref_sys" y hace
+-- rollback de TODA esta migración, tumbando el arranque del servidor. Como
+-- solo contiene definiciones de sistemas de referencia (no datos sensibles),
+-- se deja sin RLS — el warning "RLS disabled" del linter de Supabase para
+-- esta tabla específica es aceptable y esperado.
 
 -- ─── 2. Políticas de acceso para el rol de servicio (mismo patrón que 002) ────
 CREATE POLICY "service_role full access" ON audit_log
@@ -52,9 +60,4 @@ CREATE POLICY "service_role full access" ON refresh_tokens
   TO service_role USING (true) WITH CHECK (true);
 
 CREATE POLICY "service_role full access" ON solicitud_archivos
-  TO service_role USING (true) WITH CHECK (true);
-
--- spatial_ref_sys es tabla de referencia de PostGIS (definiciones SRS, no
--- datos sensibles) — RLS aquí protege su integridad, no confidencialidad.
-CREATE POLICY "service_role full access" ON spatial_ref_sys
   TO service_role USING (true) WITH CHECK (true);
