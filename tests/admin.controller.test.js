@@ -255,6 +255,17 @@ describe('admin.controller → crearUsuario()', () => {
     }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it('pasa el rol del caller (adminRol) al servicio — necesario para el guard anti-escalación', async () => {
+    adminService.crearUsuario.mockResolvedValue({ id: 'u1', nombre: 'Juan', email: 'j@j.co' });
+    await crearUsuario({
+      body: { nombre: 'Juan', email: 'j@j.co', rol: 'investigador' },
+      user: ADMIN,
+    }, res(), mockNext);
+    expect(adminService.crearUsuario).toHaveBeenCalledWith(
+      expect.objectContaining({ adminRol: ADMIN.rol })
+    );
+  });
 });
 
 // ── actualizarUsuario() ───────────────────────────────────────────────────

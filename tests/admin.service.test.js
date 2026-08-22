@@ -188,6 +188,42 @@ describe('admin.service → crearUsuario()', () => {
       accion: 'create_usuario',
     });
   });
+
+  it('lanza 403 si un admin_sig intenta crear otro usuario con rol admin_sig', async () => {
+    await expect(
+      crearUsuario({
+        nombre: 'Escalado',
+        email: 'escalado@iiap.org.co',
+        rol: 'admin_sig',
+        adminId: 'admin-uuid',
+        adminRol: 'admin_sig',
+        adminEmail: 'admin@iiap.org.co',
+      })
+    ).rejects.toMatchObject({ status: 403 });
+
+    // No debe llegar a tocar la BD
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('permite a un super_admin crear un usuario con rol admin_sig', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })                                       // EXISTS check
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'admin_sig' }] });           // INSERT RETURNING
+
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+    const result = await crearUsuario({
+      nombre: 'Nuevo Admin',
+      email: 'nuevoadmin@iiap.org.co',
+      rol: 'admin_sig',
+      adminId: 'super-uuid',
+      adminRol: 'super_admin',
+      adminEmail: 'super@iiap.org.co',
+    });
+
+    expect(result.rol).toBe('admin_sig');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
 });
 
 // ─── actualizarUsuario() ──────────────────────────────────────────────────────
