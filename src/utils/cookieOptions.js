@@ -40,7 +40,13 @@ export const REFRESH_COOKIE_NAME = 'vigiiap_refresh';
 
 /**
  * Opciones para la cookie del refresh token.
- * path='/api/auth/refresh' → el navegador NUNCA la envía a otros endpoints.
+ * path='/api/v1/auth/refresh' → el navegador NUNCA la envía a otros endpoints.
+ * Todas las rutas cuelgan de app.use('/api/v1', v1) — el path debe incluir
+ * ese prefijo o la cookie nunca se adjunta a la petición real del frontend
+ * (que llama a /api/v1/auth/refresh), y el refresh silencioso falla siempre
+ * por falta de cookie, no por token inválido: la sesión "se cierra por
+ * inactividad" a los 15 minutos (vida del access token) sin importar
+ * cuánto haya usado la plataforma el usuario.
  * @param {number} [days] - Días de vida. Por defecto 30.
  */
 export function refreshCookieOptions(days = 30) {
@@ -49,7 +55,7 @@ export function refreshCookieOptions(days = 30) {
     secure:   true,
     sameSite: 'None',
     maxAge:   days * 24 * 60 * 60 * 1000,
-    path:     '/api/auth/refresh',
+    path:     '/api/v1/auth/refresh',
   };
 }
 
@@ -58,6 +64,6 @@ export function clearRefreshCookieOptions() {
     httpOnly: true,
     secure:   true,
     sameSite: 'None',
-    path:     '/api/auth/refresh',
+    path:     '/api/v1/auth/refresh',
   };
 }
