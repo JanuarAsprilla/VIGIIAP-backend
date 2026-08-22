@@ -67,9 +67,14 @@ export async function listarUsuarios(reqQuery) {
 }
 
 /** Crea un usuario desde el panel de admin */
-export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso, adminId, adminEmail }) {
+export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso, adminId, adminRol, adminEmail }) {
   if (!ROLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
+  }
+  // Solo el super_admin puede crear cuentas admin_sig — evita auto-escalación
+  // de admin_sig creando otros admin_sig vía POST /api/admin/usuarios
+  if (rol === 'admin_sig' && adminRol !== 'super_admin') {
+    throw Object.assign(new Error('Solo el Super Administrador puede asignar el rol de administrador'), { status: 403 });
   }
 
   const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);

@@ -32,6 +32,14 @@ const CONFIG_SCHEMA = {
   // Correo remitente — editable desde el panel del super_admin
   mail_remitente:       { type: 'string', maxLength: 254 },
   mail_remitente_nombre: { type: 'string', maxLength: 100 },
+  // Preferencias de notificaciones y permisos — panel de Configuración
+  emailNotifs:           { type: 'boolean' },
+  solicitudNotifs:       { type: 'boolean' },
+  loginNotifs:           { type: 'boolean' },
+  reportesSemanal:       { type: 'boolean' },
+  publicoCanSolicitar:   { type: 'boolean' },
+  investigadorCanUpload: { type: 'boolean' },
+  requireApproval:       { type: 'boolean' },
 };
 
 /** PUT /api/admin/configuracion */
@@ -124,6 +132,7 @@ export async function crearUsuario(req, res, next) {
       institucion,
       tipoAcceso,
       adminId:    req.user.id,
+      adminRol:   req.user.rol,
       adminEmail: req.user.email,
     });
     const { _passwordTemporal, ...usuarioSafe } = usuario;

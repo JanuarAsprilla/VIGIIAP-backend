@@ -200,4 +200,50 @@ describe('PUT /api/admin/configuracion', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
   });
+
+  it('acepta las 7 preferencias booleanas del panel de Configuración — no retorna 400', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const nuevasClaves = {
+      emailNotifs:           'true',
+      solicitudNotifs:       'false',
+      loginNotifs:           'true',
+      reportesSemanal:       'false',
+      publicoCanSolicitar:   'true',
+      investigadorCanUpload: 'false',
+      requireApproval:       'true',
+    };
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(nuevasClaves);
+    expect(res.status).toBe(200);
+    expect(adminService.setConfiguracion).toHaveBeenCalledWith(
+      nuevasClaves, expect.anything(), expect.anything()
+    );
+  });
+
+  it('las 7 preferencias booleanas hacen round-trip correctamente en un GET posterior', async () => {
+    adminService.getConfiguracion.mockResolvedValue({
+      emailNotifs:           true,
+      solicitudNotifs:       false,
+      loginNotifs:           true,
+      reportesSemanal:       false,
+      publicoCanSolicitar:   true,
+      investigadorCanUpload: false,
+      requireApproval:       true,
+    });
+    const res = await request(app)
+      .get('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      emailNotifs:           true,
+      solicitudNotifs:       false,
+      loginNotifs:           true,
+      reportesSemanal:       false,
+      publicoCanSolicitar:   true,
+      investigadorCanUpload: false,
+      requireApproval:       true,
+    });
+  });
 });
