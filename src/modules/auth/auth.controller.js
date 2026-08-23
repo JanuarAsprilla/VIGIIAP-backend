@@ -13,7 +13,22 @@ import {
   COOKIE_NAME, authCookieOptions, clearCookieOptions,
   REFRESH_COOKIE_NAME, refreshCookieOptions, clearRefreshCookieOptions,
 } from '../../utils/cookieOptions.js';
+import { generateCsrfToken } from '../../utils/csrf.js';
 import logger from '../../utils/logger.js';
+
+/**
+ * GET /api/auth/csrf-token — entrega el token CSRF ligado a la cookie de
+ * sesión actual (protegido por `authenticate` + el CORS estricto de
+ * app.js, que impide que un origen no permitido lea esta respuesta).
+ * El frontend lo reenvía en el header X-CSRF-Token en peticiones mutantes.
+ */
+export function csrfToken(req, res) {
+  const token = req.cookies?.[COOKIE_NAME];
+  if (!token) {
+    return res.status(401).json({ error: 'Sesión por cookie requerida' });
+  }
+  res.json({ csrfToken: generateCsrfToken(token) });
+}
 
 /** POST /api/auth/logout — invalida el token actual y limpia la cookie */
 export async function logout(req, res, next) {

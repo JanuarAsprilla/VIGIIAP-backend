@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { index, getMe, updateRol, updateMe, changePassword } from './usuarios.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
+import { csrfProtection } from '../../middlewares/csrf.js';
 
 const router = Router();
 
@@ -9,8 +10,8 @@ const VERIFICADOS = ['investigador', 'tecnico', 'institucional', 'admin_sig', 's
 
 router.get('/', authenticate, authorize('admin_sig'), index);
 router.get('/me', authenticate, getMe);
-router.patch('/:id/rol', authenticate, authorize('admin_sig'), updateRol);
-router.patch('/me', authenticate, authorize(...VERIFICADOS), updateMe);
-router.patch('/me/password', authenticate, authorize(...VERIFICADOS), changePassword);
+router.patch('/:id/rol', authenticate, authorize('admin_sig'), csrfProtection, updateRol);
+router.patch('/me', authenticate, authorize(...VERIFICADOS), csrfProtection, updateMe);
+router.patch('/me/password', authenticate, authorize(...VERIFICADOS), csrfProtection, changePassword);
 
 export default router;

@@ -9,12 +9,14 @@ import {
   batchUsuarios,
 } from './admin.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
+import { csrfProtection } from '../../middlewares/csrf.js';
 import { adminRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 
 // admin_sig Y super_admin acceden a todo (authorize ya lo incluye automáticamente)
-router.use(authenticate, authorize('admin_sig'), adminRateLimiter);
+// csrfProtection es un no-op en GET/HEAD, así que puede ir en la cadena común.
+router.use(authenticate, authorize('admin_sig'), csrfProtection, adminRateLimiter);
 
 router.get('/stats',            stats);
 router.get('/notificaciones',   notificaciones);

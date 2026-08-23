@@ -169,9 +169,18 @@ app.use(morgan(morganFormat, { stream: { write: (msg) => logger.info(msg.trim())
 app.use(cookieParser());
 // Límite conservador: la API solo maneja JSON de texto; los archivos van vía multipart (multer).
 app.use(express.json({ limit: '1mb' }));
-// express.urlencoded deshabilitado: API JSON pura.
-// Con SameSite=None habilitado, urlencoded permitiría CSRF vía simple-form POST sin preflight.
-// Ningún endpoint lo requiere — multipart/form-data es procesado por multer.
+// express.urlencoded deshabilitado: API JSON pura. Ningún endpoint lo requiere —
+// multipart/form-data es procesado por multer en las rutas de subida de archivos.
+//
+// IMPORTANTE: deshabilitar urlencoded NO es, por sí solo, una mitigación de CSRF.
+// Las cookies de sesión usan sameSite: 'None' (ver src/utils/cookieOptions.js), así
+// que el navegador SÍ adjunta la cookie en peticiones cross-site, y tanto un <form>
+// multipart/form-data (procesado por multer en /documentos, /mapas,
+// /categorias/:nombre/thumbnail, /solicitudes/:id/archivos) como uno con
+// Content-Type "simple" son peticiones que el navegador envía sin preflight CORS.
+// La protección real es el middleware CSRF explícito (src/middlewares/csrf.js),
+// aplicado a las rutas de estado mutante bajo /admin, /usuarios, /solicitudes,
+// /mapas, /documentos, /categorias y las de sesión de /auth.
 
 // optionalAuthenticate antes del rateLimiter para que req.user sea visible y el
 // límite por usuario (500 req/15min) se active correctamente en lugar de usar solo IP.
