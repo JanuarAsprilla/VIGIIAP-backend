@@ -6,6 +6,10 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
+# Mínimo privilegio: ningún job de este workflow necesita escribir en el repo.
+permissions:
+  contents: read
+
 jobs:
   ping:
     name: Ping healthcheck
