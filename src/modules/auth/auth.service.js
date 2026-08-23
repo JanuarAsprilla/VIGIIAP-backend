@@ -306,11 +306,20 @@ export async function register(data, { ip, userAgent } = {}) {
   const verificationToken = generateSecureToken();
   const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
 
+  // configuracion.requireApproval controla si un usuario nuevo queda activo de inmediato
+  // o pendiente de aprobación manual. Ausente/'true' (o cualquier valor que no sea el
+  // string exacto 'false') → seguro por defecto: requiere aprobación (activo=false),
+  // igual que el comportamiento histórico de esta función.
+  const { rows: cfg } = await query(
+    "SELECT valor FROM configuracion WHERE clave = 'requireApproval'", []
+  );
+  const activoInicial = cfg[0]?.valor === 'false';
+
   const { rows } = await query(
     `INSERT INTO usuarios
        (nombre, email, password_hash, institucion, motivo_acceso, rol, tipo_acceso, activo,
         email_verified, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, false, false, $8, $9)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10)
      RETURNING id, nombre, email, rol`,
     [
       nombre,
@@ -320,6 +329,7 @@ export async function register(data, { ip, userAgent } = {}) {
       motivo ?? null,
       rolInicial,
       tipoAcceso ?? 'externo',
+      activoInicial,
       hashToken(verificationToken), // almacenar hash — no el token original
       verificationExpires,
     ]

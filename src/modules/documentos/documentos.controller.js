@@ -15,7 +15,7 @@ export async function show(req, res, next) {
 export async function store(req, res, next) {
   try {
     const data = createDocumentoSchema.parse(req.body);
-    const doc  = await docService.create(data, req.user.id);
+    const doc  = await docService.create(data, req.user.id, req.user.rol);
     registrarAuditoria({
       accion:       'create_documento',
       modulo:       'documentos',

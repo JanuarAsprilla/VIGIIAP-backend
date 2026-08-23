@@ -81,7 +81,24 @@ export async function getBySlug(slug, user) {
   return rows[0];
 }
 
-export async function create(data, userId) {
+// El rol 'investigador' solo puede subir documentos si el admin habilitó
+// configuracion.investigadorCanUpload='true'. Ausente/otro valor → seguro por defecto (bloqueado).
+async function verificarPermisoInvestigador(userRol) {
+  if (userRol !== 'investigador') return;
+  const { rows: cfg } = await query(
+    "SELECT valor FROM configuracion WHERE clave = 'investigadorCanUpload'", []
+  );
+  if (cfg[0]?.valor !== 'true') {
+    throw Object.assign(
+      new Error('Los usuarios con rol Investigador no tienen habilitada la subida de documentos. Contacta a un administrador.'),
+      { status: 403 }
+    );
+  }
+}
+
+export async function create(data, userId, userRol) {
+  await verificarPermisoInvestigador(userRol);
+
   const slug = slugify(data.titulo);
   const { rows } = await query(
     `INSERT INTO documentos (titulo, slug, tipo, anio, autores, resumen, archivo_url, tamano_bytes, visibilidad, creado_por)

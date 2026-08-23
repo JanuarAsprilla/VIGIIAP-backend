@@ -111,13 +111,28 @@ describe('POST /api/documentos', () => {
     expect(res.status).toBe(422);
   });
 
-  it('investigador NO puede subir documento — retorna 403', async () => {
-    // Política: solo admin_sig/super_admin gestionan contenido; investigador solo consume
+  // El rol 'investigador' ya puede llegar al controlador (autorizado a nivel de ruta) —
+  // el bloqueo/permiso real ahora depende de configuracion.investigadorCanUpload,
+  // evaluado dentro de documentos.service.js#create (ver documentos.service.test.js
+  // para la cobertura completa de esa lógica con mocks de `query`).
+  it('investigador NO puede subir documento cuando investigadorCanUpload está deshabilitado — retorna 403', async () => {
+    docService.create.mockRejectedValue(
+      Object.assign(new Error('Los usuarios con rol Investigador no tienen habilitada la subida de documentos. Contacta a un administrador.'), { status: 403 })
+    );
     const res = await request(app)
       .post('/api/documentos')
       .set('Authorization', `Bearer ${invToken}`)
       .send({ titulo: 'Informe Biodiversidad 2024', tipo: 'Estudios Ambientales' });
     expect(res.status).toBe(403);
+  });
+
+  it('investigador sube documento — retorna 201 cuando investigadorCanUpload está habilitado', async () => {
+    docService.create.mockResolvedValue(DOC_FIXTURE);
+    const res = await request(app)
+      .post('/api/documentos')
+      .set('Authorization', `Bearer ${invToken}`)
+      .send({ titulo: 'Informe Biodiversidad 2024', tipo: 'Estudios Ambientales' });
+    expect(res.status).toBe(201);
   });
 
   it('admin puede subir documento — retorna 201', async () => {

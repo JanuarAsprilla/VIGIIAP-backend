@@ -197,6 +197,52 @@ describe('solicitudes.service → create()', () => {
   });
 });
 
+// ─── create() — permiso condicional para rol 'publico' (publicoCanSolicitar) ──
+describe('solicitudes.service → create() → permiso publico (config publicoCanSolicitar)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('bloquea a publico con 403 cuando publicoCanSolicitar está ausente en configuracion (default seguro)', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // sin fila de config → indefinido
+    await expect(
+      create({ tipo: 'uso-suelo', descripcion: 'test' }, 'usr-pub', 'publico')
+    ).rejects.toMatchObject({ status: 403 });
+    expect(query).toHaveBeenCalledOnce(); // nunca llega al rate limit ni al INSERT
+  });
+
+  it('bloquea a publico con 403 cuando publicoCanSolicitar="false"', async () => {
+    query.mockResolvedValueOnce({ rows: [{ valor: 'false' }] });
+    await expect(
+      create({ tipo: 'uso-suelo', descripcion: 'test' }, 'usr-pub', 'publico')
+    ).rejects.toMatchObject({ status: 403 });
+    expect(query).toHaveBeenCalledOnce();
+  });
+
+  it('permite a publico crear la solicitud cuando publicoCanSolicitar="true"', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ valor: 'true' }] }) // config
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })    // rate limit
+      .mockResolvedValueOnce({ rows: [SOL] });               // INSERT
+
+    const result = await create(
+      { tipo: 'uso-suelo', descripcion: 'test' }, 'usr-pub', 'publico'
+    );
+    expect(result.id).toBe('sol-uuid-1');
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('no consulta configuracion para roles ya verificados (sin cambio de comportamiento)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate limit
+      .mockResolvedValueOnce({ rows: [SOL] });            // INSERT
+
+    const result = await create(
+      { tipo: 'uso-suelo', descripcion: 'test' }, 'usr-inv', 'investigador'
+    );
+    expect(result.id).toBe('sol-uuid-1');
+    expect(query).toHaveBeenCalledTimes(2); // sin la query extra de config
+  });
+});
+
 // ─── updateEstado() ───────────────────────────────────────────────────────────
 describe('solicitudes.service → updateEstado()', () => {
   beforeEach(() => vi.clearAllMocks());

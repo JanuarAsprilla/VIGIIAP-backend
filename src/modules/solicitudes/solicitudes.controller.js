@@ -24,7 +24,7 @@ export async function show(req, res, next) {
 export async function store(req, res, next) {
   try {
     const data = createSolicitudSchema.parse(req.body);
-    const solicitud = await solService.create(data, req.user.id);
+    const solicitud = await solService.create(data, req.user.id, req.user.rol);
 
     // Obtener datos del solicitante para notificar a admins
     const { rows } = await query(

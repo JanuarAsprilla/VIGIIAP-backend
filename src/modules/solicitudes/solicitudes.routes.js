@@ -17,7 +17,11 @@ const VERIFICADOS = ['investigador', 'tecnico', 'institucional', 'admin_sig', 's
 
 router.get('/', authenticate, authorize('admin_sig'), adminRateLimiter, index);
 router.get('/mis-solicitudes', authenticate, authorize(...VERIFICADOS), mine);
-router.post('/', authenticate, authorize(...VERIFICADOS), csrfProtection, store);
+// 'publico' puede llegar al controlador — el permiso real se evalúa en tiempo de
+// ejecución contra configuracion.publicoCanSolicitar (ver solicitudes.service.js#create).
+// 'visitante' (sesión anónima, sin fila en `usuarios`) sigue excluido: solicitudes.usuario_id
+// referencia usuarios.id, así que un visitante no puede ser dueño de una solicitud.
+router.post('/', authenticate, authorize(...VERIFICADOS, 'publico'), csrfProtection, store);
 router.get('/:id', authenticate, authorize(...VERIFICADOS), show);
 router.patch('/:id/estado', authenticate, authorize('admin_sig'), csrfProtection, adminRateLimiter, updateEstado);
 router.post('/:id/responder', authenticate, authorize('admin_sig'), csrfProtection, adminRateLimiter, responder);

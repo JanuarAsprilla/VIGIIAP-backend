@@ -166,7 +166,9 @@ describe('register()', () => {
   it('crea el usuario y retorna sus datos cuando el email es nuevo', async () => {
     // 1ra query: check duplicado → vacío
     query.mockResolvedValueOnce({ rows: [] });
-    // 2da query: INSERT → nuevo usuario
+    // 2da query: lectura de configuracion.requireApproval → ausente (default seguro)
+    query.mockResolvedValueOnce({ rows: [] });
+    // 3ra query: INSERT → nuevo usuario
     query.mockResolvedValueOnce({
       rows: [{ id: 'uuid-002', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'investigador' }],
     });
@@ -183,12 +185,13 @@ describe('register()', () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'uuid-000' }] });
 
     await expect(register(validData)).rejects.toMatchObject({ status: 409 });
-    // No debe llamar a INSERT
+    // No debe consultar configuracion ni llamar a INSERT
     expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('asigna rol "publico" cuando el perfil no es reconocido', async () => {
     query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({
       rows: [{ id: 'uuid-003', nombre: 'Test', email: 'test@test.com', rol: 'publico' }],
     });
@@ -196,13 +199,14 @@ describe('register()', () => {
 
     await register({ ...validData, perfil: 'desconocido' });
 
-    // El segundo query (INSERT) debe haber sido llamado con rol 'publico'
-    const insertParams = query.mock.calls[1][1];
+    // El tercer query (INSERT) debe haber sido llamado con rol 'publico'
+    const insertParams = query.mock.calls[2][1];
     expect(insertParams[5]).toBe('publico'); // índice 5 = rol en el array de params
   });
 
   it('normaliza email a minúsculas antes de insertar', async () => {
     query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({
       rows: [{ id: 'uuid-004', nombre: 'Test', email: 'upper@test.com', rol: 'investigador' }],
     });
@@ -215,6 +219,7 @@ describe('register()', () => {
 
   it('registra auditoría con accion "registro" cuando el registro es exitoso', async () => {
     query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({
       rows: [{ id: 'uuid-005', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'investigador' }],
     });
@@ -233,6 +238,45 @@ describe('register()', () => {
         userAgent: 'jest',
       })
     );
+  });
+
+  // ─── requireApproval — activación automática vs. aprobación manual ──────────
+  describe('register() → activo inicial (config requireApproval)', () => {
+    it('activo=false (requiere aprobación) cuando requireApproval está ausente en configuracion (default seguro)', async () => {
+      query.mockResolvedValueOnce({ rows: [] });          // duplicado → no existe
+      query.mockResolvedValueOnce({ rows: [] });          // requireApproval ausente
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-010', nombre: 'T', email: 't@t.co', rol: 'investigador' }] });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await register(validData);
+
+      const insertParams = query.mock.calls[2][1];
+      expect(insertParams[7]).toBe(false); // índice 7 = activo
+    });
+
+    it('activo=false (requiere aprobación) cuando requireApproval="true"', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [{ valor: 'true' }] });
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-011', nombre: 'T', email: 't@t.co', rol: 'investigador' }] });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await register(validData);
+
+      const insertParams = query.mock.calls[2][1];
+      expect(insertParams[7]).toBe(false);
+    });
+
+    it('activo=true (sin aprobación) cuando requireApproval="false"', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [{ valor: 'false' }] });
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-012', nombre: 'T', email: 't@t.co', rol: 'investigador' }] });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await register(validData);
+
+      const insertParams = query.mock.calls[2][1];
+      expect(insertParams[7]).toBe(true);
+    });
   });
 });
 
@@ -500,9 +544,10 @@ describe('register() — perfilToRol branches', () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.hash.mockResolvedValue('$2a$12$hashed');
     query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'T', email: 't@t.co', rol: 'tecnico' }] });
     await register({ nombre: 'T', email: 't@t.co', password: 'Pass!123', perfil: 'tecnico', motivo: 'x', tipoAcceso: 'externo' });
-    const insertParams = query.mock.calls[1][1];
+    const insertParams = query.mock.calls[2][1];
     expect(insertParams).toContain('tecnico');
   });
 
@@ -510,9 +555,10 @@ describe('register() — perfilToRol branches', () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.hash.mockResolvedValue('$2a$12$hashed');
     query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'I', email: 'i@i.co', rol: 'institucional' }] });
     await register({ nombre: 'I', email: 'i@i.co', password: 'Pass!123', perfil: 'institucional', motivo: 'x', tipoAcceso: 'externo' });
-    const insertParams = query.mock.calls[1][1];
+    const insertParams = query.mock.calls[2][1];
     expect(insertParams).toContain('institucional');
   });
 });
