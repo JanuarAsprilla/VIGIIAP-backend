@@ -3,7 +3,11 @@
  *
  * - httpOnly:  el navegador nunca expone la cookie a JavaScript → inmune a XSS
  * - secure:    solo se envía por HTTPS en producción
- * - sameSite:  'Strict' previene CSRF (la cookie no se manda en peticiones cross-site)
+ * - sameSite:  'None' — REQUERIDO porque frontend y backend viven en subdominios
+ *              distintos (cross-site). Esto significa que la cookie SÍ se envía en
+ *              peticiones cross-site, así que NO mitiga CSRF por sí sola — la
+ *              protección real vive en src/middlewares/csrf.js (token derivado por
+ *              HMAC, ver src/utils/csrf.js), aplicado a las rutas de estado mutante.
  * - maxAge:    coincide con la vida del JWT (7 días por defecto)
  *
  * El nombre 'vigiiap_token' es el que el frontend busca al activar USE_COOKIE_AUTH.

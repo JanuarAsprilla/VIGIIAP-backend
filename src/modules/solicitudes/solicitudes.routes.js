@@ -3,6 +3,7 @@ import multer from 'multer';
 import { index, mine, show, store, updateEstado, responder,
          uploadArchivo, getArchivos, downloadArchivo, deleteArchivo } from './solicitudes.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
+import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadRateLimiter, adminRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
@@ -16,15 +17,16 @@ const VERIFICADOS = ['investigador', 'tecnico', 'institucional', 'admin_sig', 's
 
 router.get('/', authenticate, authorize('admin_sig'), adminRateLimiter, index);
 router.get('/mis-solicitudes', authenticate, authorize(...VERIFICADOS), mine);
-router.post('/', authenticate, authorize(...VERIFICADOS), store);
+router.post('/', authenticate, authorize(...VERIFICADOS), csrfProtection, store);
 router.get('/:id', authenticate, authorize(...VERIFICADOS), show);
-router.patch('/:id/estado', authenticate, authorize('admin_sig'), adminRateLimiter, updateEstado);
-router.post('/:id/responder', authenticate, authorize('admin_sig'), adminRateLimiter, responder);
+router.patch('/:id/estado', authenticate, authorize('admin_sig'), csrfProtection, adminRateLimiter, updateEstado);
+router.post('/:id/responder', authenticate, authorize('admin_sig'), csrfProtection, adminRateLimiter, responder);
 
 // Archivos adjuntos de solicitudes — solo roles verificados (ownership validado en el servicio)
-router.post('/:id/archivos', authenticate, authorize(...VERIFICADOS), uploadRateLimiter, upload.single('archivo'), uploadArchivo);
+// csrfProtection ANTES de multer: rechaza la petición forjada antes de parsear el multipart.
+router.post('/:id/archivos', authenticate, authorize(...VERIFICADOS), csrfProtection, uploadRateLimiter, upload.single('archivo'), uploadArchivo);
 router.get('/:id/archivos', authenticate, authorize(...VERIFICADOS), getArchivos);
 router.get('/:id/archivos/:archivoId/download', authenticate, authorize(...VERIFICADOS), downloadArchivo);
-router.delete('/:id/archivos/:archivoId', authenticate, authorize('admin_sig', 'super_admin'), deleteArchivo);
+router.delete('/:id/archivos/:archivoId', authenticate, authorize('admin_sig', 'super_admin'), csrfProtection, deleteArchivo);
 
 export default router;
