@@ -129,8 +129,10 @@ export async function visitante(req, res, next) {
 
 export async function register(req, res, next) {
   try {
-    const data = registerSchema.parse(req.body);
-    const user = await authService.register(data);
+    const data      = registerSchema.parse(req.body);
+    const ip        = req.ip;
+    const userAgent = req.headers?.['user-agent'];
+    const user      = await authService.register(data, { ip, userAgent });
 
     // Responder al cliente antes de los emails (no bloquear la respuesta)
     res.status(201).json({

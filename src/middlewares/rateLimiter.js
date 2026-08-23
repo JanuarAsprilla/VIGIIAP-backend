@@ -37,6 +37,26 @@ export const authRateLimiter = rateLimit({
   message: { error: 'Demasiados intentos de autenticación. Intenta en 15 minutos.' },
 });
 
+/**
+ * Defensa en profundidad para /login: limita también por la cuenta objetivo
+ * (email normalizado), no solo por IP. authRateLimiter por sí solo puede ser
+ * evadido si el proxy de borde no sobrescribe/agrega correctamente X-Forwarded-For
+ * — un atacante que rote IPs (reales o spoofed) por request seguiría limitado
+ * aquí porque la key es la cuenta atacada, no el origen de la petición.
+ * Se aplica ADEMÁS del límite por IP existente, nunca en su lugar.
+ */
+export const loginAccountRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    return email ? `login-account:${String(email).trim().toLowerCase()}` : normalizeIp(req);
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de autenticación para esta cuenta. Intenta en 15 minutos.' },
+});
+
 /** Subida de archivos: máximo 10 por hora por usuario. */
 export const uploadRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

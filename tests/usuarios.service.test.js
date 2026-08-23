@@ -22,8 +22,13 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
+vi.mock('../src/utils/mailer.js', () => ({
+  notifyRolCambiado: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { query } from '../src/config/database.js';
 import bcrypt from 'bcryptjs';
+import { notifyRolCambiado } from '../src/utils/mailer.js';
 import {
   getAll,
   getProfile,
@@ -123,7 +128,8 @@ describe('usuarios.service → updateRol()', () => {
   it('actualiza el rol cuando es válido', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'publico' }] })   // SELECT: target check (no super_admin)
-      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'investigador' }] }); // UPDATE
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'investigador' }] }) // UPDATE
+      .mockResolvedValueOnce({ rows: [] });                              // revokeAllRefreshTokens
     const result = await updateRol('usr-uuid-1', 'investigador', true);
     expect(result.rol).toBe('investigador');
   });
@@ -145,11 +151,49 @@ describe('usuarios.service → updateRol()', () => {
   it('cambia activo junto con el rol', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'publico' }] })             // SELECT: target check
-      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'tecnico', activo: false }] }); // UPDATE
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'tecnico', activo: false }] }) // UPDATE
+      .mockResolvedValueOnce({ rows: [] });                                        // revokeAllRefreshTokens
     const result = await updateRol('usr-uuid-1', 'tecnico', false);
     expect(result.activo).toBe(false);
     const params = query.mock.calls[1][1]; // call[1] es el UPDATE, no el SELECT
     expect(params).toContain(false); // activo=false
+  });
+
+  it('revoca refresh tokens y notifica por email cuando el rol realmente cambia', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'publico' }] })   // SELECT: target check
+      .mockResolvedValueOnce({
+        rows: [{ id: 'usr-uuid-1', nombre: USER.nombre, email: USER.email, rol: 'tecnico', activo: true }],
+      })                                                                  // UPDATE
+      .mockResolvedValueOnce({ rows: [] });                              // revokeAllRefreshTokens
+
+    await updateRol('usr-uuid-1', 'tecnico', true);
+
+    // 3ra llamada a query es el UPDATE de revoked=true dentro de revokeAllRefreshTokens
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[2][0]).toMatch(/UPDATE refresh_tokens/i);
+    expect(query.mock.calls[2][1]).toEqual(['usr-uuid-1']);
+
+    expect(notifyRolCambiado).toHaveBeenCalledWith({
+      email: USER.email,
+      nombre: USER.nombre,
+      rolAnterior: 'publico',
+      rolNuevo: 'tecnico',
+    });
+  });
+
+  it('NO revoca tokens ni notifica por email cuando el rol no cambia (no-op)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'tecnico' }] })   // SELECT: target check — mismo rol
+      .mockResolvedValueOnce({
+        rows: [{ id: 'usr-uuid-1', nombre: USER.nombre, email: USER.email, rol: 'tecnico', activo: true }],
+      });                                                                 // UPDATE (solo cambia activo, por ejemplo)
+
+    await updateRol('usr-uuid-1', 'tecnico', true);
+
+    // Solo SELECT + UPDATE — sin llamada extra de revokeAllRefreshTokens
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(notifyRolCambiado).not.toHaveBeenCalled();
   });
 });
 

@@ -258,6 +258,32 @@ describe('solicitudes.service → updateEstado()', () => {
     const params = query.mock.calls[1][1]; // 2nd call = UPDATE
     expect(params[1]).toBeNull();
   });
+
+  it('incluye el estado leído como guarda CAS en el UPDATE (WHERE ... AND estado=$5)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ ...SOL, estado: 'aprobada' }] });
+
+    const result = await updateEstado('sol-uuid-1', 'aprobada', 'ok', 'admin-uuid');
+
+    const [sql, params] = query.mock.calls[1];
+    expect(sql).toMatch(/AND estado=\$5/);
+    expect(params[4]).toBe('pendiente'); // estadoActual leído en el SELECT
+    expect(result.estado).toBe('aprobada');
+  });
+
+  it('lanza 409 cuando el estado cambió entre el SELECT y el UPDATE (carrera concurrente)', async () => {
+    // Simula dos requests concurrentes actualizando la misma solicitud "pendiente":
+    // ambas leen el mismo estado, pero el UPDATE de la primera ya lo cambió antes
+    // de que el CAS de la segunda se ejecute → rowCount 0 en la segunda.
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'pendiente' }] }) // SELECT (ambas lo ven igual)
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] });          // UPDATE pierde la carrera
+
+    await expect(
+      updateEstado('sol-uuid-1', 'rechazada', 'Datos incompletos', 'admin-uuid-2')
+    ).rejects.toMatchObject({ status: 409 });
+  });
 });
 
 // ─── responder() ──────────────────────────────────────────────────────────────
@@ -298,6 +324,32 @@ describe('solicitudes.service → responder()', () => {
     await expect(
       responder('no-existe', 'respuesta', 'admin-uuid')
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('incluye el estado leído como guarda CAS en el UPDATE (WHERE ... AND estado=$4)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'aprobada' }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ ...SOL, estado: 'resuelta' }] });
+
+    const result = await responder('sol-uuid-1', 'Acceso concedido', 'admin-uuid');
+
+    const [sql, params] = query.mock.calls[1];
+    expect(sql).toMatch(/AND estado=\$4/);
+    expect(params[3]).toBe('aprobada');
+    expect(result.estado).toBe('resuelta');
+  });
+
+  it('lanza 409 cuando el estado cambió entre el SELECT y el UPDATE (carrera concurrente)', async () => {
+    // Dos admins responden la misma solicitud "aprobada" casi simultáneamente:
+    // el primero gana la carrera y la marca resuelta; el segundo debe recibir
+    // 409 en vez de sobrescribir la respuesta ya persistida.
+    query
+      .mockResolvedValueOnce({ rows: [{ estado: 'aprobada' }] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] });
+
+    await expect(
+      responder('sol-uuid-1', 'Respuesta duplicada', 'admin-uuid-2')
+    ).rejects.toMatchObject({ status: 409 });
   });
 });
 

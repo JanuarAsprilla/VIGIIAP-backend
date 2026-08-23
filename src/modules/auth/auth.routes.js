@@ -14,7 +14,7 @@ import {
 } from './auth.controller.js';
 import { authenticate } from '../../middlewares/auth.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
-import { authRateLimiter, passwordResetLimiter } from '../../middlewares/rateLimiter.js';
+import { authRateLimiter, loginAccountRateLimiter, passwordResetLimiter } from '../../middlewares/rateLimiter.js';
 import { getSessions, revokeSession, revokeAllSessions } from './sessions.controller.js';
 import { setup as tfSetup, verify as tfVerify, disable as tfDisable, confirm as tfConfirm } from './twoFactor.controller.js';
 import { changeExpiredPassword } from './expiredPassword.controller.js';
@@ -23,7 +23,9 @@ const router = Router();
 
 // Login/registro/recuperación no tienen sesión previa (nada que forjar vía CSRF
 // con la cookie httpOnly aún inexistente) — csrfProtection no aplica ahí.
-router.post('/login',                  authRateLimiter, login);
+// Además del límite por IP, /login aplica un segundo límite por cuenta objetivo
+// (email) — mitiga fuerza bruta contra una cuenta específica vía IPs rotadas/spoofed.
+router.post('/login',                  authRateLimiter, loginAccountRateLimiter, login);
 router.post('/refresh',                authRateLimiter, refresh);
 router.post('/logout',                 authenticate, csrfProtection, logout);
 router.post('/visitante',              authRateLimiter, visitante);

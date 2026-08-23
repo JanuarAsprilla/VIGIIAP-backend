@@ -293,7 +293,7 @@ function perfilToRol(perfil) {
   return 'publico';
 }
 
-export async function register(data) {
+export async function register(data, { ip, userAgent } = {}) {
   const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
   const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
@@ -324,6 +324,17 @@ export async function register(data) {
       verificationExpires,
     ]
   );
+
+  registrarAuditoria({
+    accion: 'registro',
+    modulo: 'auth',
+    entidadId: rows[0].id,
+    descripcion: `Registro exitoso — ${rows[0].email} (perfil: ${rolInicial})`,
+    usuarioId: rows[0].id,
+    usuarioEmail: rows[0].email,
+    ip,
+    userAgent,
+  });
 
   return { ...rows[0], verificationToken }; // devolver token original al llamador para el email
 }
