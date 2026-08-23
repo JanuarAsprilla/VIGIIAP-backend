@@ -1,8 +1,21 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
-/** Normaliza IP usando el helper oficial de express-rate-limit (IPv4 e IPv6). */
+/**
+ * Normaliza IP usando el helper oficial de express-rate-limit (IPv4 e IPv6).
+ *
+ * CRÍTICO: en express-rate-limit v8, `ipKeyGenerator(ip, subnet?)` espera la
+ * IP como STRING (`req.ip`), no el objeto `req` completo. Pasarle `req`
+ * directamente hace que `net.isIPv6(req)` sea `false` (no es un string) y la
+ * función retorna el objeto `req` sin modificar como "key". Como cada request
+ * genera un objeto `req` distinto, el Map interno del MemoryStore nunca
+ * acumula hits para la misma key — el rate limiter jamás bloquea una
+ * petición, sin importar cuántas lleguen desde la misma IP real. Este bug
+ * desactivaba por completo authRateLimiter, downloadRateLimiter,
+ * adminRateLimiter y la rama IP de rateLimiter/uploadRateLimiter/
+ * passwordResetLimiter. Ver PoC y hallazgo en la auditoría de seguridad.
+ */
 function normalizeIp(req) {
-  return ipKeyGenerator(req);
+  return ipKeyGenerator(req.ip);
 }
 
 export const rateLimiter = rateLimit({
