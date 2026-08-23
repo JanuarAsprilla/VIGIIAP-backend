@@ -27,6 +27,9 @@ const CONFIG_SCHEMA = {
   email:                { type: 'string', maxLength: 254 },
   phone:                { type: 'string', maxLength: 50 },
   address:              { type: 'string', maxLength: 300 },
+  // Modo mantenimiento saca de línea la plataforma pública para todo usuario no
+  // admin — solo el super_admin puede modificarlo (ver check en setConfiguracion
+  // más abajo).
   modoMantenimiento:    { type: 'boolean' },
   mensajeMantenimiento: { type: 'string', maxLength: 1000 },
   // Correo remitente — editable desde el panel del super_admin
@@ -63,6 +66,17 @@ export async function setConfiguracion(req, res, next) {
     // de las claves de CONFIG_SCHEMA siguen disponibles para admin_sig sin cambios.
     if ('politicaPrivacidad' in req.body && req.user.rol !== 'super_admin') {
       return res.status(403).json({ error: 'Solo el Super Administrador puede modificar la política de privacidad' });
+    }
+
+    // El modo mantenimiento deja fuera de línea toda la plataforma pública para
+    // cualquier usuario no admin — igual de sensible que la política de privacidad,
+    // solo el super_admin puede modificarlo. Resto de las claves de CONFIG_SCHEMA
+    // siguen disponibles para admin_sig sin cambios.
+    if (
+      ('modoMantenimiento' in req.body || 'mensajeMantenimiento' in req.body) &&
+      req.user.rol !== 'super_admin'
+    ) {
+      return res.status(403).json({ error: 'Solo el Super Administrador puede modificar el modo mantenimiento' });
     }
 
     const errors = [];
