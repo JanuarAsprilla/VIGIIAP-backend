@@ -131,7 +131,7 @@ describe('admin.controller → setConfiguracion()', () => {
 
   it('retorna 400 si booleano recibe un string inválido', async () => {
     const r = res();
-    await setConfiguracion({ body: { modoMantenimiento: 'si' }, user: ADMIN }, r, mockNext);
+    await setConfiguracion({ body: { emailNotifs: 'si' }, user: ADMIN }, r, mockNext);
     expect(r.status).toHaveBeenCalledWith(400);
   });
 
@@ -158,8 +158,22 @@ describe('admin.controller → setConfiguracion()', () => {
   it('acepta booleano true como modoMantenimiento', async () => {
     adminService.setConfiguracion.mockResolvedValue(undefined);
     const r = res();
-    await setConfiguracion({ body: { modoMantenimiento: true }, user: ADMIN }, r, mockNext);
+    await setConfiguracion({ body: { modoMantenimiento: true }, user: SUPERADMIN }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith({ message: expect.any(String) });
+  });
+
+  it('retorna 403 si admin_sig intenta modificar modoMantenimiento', async () => {
+    const r = res();
+    await setConfiguracion({ body: { modoMantenimiento: true }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('retorna 403 si admin_sig intenta modificar mensajeMantenimiento', async () => {
+    const r = res();
+    await setConfiguracion({ body: { mensajeMantenimiento: 'Volvemos pronto.' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
   });
 
   it('llama next(err) si el servicio lanza', async () => {

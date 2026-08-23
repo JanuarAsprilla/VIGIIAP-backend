@@ -200,7 +200,7 @@ describe('PUT /api/admin/configuracion', () => {
     const res = await request(app)
       .put('/api/admin/configuracion')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ siteName: 'VIGIIAP v2', modoMantenimiento: 'false' });
+      .send({ siteName: 'VIGIIAP v2' });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
   });
@@ -283,10 +283,61 @@ describe('PUT /api/admin/configuracion — politicaPrivacidad', () => {
     const res = await request(app)
       .put('/api/admin/configuracion')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ siteName: 'VIGIIAP v3', mensajeMantenimiento: 'Volvemos pronto.' });
+      .send({ siteName: 'VIGIIAP v3', siteDesc: 'Descripción actualizada.' });
     expect(res.status).toBe(200);
     expect(adminService.setConfiguracion).toHaveBeenCalledWith(
-      { siteName: 'VIGIIAP v3', mensajeMantenimiento: 'Volvemos pronto.' },
+      { siteName: 'VIGIIAP v3', siteDesc: 'Descripción actualizada.' },
+      expect.anything(), expect.anything(),
+    );
+  });
+});
+
+// ─── PUT /api/admin/configuracion — modoMantenimiento (solo super_admin) ──────
+describe('PUT /api/admin/configuracion — modoMantenimiento', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('admin_sig recibe 403 al intentar modificar modoMantenimiento — no se guarda', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ modoMantenimiento: true });
+    expect(res.status).toBe(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('admin_sig recibe 403 al intentar modificar mensajeMantenimiento — no se guarda', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ mensajeMantenimiento: 'Volvemos pronto.' });
+    expect(res.status).toBe(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('super_admin guarda modoMantenimiento y mensajeMantenimiento — retorna 200', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ modoMantenimiento: true, mensajeMantenimiento: 'Volvemos pronto.' });
+    expect(res.status).toBe(200);
+    expect(adminService.setConfiguracion).toHaveBeenCalledWith(
+      { modoMantenimiento: true, mensajeMantenimiento: 'Volvemos pronto.' },
+      expect.anything(), expect.anything(),
+    );
+  });
+
+  it('admin_sig sigue pudiendo guardar otras claves cuando no hay claves de mantenimiento (regresión)', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ siteName: 'VIGIIAP v3', emailNotifs: true });
+    expect(res.status).toBe(200);
+    expect(adminService.setConfiguracion).toHaveBeenCalledWith(
+      { siteName: 'VIGIIAP v3', emailNotifs: true },
       expect.anything(), expect.anything(),
     );
   });
