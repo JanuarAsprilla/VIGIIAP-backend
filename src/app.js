@@ -24,6 +24,7 @@ import usuariosRoutes from './modules/usuarios/usuarios.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import categoriasRoutes from './modules/categorias/categorias.routes.js';
 import descargasRoutes from './modules/descargas/descargas.routes.js';
+import publicRoutes from './modules/public/public.routes.js';
 
 const app = express();
 
@@ -218,6 +219,7 @@ v1.use('/usuarios',    noStore, usuariosRoutes);
 v1.use('/admin',       noStore, adminRoutes);
 v1.use('/categorias',          categoriasRoutes);
 v1.use('/descargar',   noStore, descargasRoutes);
+v1.use('/public',              publicRoutes);
 
 app.use('/api/v1', v1);
 app.use('/api',    v1); // alias de transición — se retira en v2

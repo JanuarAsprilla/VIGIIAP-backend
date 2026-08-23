@@ -40,6 +40,10 @@ const CONFIG_SCHEMA = {
   publicoCanSolicitar:   { type: 'boolean' },
   investigadorCanUpload: { type: 'boolean' },
   requireApproval:       { type: 'boolean' },
+  // Política de privacidad (Ley 1581 de 2012) — expuesta públicamente en
+  // GET /api/v1/public/configuracion. Contenido legal/compliance: solo el
+  // super_admin puede modificarla (ver check en setConfiguracion más abajo).
+  politicaPrivacidad:    { type: 'string', maxLength: 20000 },
 };
 
 /** PUT /api/admin/configuracion */
@@ -52,6 +56,13 @@ export async function setConfiguracion(req, res, next) {
     const unknownKeys = Object.keys(req.body).filter((k) => !CONFIG_SCHEMA[k]);
     if (unknownKeys.length) {
       return res.status(400).json({ error: `Claves no permitidas: ${unknownKeys.join(', ')}` });
+    }
+
+    // politicaPrivacidad es contenido legal/compliance (Ley 1581 de 2012), no un
+    // ajuste rutinario del sitio — solo el super_admin puede modificarlo. Resto
+    // de las claves de CONFIG_SCHEMA siguen disponibles para admin_sig sin cambios.
+    if ('politicaPrivacidad' in req.body && req.user.rol !== 'super_admin') {
+      return res.status(403).json({ error: 'Solo el Super Administrador puede modificar la política de privacidad' });
     }
 
     const errors = [];
