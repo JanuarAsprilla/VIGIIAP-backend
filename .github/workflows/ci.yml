@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Mínimo privilegio: ningún job de este workflow necesita escribir en el repo.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint

@@ -9,6 +9,10 @@ on:
     # Auditoría semanal todos los lunes a las 9 AM UTC
     - cron: '0 9 * * 1'
 
+# Mínimo privilegio: ningún job de este workflow necesita escribir en el repo.
+permissions:
+  contents: read
+
 jobs:
   audit:
     name: npm audit
