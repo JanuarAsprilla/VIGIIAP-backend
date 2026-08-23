@@ -28,6 +28,10 @@ const pubToken = jwt.sign(
   { id: 'uuid-pub', email: 'pub@iiap.org.co', rol: 'publico' },
   process.env.JWT_SECRET,
 );
+const superToken = jwt.sign(
+  { id: 'uuid-super', email: 'super@iiap.org.co', rol: 'super_admin' },
+  process.env.JWT_SECRET,
+);
 
 // ─── /api/admin/stats ─────────────────────────────────────────────────────────
 describe('GET /api/admin/stats', () => {
@@ -245,5 +249,45 @@ describe('PUT /api/admin/configuracion', () => {
       investigadorCanUpload: false,
       requireApproval:       true,
     });
+  });
+});
+
+// ─── PUT /api/admin/configuracion — politicaPrivacidad (solo super_admin) ─────
+describe('PUT /api/admin/configuracion — politicaPrivacidad', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('super_admin guarda politicaPrivacidad — retorna 200', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ politicaPrivacidad: 'Texto legal actualizado.' });
+    expect(res.status).toBe(200);
+    expect(adminService.setConfiguracion).toHaveBeenCalledWith(
+      { politicaPrivacidad: 'Texto legal actualizado.' }, expect.anything(), expect.anything(),
+    );
+  });
+
+  it('admin_sig recibe 403 al intentar modificar politicaPrivacidad — no se guarda', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ politicaPrivacidad: 'Intento no autorizado.' });
+    expect(res.status).toBe(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('admin_sig sigue pudiendo guardar otras claves cuando politicaPrivacidad no está presente (regresión)', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ siteName: 'VIGIIAP v3', mensajeMantenimiento: 'Volvemos pronto.' });
+    expect(res.status).toBe(200);
+    expect(adminService.setConfiguracion).toHaveBeenCalledWith(
+      { siteName: 'VIGIIAP v3', mensajeMantenimiento: 'Volvemos pronto.' },
+      expect.anything(), expect.anything(),
+    );
   });
 });
