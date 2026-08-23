@@ -212,6 +212,28 @@ describe('register()', () => {
 
     expect(query.mock.calls[0][1]).toEqual(['upper@test.com']);
   });
+
+  it('registra auditoría con accion "registro" cuando el registro es exitoso', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'uuid-005', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'investigador' }],
+    });
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+    await register(validData, { ip: '127.0.0.1', userAgent: 'jest' });
+
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accion: 'registro',
+        modulo: 'auth',
+        entidadId: 'uuid-005',
+        usuarioId: 'uuid-005',
+        usuarioEmail: 'nuevo@iiap.gob.pe',
+        ip: '127.0.0.1',
+        userAgent: 'jest',
+      })
+    );
+  });
 });
 
 // ─── getProfile() ─────────────────────────────────────────────────────────────

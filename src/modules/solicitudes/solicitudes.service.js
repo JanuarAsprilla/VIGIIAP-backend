@@ -156,19 +156,31 @@ export async function updateEstado(id, estado, nota, adminId) {
 
   // Query 2 — UPDATE + JOIN en una sola CTE: elimina el SELECT extra del controller
   // El controlador usará owner_nombre/owner_email directamente sin roundtrip adicional.
-  const { rows } = await query(
+  // Guarda CAS (compare-and-swap): "AND estado=$5" asegura que solo aplicamos el
+  // cambio si el estado sigue siendo el que acabamos de leer y validar arriba. Si
+  // otra petición concurrente ya lo cambió, rowCount será 0 — no sobrescribimos
+  // silenciosamente el resultado de esa carrera, devolvemos 409 en su lugar.
+  const result = await query(
     `WITH updated AS (
        UPDATE solicitudes
        SET estado=$1, nota_admin=$2, revisado_por=$3, actualizado_en=NOW()
-       WHERE id=$4
+       WHERE id=$4 AND estado=$5
        RETURNING *
      )
      SELECT u.*, o.nombre AS owner_nombre, o.email AS owner_email
      FROM updated u
      JOIN usuarios o ON o.id = u.usuario_id`,
-    [estado, nota ?? null, adminId, id]
+    [estado, nota ?? null, adminId, id, estadoActual]
   );
-  return rows[0];
+
+  if (result.rowCount === 0) {
+    throw Object.assign(
+      new Error('El estado de la solicitud cambió mientras se procesaba tu petición — recarga e intenta de nuevo'),
+      { status: 409 }
+    );
+  }
+
+  return result.rows[0];
 }
 
 // ─── Archivos adjuntos ────────────────────────────────────────────────────────
@@ -313,12 +325,23 @@ export async function responder(id, respuesta, adminId) {
     );
   }
 
-  const { rows } = await query(
+  // Guarda CAS: "AND estado=$4" evita pisar el resultado de una petición
+  // concurrente que ya cambió el estado entre el SELECT y este UPDATE.
+  const estadoActual = current[0].estado;
+  const result = await query(
     `UPDATE solicitudes
      SET estado='resuelta', nota_admin=$1, revisado_por=$2,
          respondida_en=NOW(), actualizado_en=NOW()
-     WHERE id=$3 RETURNING *`,
-    [respuesta, adminId, id]
+     WHERE id=$3 AND estado=$4 RETURNING *`,
+    [respuesta, adminId, id, estadoActual]
   );
-  return rows[0];
+
+  if (result.rowCount === 0) {
+    throw Object.assign(
+      new Error('El estado de la solicitud cambió mientras se procesaba tu petición — recarga e intenta de nuevo'),
+      { status: 409 }
+    );
+  }
+
+  return result.rows[0];
 }

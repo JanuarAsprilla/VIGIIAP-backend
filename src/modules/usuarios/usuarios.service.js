@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
+import { notifyRolCambiado } from '../../utils/mailer.js';
 
 // super_admin excluido: solo el propio super_admin puede asignarlo vía admin.service
 const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
@@ -63,7 +64,22 @@ export async function updateRol(id, rol, activo, caller = {}) {
     [rol, activo, id]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
-  return rows[0];
+
+  const usuario = rows[0];
+
+  // Revocar sesiones activas y notificar por email si el rol realmente cambió —
+  // mismo comportamiento que admin.service.js#actualizarUsuario: el access token
+  // lleva el rol en el claim y quedaría stale con privilegios incorrectos hasta
+  // su expiración (hasta 15min) si no se revoca al degradar/escalar un rol.
+  if (rol !== target[0].rol) {
+    await revokeAllRefreshTokens(id).catch(() => {});
+    notifyRolCambiado({
+      email: usuario.email, nombre: usuario.nombre,
+      rolAnterior: target[0].rol, rolNuevo: rol,
+    }).catch(() => {});
+  }
+
+  return usuario;
 }
 
 export async function updatePerfil(userId, { nombre, institucion }) {
