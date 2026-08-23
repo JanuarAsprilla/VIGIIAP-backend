@@ -108,7 +108,24 @@ export async function getById(id, userId, isAdmin) {
   return rows[0];
 }
 
-export async function create(data, userId) {
+// El rol 'publico' solo puede crear solicitudes si el admin habilitó
+// configuracion.publicoCanSolicitar='true'. Ausente/otro valor → seguro por defecto (bloqueado).
+async function verificarPermisoPublico(userRol) {
+  if (userRol !== 'publico') return;
+  const { rows: cfg } = await query(
+    "SELECT valor FROM configuracion WHERE clave = 'publicoCanSolicitar'", []
+  );
+  if (cfg[0]?.valor !== 'true') {
+    throw Object.assign(
+      new Error('Los usuarios con rol Público no tienen habilitado el envío de solicitudes. Contacta a un administrador.'),
+      { status: 403 }
+    );
+  }
+}
+
+export async function create(data, userId, userRol) {
+  await verificarPermisoPublico(userRol);
+
   // Rate limit: máximo 5 solicitudes por usuario en las últimas 24 horas
   const { rows: recent } = await query(
     `SELECT COUNT(*) FROM solicitudes

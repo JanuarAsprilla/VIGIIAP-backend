@@ -107,12 +107,28 @@ describe('POST /api/solicitudes', () => {
     expect(res.status).toBe(401);
   });
 
-  it('retorna 403 si el rol es publico (no verificado)', async () => {
+  // El rol 'publico' ya puede llegar al controlador (autorizado a nivel de ruta) —
+  // el bloqueo/permiso real ahora depende de configuracion.publicoCanSolicitar,
+  // evaluado dentro de solicitudes.service.js#create (ver solicitudes.service.test.js
+  // para la cobertura completa de esa lógica con mocks de `query`).
+  it('retorna 403 si el rol es publico y el toggle publicoCanSolicitar está deshabilitado', async () => {
+    solService.create.mockRejectedValue(
+      Object.assign(new Error('Los usuarios con rol Público no tienen habilitado el envío de solicitudes. Contacta a un administrador.'), { status: 403 })
+    );
     const res = await request(app)
       .post('/api/solicitudes')
       .set('Authorization', `Bearer ${pubToken}`)
-      .send({ tipo: 'uso-suelo', descripcion: 'test' });
+      .send({ tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos de biodiversidad' });
     expect(res.status).toBe(403);
+  });
+
+  it('rol publico crea solicitud — retorna 201 cuando el toggle publicoCanSolicitar está habilitado', async () => {
+    solService.create.mockResolvedValue(SOL_FIXTURE);
+    const res = await request(app)
+      .post('/api/solicitudes')
+      .set('Authorization', `Bearer ${pubToken}`)
+      .send({ tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos de biodiversidad' });
+    expect(res.status).toBe(201);
   });
 
   it('retorna 422 si falta el tipo (investigador)', async () => {

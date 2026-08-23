@@ -273,6 +273,56 @@ describe('create()', () => {
   });
 });
 
+// ─── create() — permiso condicional para rol 'investigador' (investigadorCanUpload) ──
+describe('create() → permiso investigador (config investigadorCanUpload)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const newDocData = {
+    titulo: 'Informe Biodiversidad 2023',
+    tipo: 'informe',
+    anio: 2023,
+    autores: 'Juan Pérez',
+    resumen: 'Resumen del informe',
+    archivo_url: 'https://files.test.local/doc.pdf',
+    archivo_tamano_bytes: 1024000,
+    visibilidad: 'publico',
+  };
+
+  it('bloquea a investigador con 403 cuando investigadorCanUpload está ausente en configuracion (default seguro)', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // sin fila de config → indefinido
+    await expect(
+      create(newDocData, 'user-002', 'investigador')
+    ).rejects.toMatchObject({ status: 403 });
+    expect(query).toHaveBeenCalledOnce(); // nunca llega al INSERT
+  });
+
+  it('bloquea a investigador con 403 cuando investigadorCanUpload="false"', async () => {
+    query.mockResolvedValueOnce({ rows: [{ valor: 'false' }] });
+    await expect(
+      create(newDocData, 'user-002', 'investigador')
+    ).rejects.toMatchObject({ status: 403 });
+    expect(query).toHaveBeenCalledOnce();
+  });
+
+  it('permite a investigador crear el documento cuando investigadorCanUpload="true"', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ valor: 'true' }] }) // config
+      .mockResolvedValueOnce({ rows: [mockDocumento] });     // INSERT
+
+    const result = await create(newDocData, 'user-002', 'investigador');
+    expect(result.id).toBe(mockDocumento.id);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('no consulta configuracion para admin_sig (sin cambio de comportamiento)', async () => {
+    query.mockResolvedValueOnce({ rows: [mockDocumento] }); // INSERT
+
+    const result = await create(newDocData, 'user-001', 'admin_sig');
+    expect(result.id).toBe(mockDocumento.id);
+    expect(query).toHaveBeenCalledOnce(); // sin la query extra de config
+  });
+});
+
 // ─── update() ────────────────────────────────────────────────────────────────
 describe('update()', () => {
   beforeEach(() => vi.clearAllMocks());
