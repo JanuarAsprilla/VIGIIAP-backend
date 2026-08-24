@@ -146,7 +146,7 @@ app.use(
       callback(Object.assign(new Error(`CORS: origen no permitido — ${origin}`), { status: 403 }));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
     exposedHeaders: ['X-Total-Count'],
     credentials: true,
     maxAge: 86_400, // preflight cacheado 24h
