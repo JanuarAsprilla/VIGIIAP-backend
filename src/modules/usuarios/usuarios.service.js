@@ -3,13 +3,14 @@ import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 import { notifyRolCambiado } from '../../utils/mailer.js';
+import { deleteFileByUrl } from '../../config/r2.js';
 
 // super_admin excluido: solo el propio super_admin puede asignarlo vía admin.service
 const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
 
 export async function getProfile(userId) {
   const { rows } = await query(
-    'SELECT id, nombre, email, rol, tipo_acceso, institucion, activo, creado_en, last_login_at FROM usuarios WHERE id=$1',
+    'SELECT id, nombre, email, rol, tipo_acceso, institucion, activo, avatar_url, creado_en, last_login_at FROM usuarios WHERE id=$1',
     [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
@@ -97,6 +98,26 @@ export async function updatePerfil(userId, { nombre, institucion }) {
     params
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  return rows[0];
+}
+
+export async function updateAvatar(userId, avatarUrl) {
+  const { rows: current } = await query('SELECT avatar_url FROM usuarios WHERE id = $1', [userId]);
+  if (!current[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  const previousUrl = current[0].avatar_url;
+
+  const { rows } = await query(
+    `UPDATE usuarios SET avatar_url = $1, actualizado_en = NOW() WHERE id = $2
+     RETURNING id, nombre, email, rol, institucion, activo, avatar_url`,
+    [avatarUrl, userId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+
+  // Borra la foto anterior de R2 tras confirmar el UPDATE — evita huérfanos en el bucket
+  if (previousUrl && previousUrl !== avatarUrl) {
+    await deleteFileByUrl(previousUrl).catch(() => {});
+  }
+
   return rows[0];
 }
 

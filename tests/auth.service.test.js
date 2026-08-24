@@ -292,17 +292,28 @@ describe('getProfile()', () => {
       rol: 'admin_sig',
       tipo_acceso: 'institucional',
       institucion: 'IIAP',
+      avatar_url: 'https://files.test.local/avatars/admin.jpg',
+      twoFactorEnabled: true,
       creado_en: new Date().toISOString(),
     };
     query.mockResolvedValueOnce({ rows: [profileRow] });
 
     const result = await getProfile('uuid-001');
 
-    expect(result).toMatchObject({ id: 'uuid-001', email: 'admin@iiap.gob.pe' });
+    expect(result).toMatchObject({
+      id: 'uuid-001',
+      email: 'admin@iiap.gob.pe',
+      avatar_url: 'https://files.test.local/avatars/admin.jpg',
+      twoFactorEnabled: true,
+    });
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE id = $1'),
       ['uuid-001']
     );
+    // La consulta debe seleccionar avatar_url y alias totp_enabled → twoFactorEnabled
+    // (antes de este fix, /auth/me nunca devolvía el estado real de 2FA al frontend)
+    expect(query.mock.calls[0][0]).toMatch(/avatar_url/);
+    expect(query.mock.calls[0][0]).toMatch(/totp_enabled AS "twoFactorEnabled"/);
   });
 
   it('lanza 404 cuando el id no existe', async () => {

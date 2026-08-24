@@ -478,7 +478,9 @@ export async function resetPassword(token, newPassword) {
 // ─── Perfil ───────────────────────────────────────────────────────────────────
 export async function getProfile(userId) {
   const { rows } = await query(
-    'SELECT id, nombre, email, rol, tipo_acceso, institucion, creado_en, last_login_at FROM usuarios WHERE id = $1',
+    `SELECT id, nombre, email, rol, tipo_acceso, institucion, avatar_url, creado_en, last_login_at,
+            totp_enabled AS "twoFactorEnabled"
+     FROM usuarios WHERE id = $1`,
     [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
