@@ -66,6 +66,19 @@ describe('getPapelera()', () => {
     );
   });
 
+  it('declara el alias de tabla en el FROM — regresión: COLS usa "m.id" pero FROM no declaraba el alias "m", causando 500 real en producción', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    const req = { query: { tipo: 'mapa' } };
+    const res = mockRes();
+    await getPapelera(req, res, mockNext);
+
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/FROM mapas m\b/);
+  });
+
   it('retorna datos para tipo=documento', async () => {
     query
       .mockResolvedValueOnce({ rows: [] })

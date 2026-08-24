@@ -615,15 +615,29 @@ describe('resetPassword() — token expirado', () => {
 describe('refreshTokens() — token reutilizado (stolen)', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('revoca sesiones y lanza 401 cuando detecta reutilización de token', async () => {
+  it('revoca sesiones y lanza 401 cuando detecta reutilización de token fuera de la ventana de gracia', async () => {
+    const revocadoHaceRato = new Date(Date.now() - 60_000).toISOString(); // hace 60s — fuera de la ventana de 15s
     query
       .mockResolvedValueOnce({ rows: [] })  // UPDATE principal — sin filas (token inválido)
-      .mockResolvedValueOnce({ rows: [{ usuario_id: 'u-victim' }] }) // stolen check — revocado!
+      .mockResolvedValueOnce({ rows: [{ usuario_id: 'u-victim', revocado_en: revocadoHaceRato }] }) // stolen check — revocado hace rato
       .mockResolvedValueOnce({ rows: [] }); // UPDATE revocación masiva
 
     const { refreshTokens } = await import('../src/modules/auth/auth.service.js');
     await expect(refreshTokens('stolen-token', { ip: '::1', userAgent: 'bot' }))
       .rejects.toMatchObject({ status: 401 });
     expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('NO revoca toda la sesión si el token se reutiliza dentro de la ventana de gracia (carrera benigna: doble clic, reintento de red, dos pestañas)', async () => {
+    const revocadoHaceInstantes = new Date(Date.now() - 500).toISOString(); // hace 500ms — dentro de la ventana de 15s
+    query
+      .mockResolvedValueOnce({ rows: [] })  // UPDATE principal — sin filas (ya rotado por la petición ganadora)
+      .mockResolvedValueOnce({ rows: [{ usuario_id: 'u-victim', revocado_en: revocadoHaceInstantes }] }); // stolen check — revocado hace instantes
+
+    const { refreshTokens } = await import('../src/modules/auth/auth.service.js');
+    await expect(refreshTokens('stolen-token', { ip: '::1', userAgent: 'bot' }))
+      .rejects.toMatchObject({ status: 401 });
+    // Solo 2 queries — NO se ejecuta el UPDATE de revocación masiva de la familia completa
+    expect(query).toHaveBeenCalledTimes(2);
   });
 });
