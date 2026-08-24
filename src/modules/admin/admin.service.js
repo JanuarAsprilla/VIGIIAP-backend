@@ -10,6 +10,7 @@ import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 import { paginate } from '../../utils/paginate.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado } from '../../utils/mailer.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { setMaintenanceState } from '../../middlewares/maintenanceMode.js';
 
 /**
  * Genera una contraseña temporal criptográficamente segura.
@@ -236,6 +237,15 @@ export async function setConfiguracion(config, adminId, adminEmail) {
        ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_en = NOW()`,
       [clave, String(valor)]
     );
+  }
+
+  // El modo mantenimiento se aplica en memoria de inmediato — sin esto, el
+  // toggle quedaba guardado en BD pero sin ningún efecto real hasta reiniciar.
+  if ('modoMantenimiento' in config || 'mensajeMantenimiento' in config) {
+    setMaintenanceState({
+      modoMantenimiento:    config.modoMantenimiento,
+      mensajeMantenimiento: config.mensajeMantenimiento,
+    });
   }
 
   registrarAuditoria({

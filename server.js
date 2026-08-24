@@ -4,6 +4,7 @@ import { connectDB } from './src/config/database.js';
 import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
 import { loadBlacklist } from './src/utils/tokenBlacklist.js';
+import { loadMaintenanceState } from './src/middlewares/maintenanceMode.js';
 import { initEmailQueue } from './src/utils/emailQueue.js';
 import logger from './src/utils/logger.js';
 
@@ -108,6 +109,7 @@ async function start() {
   await connectDB();
   await runMigrations();
   await loadBlacklist();
+  await loadMaintenanceState();
   initEmailQueue();
 
   // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
