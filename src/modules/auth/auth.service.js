@@ -41,6 +41,12 @@ export async function issueTokenPair(user, { ip, userAgent } = {}) {
   return { accessToken, refreshToken };
 }
 
+// Ventana de gracia para reuso de un token recién rotado — una segunda petición
+// que llega casi al mismo tiempo que la primera (doble clic, reintento de red
+// del navegador, dos pestañas abiertas) no es robo, es una carrera benigna del
+// mismo cliente legítimo. Solo un reuso mucho después de la rotación es sospechoso.
+const REUSE_GRACE_MS = 15_000;
+
 // ─── Refresh token — renueva el par con rotación atómica ─────────────────────
 export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -50,7 +56,7 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   // mismo tiempo, solo uno obtiene filas en el RETURNING.
   const { rows } = await query(
     `UPDATE refresh_tokens rt
-     SET    revocado = true
+     SET    revocado = true, revocado_en = NOW()
      FROM   usuarios u
      WHERE  rt.token_hash  = $1
        AND  rt.revocado    = false
@@ -65,24 +71,29 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   if (!rows[0]) {
     // Fix 2 (family revocation): token inválido/ya-usado puede indicar robo.
     // Buscamos si el token existía pero estaba revocado — si es así, invalidamos
-    // TODA la familia de tokens del usuario (evicción total del posible atacante).
+    // TODA la familia de tokens del usuario (evicción total del posible atacante),
+    // salvo que la revocación haya ocurrido hace muy poco (ventana de gracia):
+    // ahí es casi seguro una carrera del propio cliente, no un atacante.
     const { rows: stolen } = await query(
-      `SELECT usuario_id FROM refresh_tokens WHERE token_hash = $1 AND revocado = true`,
+      `SELECT usuario_id, revocado_en FROM refresh_tokens WHERE token_hash = $1 AND revocado = true`,
       [tokenHash]
     );
     if (stolen[0]) {
-      await query(
-        'UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1 AND revocado = false',
-        [stolen[0].usuario_id]
-      );
-      registrarAuditoria({
-        accion:      'refresh_token_reuse',
-        modulo:      'auth',
-        entidadId:   stolen[0].usuario_id,
-        descripcion: 'Refresh token reutilizado — posible robo de token. Sesiones revocadas.',
-        ip:          ip ?? null,
-        userAgent,
-      });
+      const revocadoHaceMs = stolen[0].revocado_en ? Date.now() - new Date(stolen[0].revocado_en).getTime() : Infinity;
+      if (revocadoHaceMs > REUSE_GRACE_MS) {
+        await query(
+          'UPDATE refresh_tokens SET revocado = true, revocado_en = NOW() WHERE usuario_id = $1 AND revocado = false',
+          [stolen[0].usuario_id]
+        );
+        registrarAuditoria({
+          accion:      'refresh_token_reuse',
+          modulo:      'auth',
+          entidadId:   stolen[0].usuario_id,
+          descripcion: 'Refresh token reutilizado fuera de la ventana de gracia — posible robo de token. Sesiones revocadas.',
+          ip:          ip ?? null,
+          userAgent,
+        });
+      }
     }
     throw Object.assign(new Error('Refresh token inválido, expirado o ya usado'), { status: 401 });
   }
@@ -94,7 +105,7 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
 // Revoca todos los refresh tokens activos de un usuario (logout total)
 export async function revokeAllRefreshTokens(userId) {
   await query(
-    'UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1 AND revocado = false',
+    'UPDATE refresh_tokens SET revocado = true, revocado_en = NOW() WHERE usuario_id = $1 AND revocado = false',
     [userId]
   );
 }

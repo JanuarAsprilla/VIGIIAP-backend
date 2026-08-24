@@ -30,9 +30,10 @@ export async function getPapelera(req, res, next) {
     const tabla = TABLAS[tipo];
     const { limit, offset, meta } = paginate(rest);
 
+    const alias = ALIAS[tipo];
     const [data, count] = await Promise.all([
       query(
-        `SELECT ${COLS[tipo]} FROM ${tabla} WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT $1 OFFSET $2`,
+        `SELECT ${COLS[tipo]} FROM ${tabla} ${alias} WHERE ${alias}.deleted_at IS NOT NULL ORDER BY ${alias}.deleted_at DESC LIMIT $1 OFFSET $2`,
         [limit, offset]
       ),
       query(`SELECT COUNT(*) FROM ${tabla} WHERE deleted_at IS NOT NULL`),
