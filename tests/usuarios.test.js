@@ -6,6 +6,7 @@ import app from '../src/app.js';
 vi.mock('../src/modules/usuarios/usuarios.service.js', () => ({
   getProfile:    vi.fn(),
   updatePerfil:  vi.fn(),
+  updateAvatar:  vi.fn(),
   updatePassword: vi.fn(),
   getAll:        vi.fn(),
   updateRol:     vi.fn(),
@@ -106,6 +107,30 @@ describe('PATCH /api/usuarios/me (actualizar perfil)', () => {
       .set('Authorization', `Bearer ${verToken}`)
       .send({ institucion: null });
     expect(res.status).toBe(200);
+  });
+});
+
+describe('PATCH /api/usuarios/me/avatar', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 401 sin token', async () => {
+    const res = await request(app).patch('/api/usuarios/me/avatar');
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 si el rol es publico (no verificado)', async () => {
+    const res = await request(app)
+      .patch('/api/usuarios/me/avatar')
+      .set('Authorization', `Bearer ${pubToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('retorna 422 si no se envía ningún archivo', async () => {
+    const res = await request(app)
+      .patch('/api/usuarios/me/avatar')
+      .set('Authorization', `Bearer ${verToken}`);
+    expect(res.status).toBe(422);
+    expect(userService.updateAvatar).not.toHaveBeenCalled();
   });
 });
 

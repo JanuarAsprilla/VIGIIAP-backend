@@ -26,14 +26,20 @@ vi.mock('../src/utils/mailer.js', () => ({
   notifyRolCambiado: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../src/config/r2.js', () => ({
+  deleteFileByUrl: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { query } from '../src/config/database.js';
 import bcrypt from 'bcryptjs';
 import { notifyRolCambiado } from '../src/utils/mailer.js';
+import { deleteFileByUrl } from '../src/config/r2.js';
 import {
   getAll,
   getProfile,
   updateRol,
   updatePerfil,
+  updateAvatar,
   updatePassword,
 } from '../src/modules/usuarios/usuarios.service.js';
 
@@ -246,6 +252,35 @@ describe('usuarios.service → updatePerfil()', () => {
     // nombre no debe estar en el SET porque era undefined
     expect(sql).not.toMatch(/nombre\s*=/);  // evita falso positivo en RETURNING
     expect(sql).toMatch(/institucion/);
+  });
+});
+
+// ─── updateAvatar() ───────────────────────────────────────────────────────────
+describe('usuarios.service → updateAvatar()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('actualiza avatar_url correctamente', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ avatar_url: null }] })
+      .mockResolvedValueOnce({ rows: [{ ...USER, avatar_url: 'https://files.test.local/avatars/nuevo.jpg' }] });
+    const result = await updateAvatar('usr-uuid-1', 'https://files.test.local/avatars/nuevo.jpg');
+    expect(result.avatar_url).toBe('https://files.test.local/avatars/nuevo.jpg');
+    expect(deleteFileByUrl).not.toHaveBeenCalled();
+  });
+
+  it('borra la foto anterior en R2 al reemplazarla', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ avatar_url: 'https://files.test.local/avatars/vieja.jpg' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USER, avatar_url: 'https://files.test.local/avatars/nueva.jpg' }] });
+    await updateAvatar('usr-uuid-1', 'https://files.test.local/avatars/nueva.jpg');
+    expect(deleteFileByUrl).toHaveBeenCalledWith('https://files.test.local/avatars/vieja.jpg');
+  });
+
+  it('lanza 404 si el usuario no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      updateAvatar('no-existe', 'https://files.test.local/avatars/x.jpg')
+    ).rejects.toMatchObject({ status: 404 });
   });
 });
 

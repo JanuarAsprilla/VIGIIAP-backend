@@ -49,6 +49,26 @@ export async function updateMe(req, res, next) {
   } catch (err) { next(err); }
 }
 
+export async function updateAvatar(req, res, next) {
+  try {
+    const avatarUrl = req.body.avatar_url;
+    if (!avatarUrl) {
+      return res.status(422).json({ error: 'Debes seleccionar una imagen para la foto de perfil' });
+    }
+    const usuario = await userService.updateAvatar(req.user.id, avatarUrl);
+    registrarAuditoria({
+      accion:      'update_avatar',
+      modulo:      'usuarios',
+      entidadId:   req.user.id,
+      descripcion: `Usuario actualizó su foto de perfil`,
+      usuarioId:   req.user.id,
+      usuarioEmail: req.user.email,
+      ip:          req.ip,
+    });
+    res.json(usuario);
+  } catch (err) { next(err); }
+}
+
 export async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = updatePasswordSchema.parse(req.body);
