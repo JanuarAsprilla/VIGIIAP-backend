@@ -15,6 +15,7 @@ import { optionalAuthenticate } from './middlewares/auth.js';
 import { requestId } from './middlewares/requestId.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { notFound } from './middlewares/notFound.js';
+import { maintenanceGate } from './middlewares/maintenanceMode.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
 import mapassRoutes from './modules/mapas/mapas.routes.js';
@@ -212,14 +213,14 @@ const noStore = (_req, res, next) => {
 };
 
 v1.use('/auth',        noStore, authRoutes);
-v1.use('/mapas',               mapassRoutes);
-v1.use('/documentos',          documentosRoutes);
-v1.use('/solicitudes', noStore, solicitudesRoutes);
+v1.use('/mapas',               maintenanceGate, mapassRoutes);
+v1.use('/documentos',          maintenanceGate, documentosRoutes);
+v1.use('/solicitudes', noStore, maintenanceGate, solicitudesRoutes);
 v1.use('/usuarios',    noStore, usuariosRoutes);
 v1.use('/admin',       noStore, adminRoutes);
-v1.use('/categorias',          categoriasRoutes);
-v1.use('/descargar',   noStore, descargasRoutes);
-v1.use('/public',              publicRoutes);
+v1.use('/categorias',          maintenanceGate, categoriasRoutes);
+v1.use('/descargar',   noStore, maintenanceGate, descargasRoutes);
+v1.use('/public',              maintenanceGate, publicRoutes);
 
 app.use('/api/v1', v1);
 app.use('/api',    v1); // alias de transición — se retira en v2
