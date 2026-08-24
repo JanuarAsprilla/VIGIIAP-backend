@@ -45,6 +45,18 @@ describe('app.js — CORS, redirects, docs, 404 (NODE_ENV=test)', () => {
     expect(res.status).not.toBe(500);
   });
 
+  it('el preflight permite el header X-CSRF-Token — todo PATCH/POST/DELETE mutante lo envía', async () => {
+    // Regresión: allowedHeaders solo tenía Content-Type/Authorization — el navegador
+    // bloqueaba (CORS) cualquier petición mutante real tras el preflight, ya que
+    // api.ts (frontend) siempre adjunta X-CSRF-Token en peticiones no-GET.
+    const res = await request(app)
+      .options('/api/v1/usuarios/me')
+      .set('Origin', 'https://vigiiap.iiap.gov.co')
+      .set('Access-Control-Request-Method', 'PATCH')
+      .set('Access-Control-Request-Headers', 'content-type,x-csrf-token');
+    expect(res.headers['access-control-allow-headers']).toContain('X-CSRF-Token');
+  });
+
   it('añade el header Permissions-Policy a toda respuesta', async () => {
     const res = await request(app).get('/health');
     expect(res.headers['permissions-policy']).toContain('camera=()');
