@@ -85,4 +85,26 @@ describe('errorHandler middleware', () => {
     expect(r.status).toHaveBeenCalledWith(400);
     expect(r.json.mock.calls[0][0].error).toBe('Error del servidor');
   });
+
+  it('retorna 409 con mensaje de título duplicado para violación UNIQUE de slug (23505)', () => {
+    const err = Object.assign(new Error('duplicate key value violates unique constraint "mapas_slug_key"'), {
+      code: '23505',
+      constraint: 'mapas_slug_key',
+    });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(409);
+    expect(r.json.mock.calls[0][0].error).toMatch(/título muy similar/i);
+  });
+
+  it('retorna 409 genérico para violación UNIQUE (23505) que no es de slug', () => {
+    const err = Object.assign(new Error('duplicate key value violates unique constraint "usuarios_email_key"'), {
+      code: '23505',
+      constraint: 'usuarios_email_key',
+    });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(409);
+    expect(r.json.mock.calls[0][0].error).toBe('Ya existe un registro con esos datos.');
+  });
 });
