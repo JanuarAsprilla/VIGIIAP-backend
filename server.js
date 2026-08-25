@@ -74,7 +74,18 @@ function validateEnv() {
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length) {
     logger.warn(`[startup] Variables de entorno faltantes: ${missing.join(', ')}`);
-    logger.warn('[startup] Los uploads de archivos fallarán hasta que estén configuradas.');
+    logger.warn('[startup] Los uploads al bucket PRIVADO (PDFs, documentos) fallarán hasta que estén configuradas.');
+  }
+
+  // Bucket PÚBLICO — separado del privado de arriba. Antes no se validaba, así que
+  // si faltaba, los uploads de PDFs seguían funcionando (bucket privado) mientras
+  // CUALQUIER imagen (avatar, miniaturas de mapas/categorías) fallaba con 500 sin
+  // ninguna advertencia visible al arrancar — muy difícil de diagnosticar en producción.
+  const requiredPublic = ['R2_PUBLIC_BUCKET_NAME', 'R2_PUBLIC_BUCKET_URL'];
+  const missingPublic = requiredPublic.filter((k) => !process.env[k]);
+  if (missingPublic.length) {
+    logger.warn(`[startup] Variables de entorno faltantes: ${missingPublic.join(', ')}`);
+    logger.warn('[startup] Los uploads al bucket PÚBLICO (avatares, miniaturas de mapas/categorías) fallarán hasta que estén configuradas.');
   }
 
   const emailVars = ['MAIL_HOST', 'MAIL_PORT', 'MAIL_USER', 'MAIL_PASS', 'MAIL_FROM'];
