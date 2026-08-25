@@ -121,7 +121,8 @@ const DUMMY_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj0D4U0W5mFS
 export async function login(email, password, ip, userAgent) {
   const { rows } = await query(
     `SELECT id, nombre, email, password_hash, rol, activo, email_verified,
-            intentos_fallidos, bloqueado_hasta, password_changed_at, creado_en
+            intentos_fallidos, bloqueado_hasta, password_changed_at, creado_en,
+            institucion, tipo_acceso, avatar_url, totp_enabled
      FROM usuarios WHERE email = $1`,
     [email.toLowerCase()]
   );
@@ -255,7 +256,14 @@ export async function login(email, password, ip, userAgent) {
   return {
     token: accessToken,
     refreshToken,
-    user: { id: user.id, nombre: user.nombre, email: user.email, rol: user.rol },
+    // Mismo shape que /auth/me (getProfile) — el frontend igual pide el perfil
+    // completo tras el login vía refreshProfile(), pero se mantiene consistente
+    // para no dejar una trampa a otros consumidores (apps móviles, integraciones).
+    user: {
+      id: user.id, nombre: user.nombre, email: user.email, rol: user.rol,
+      institucion: user.institucion, tipo_acceso: user.tipo_acceso,
+      avatar_url: user.avatar_url, twoFactorEnabled: user.totp_enabled,
+    },
   };
 }
 

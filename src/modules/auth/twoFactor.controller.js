@@ -59,7 +59,8 @@ export async function confirm(req, res, next) {
     await tfService.verifyTotpOrBackup(payload.id, code);
 
     const { rows } = await query(
-      'SELECT id, nombre, email, rol FROM usuarios WHERE id = $1', [payload.id]
+      `SELECT id, nombre, email, rol, institucion, tipo_acceso, avatar_url, totp_enabled
+       FROM usuarios WHERE id = $1`, [payload.id]
     );
     const user = rows[0];
     const tokens = await authService.issueTokenPair(user, {
@@ -69,9 +70,16 @@ export async function confirm(req, res, next) {
     res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'None' });
     res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
     res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, refreshCookieOptions());
+    // Mismo shape que /auth/me — el frontend igual pide el perfil completo tras
+    // confirmar el 2FA vía refreshProfile(), pero se mantiene consistente para
+    // no dejar una trampa a otros consumidores (apps móviles, integraciones).
     res.json({
       token: tokens.accessToken,
-      user:  { id: user.id, nombre: user.nombre, email: user.email, rol: user.rol },
+      user: {
+        id: user.id, nombre: user.nombre, email: user.email, rol: user.rol,
+        institucion: user.institucion, tipo_acceso: user.tipo_acceso,
+        avatar_url: user.avatar_url, twoFactorEnabled: user.totp_enabled,
+      },
     });
   } catch (err) { next(err); }
 }

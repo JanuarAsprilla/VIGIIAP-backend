@@ -211,6 +211,38 @@ describe('confirm()', () => {
     );
   });
 
+  it('el user devuelto incluye avatar_url, institucion y twoFactorEnabled — mismo shape que /auth/me', async () => {
+    const token = make2faToken();
+    const fullUser = {
+      ...USER,
+      institucion: 'IIAP', tipo_acceso: 'institucional',
+      avatar_url: 'https://files.test.local/avatars/x.jpg', totp_enabled: true,
+    };
+    tfService.verifyTotpOrBackup.mockResolvedValueOnce(true);
+    query.mockResolvedValueOnce({ rows: [fullUser] });
+    issueTokenPair.mockResolvedValueOnce({ accessToken: 'acc', refreshToken: 'ref' });
+
+    const req = {
+      cookies: { vigiiap_2fa_temp: token },
+      body: { code: '123456' },
+      ip: '127.0.0.1',
+      headers: { 'user-agent': 'Test/1.0' },
+    };
+    const res = mockRes();
+    await confirm(req, res, mockNext);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: expect.objectContaining({
+          institucion: 'IIAP',
+          tipo_acceso: 'institucional',
+          avatar_url: 'https://files.test.local/avatars/x.jpg',
+          twoFactorEnabled: true,
+        }),
+      })
+    );
+  });
+
   it('llama next(err) si verifyTotpOrBackup lanza', async () => {
     const token = make2faToken();
     tfService.verifyTotpOrBackup.mockRejectedValueOnce(Object.assign(new Error('Código inválido'), { status: 401 }));

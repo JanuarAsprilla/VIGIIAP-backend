@@ -85,6 +85,29 @@ describe('login()', () => {
     );
   });
 
+  it('el user devuelto incluye avatar_url, institucion y twoFactorEnabled — mismo shape que /auth/me', async () => {
+    const fullUser = {
+      ...mockUser,
+      institucion: 'IIAP', tipo_acceso: 'institucional',
+      avatar_url: 'https://files.test.local/avatars/x.jpg', totp_enabled: false,
+    };
+    query
+      .mockResolvedValueOnce({ rows: [fullUser] })                       // SELECT usuario
+      .mockResolvedValueOnce({ rows: [] })                               // UPDATE last_login_at
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })       // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] });          // INSERT refresh_tokens
+    bcrypt.compare.mockResolvedValueOnce(true);
+
+    const result = await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
+
+    expect(result.user).toMatchObject({
+      institucion: 'IIAP',
+      tipo_acceso: 'institucional',
+      avatar_url: 'https://files.test.local/avatars/x.jpg',
+      twoFactorEnabled: false,
+    });
+  });
+
   it('lanza 401 cuando el usuario no existe', async () => {
     query.mockResolvedValueOnce({ rows: [] });
 
