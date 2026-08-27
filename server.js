@@ -158,6 +158,22 @@ async function start() {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
+
+  // Sin esto, una sola promesa rechazada sin .catch() en cualquier parte del
+  // código (fácil de introducir por accidente) tumba TODO el proceso en Node
+  // moderno — no solo la petición que la disparó — afectando a todos los
+  // usuarios a la vez hasta que Render reinicia el contenedor. Registramos el
+  // error con contexto completo y cerramos de forma controlada (mismo camino
+  // que SIGTERM: deja terminar las requests en vuelo, cierra el pool de BD)
+  // en vez de dejar que el proceso muera o quede en estado indefinido.
+  process.on('unhandledRejection', (reason) => {
+    logger.error('[fatal] unhandledRejection no capturada — cerrando servidor:', reason);
+    shutdown('unhandledRejection');
+  });
+  process.on('uncaughtException', (err) => {
+    logger.error('[fatal] uncaughtException — cerrando servidor:', err);
+    shutdown('uncaughtException');
+  });
 }
 
 start().catch((err) => {
