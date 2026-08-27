@@ -15,6 +15,18 @@ export function errorHandler(err, _req, res, _next) {
     return res.status(400).json({ error: 'El archivo supera el tamaño máximo permitido' });
   }
 
+  // Violación de restricción UNIQUE de Postgres (23505) — p.ej. slug duplicado en
+  // mapas/documentos al reenviar un mismo título (doble clic, dos admins a la vez).
+  // Sin esto caía al 500 genérico y el admin no tenía forma de saber qué pasó.
+  if (err.code === '23505') {
+    const isSlugConflict = err.constraint?.includes('slug');
+    return res.status(409).json({
+      error: isSlugConflict
+        ? 'Ya existe un registro con un título muy similar. Usa un título distinto.'
+        : 'Ya existe un registro con esos datos.',
+    });
+  }
+
   const status = err.status || err.statusCode || 500;
 
   if (status >= 500) {
