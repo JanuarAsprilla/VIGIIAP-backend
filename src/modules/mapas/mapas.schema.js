@@ -6,9 +6,11 @@ function trustedUrl(allowExternal = false) {
   return z.string().url('URL inválida').refine(
     (url) => {
       if (allowExternal) return true; // geovisor puede ser externo
-      const r2Private = process.env.R2_PUBLIC_URL ?? '';
-      const r2Public  = process.env.R2_PUBLIC_BUCKET_URL ?? '';
-      return url.startsWith(r2Private) || url.startsWith(r2Public);
+      const r2Private = process.env.R2_PUBLIC_URL;
+      const r2Public  = process.env.R2_PUBLIC_BUCKET_URL;
+      // Si una de las variables no está configurada, no debe actuar como comodín
+      // (startsWith('') es true para cualquier string) — solo compara contra valores reales.
+      return (!!r2Private && url.startsWith(r2Private)) || (!!r2Public && url.startsWith(r2Public));
     },
     { message: 'URL debe pertenecer al almacenamiento propio (R2)' },
   ).optional().or(z.literal('')).transform(v => v || null);
