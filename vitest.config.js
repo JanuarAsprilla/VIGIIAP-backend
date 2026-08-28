@@ -10,7 +10,7 @@ export default defineConfig({
       provider: 'istanbul',
       reporter: ['text', 'html'],
       include: ['src/**/*.js'],
-      exclude: ['src/config/**', 'src/utils/logger.js', '.claude/**'],
+      exclude: ['src/config/**', 'src/utils/logger.js'],
       thresholds: {
         statements: 80,
         branches: 80,
