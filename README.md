@@ -1,4 +1,6 @@
-# VIGIIAP-backend — API REST
+# VIGIIAP-backend
+
+API REST del sistema VIGIIAP — gestión de mapas, documentos y solicitudes de acceso geoespacial con control de roles (RBAC), custodia de datos y seguridad de archivos.
 
 ## Stack
 - **Runtime:** Node.js 20+ con ES Modules (`"type": "module"`)
@@ -8,7 +10,7 @@
 - **Validación:** Zod (schemas en `*.schema.js`)
 - **Storage:** Cloudflare R2 (compatible S3 — `@aws-sdk/client-s3`)
 - **Logs:** Winston
-- **Tests:** Vitest (675 tests)
+- **Tests:** Vitest
 - **Deploy:** Render (Web Service)
 
 ## Estructura
@@ -27,14 +29,14 @@ src/
 │   ├── rateLimiter.js      # rateLimiter + authRateLimiter + uploadRateLimiter + downloadRateLimiter
 │   └── upload.js           # Multer → fileGuard → R2 (3-step middleware)
 ├── modules/
-│   ├── admin/              # Dashboard, usuarios, auditoria, custodia, exportación
-│   ├── auth/               # login, registro, /me, 2FA, contraseña expirada
-│   ├── categorias/         # Catálogo de categorías
-│   ├── descargas/          # Tracking de descargas
-│   ├── documentos/         # CRUD documentos
-│   ├── mapas/              # CRUD mapas
-│   ├── solicitudes/        # Gestión solicitudes de acceso
-│   └── usuarios/           # Perfil, cambio de contraseña, roles
+│   ├── admin/               # Dashboard, usuarios, auditoria, custodia, exportación
+│   ├── auth/                # login, registro, /me, 2FA, contraseña expirada
+│   ├── categorias/           # Catálogo de categorías
+│   ├── descargas/            # Tracking de descargas
+│   ├── documentos/           # CRUD documentos
+│   ├── mapas/                 # CRUD mapas
+│   ├── solicitudes/           # Gestión solicitudes de acceso
+│   └── usuarios/               # Perfil, cambio de contraseña, roles
 └── utils/
     ├── auditLog.js          # audit_log table (acciones críticas)
     ├── dataCustody.js       # geo_custodia + descarga_log + file_scan_log
@@ -44,7 +46,7 @@ src/
     └── slugify.js           # Slugs en español
 db/
 ├── migrate.js              # Runner de migraciones
-└── migrations/             # 001–029 migraciones aplicadas
+└── migrations/              # Migraciones aplicadas
 server.js                   # Entry point
 scripts/
 ├── create-admin.js         # Seed inicial admin_sig (requiere ADMIN_SEED_PASSWORD en entorno)
@@ -101,14 +103,14 @@ scripts/
 | GET | /api/admin/export/usuarios | admin_sig |
 
 ## Seguridad de archivos
-`src/middlewares/fileGuard.js` — validación en 4 pasos:
+`src/middlewares/fileGuard.js` valida en 4 pasos:
 1. Lista negra de ejecutables (MZ/ELF/Java/ZIP/gzip/bzip2/RAR/7z/shebang/OLE)
 2. Whitelist de extensiones (pdf/jpg/jpeg/png/webp/gif)
 3. Cross-check extensión ↔ MIME declarado por cliente
 4. Magic bytes del tipo declarado (positive match)
 
 ## Cadena de custodia geoespacial
-`src/utils/dataCustody.js` → 3 tablas:
+`src/utils/dataCustody.js` escribe en 3 tablas:
 - `geo_custodia` — ciclo de vida (ingreso/actualización/publicación/despublicación/eliminación)
 - `descarga_log` — quién descargó qué y cuándo
 - `file_scan_log` — resultado del escaneo de cada archivo subido
@@ -119,7 +121,7 @@ scripts/
 - Contraseña expirada: flag `password_expires_at` → redirige al flujo `/change-expired-password`
 - Rate limiting: `authRateLimiter` en login, registro, 2FA y cambio de contraseña
 
-## Reglas de Desarrollo
+## Convenciones de desarrollo
 1. Patrón por módulo: `routes → controller → service → DB`
 2. El controller solo llama al service y retorna JSON — sin lógica de negocio
 3. El service lanza errores con `Object.assign(new Error(...), { status: N })`
@@ -135,7 +137,7 @@ scripts/
 ```bash
 cp .env.example .env   # Llenar credenciales
 npm install
-npm run migrate        # Crear tablas (migraciones 001–029)
+npm run migrate        # Crear tablas
 ADMIN_SEED_PASSWORD=TuPassword123! npm run create-admin
 npm run dev            # Servidor en puerto 4000
 ```
