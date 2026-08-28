@@ -143,6 +143,29 @@ describe('restaurar()', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
+  it('retorna 400 si id no es un UUID válido para tipo=mapa', async () => {
+    const req = { params: { tipo: 'mapa', id: 'no-es-un-uuid' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await restaurar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 si el nombre de categoria es muy corto', async () => {
+    const req = { params: { tipo: 'categoria', id: 'A' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await restaurar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 si el nombre de categoria supera los 100 caracteres', async () => {
+    const req = { params: { tipo: 'categoria', id: 'a'.repeat(101) }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await restaurar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
   it('restaura un mapa y responde con mensaje', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' }] });
 
