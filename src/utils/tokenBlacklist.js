@@ -1,10 +1,10 @@
 /**
  * tokenBlacklist — Revocación de tokens JWT.
  *
- * Estrategia: in-memory Set sincronizado con BD al arrancar.
- * - La verificación es O(1) sin hit de BD por cada request.
- * - La persistencia en BD sobrevive reinicios.
- * - Los tokens expirados se purgan de BD en cada loadBlacklist().
+ * Estrategia: in-memory Set sincronizado con BD al arrancar, así la
+ * verificación es O(1) sin hit de BD por cada request, la persistencia en
+ * BD sobrevive reinicios, y los tokens expirados se purgan de BD en cada
+ * loadBlacklist().
  */
 import crypto from 'node:crypto';
 import { query } from '../config/database.js';

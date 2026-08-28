@@ -1,15 +1,10 @@
 /**
  * fileGuard — Validación de archivos subidos al servidor.
  *
- * Protege contra:
- *  - Malware disfrazado (magic byte spoofing)
- *  - Doble extensión (shell.pdf.php)
- *  - MIME type manipulation
- *  - Archivos ejecutables ocultos
- *  - Path traversal en nombre de archivo
- *
- * No reemplaza un antivirus, pero filtra la superficie de ataque
- * antes de que el archivo llegue a R2.
+ * Protege contra malware disfrazado (magic byte spoofing), doble extensión
+ * (shell.pdf.php), manipulación del MIME type, ejecutables ocultos y path
+ * traversal en el nombre de archivo. No reemplaza un antivirus, pero filtra
+ * la superficie de ataque antes de que el archivo llegue a R2.
  */
 import crypto from 'node:crypto';
 

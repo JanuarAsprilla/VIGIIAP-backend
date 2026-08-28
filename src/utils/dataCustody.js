@@ -3,12 +3,10 @@
  *
  * Implementa el principio de trazabilidad completa sobre los recursos
  * del sistema VIGIIAP: quién subió, modificó, publicó, descargó o
- * eliminó cada recurso, desde qué IP y cuándo.
- *
- * Tablas:
- *  - geo_custodia    → ciclo de vida del recurso (ingreso, edición, publicación, baja)
- *  - descarga_log    → registro de descargas (quién, cuándo, qué archivo)
- *  - file_scan_log   → resultado de la validación de archivos subidos
+ * eliminó cada recurso, desde qué IP y cuándo. Escribe en tres tablas:
+ * geo_custodia (ciclo de vida del recurso — ingreso, edición, publicación,
+ * baja), descarga_log (quién descargó qué archivo y cuándo) y
+ * file_scan_log (resultado de la validación de archivos subidos).
  *
  * En caso de fallo (BD no disponible) solo se emite una advertencia — el
  * flujo principal no se interrumpe.

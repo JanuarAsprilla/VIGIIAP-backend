@@ -1,14 +1,15 @@
 /**
  * Opciones centralizadas para la cookie HttpOnly de autenticación JWT.
  *
- * - httpOnly:  el navegador nunca expone la cookie a JavaScript → inmune a XSS
- * - secure:    solo se envía por HTTPS en producción
- * - sameSite:  'None' — REQUERIDO porque frontend y backend viven en subdominios
- *              distintos (cross-site). Esto significa que la cookie SÍ se envía en
- *              peticiones cross-site, así que NO mitiga CSRF por sí sola — la
- *              protección real vive en src/middlewares/csrf.js (token derivado por
- *              HMAC, ver src/utils/csrf.js), aplicado a las rutas de estado mutante.
- * - maxAge:    coincide con la vida del JWT (7 días por defecto)
+ * httpOnly evita que el navegador exponga la cookie a JavaScript (inmune a
+ * XSS), secure la restringe a HTTPS en producción y maxAge coincide con la
+ * vida del token que protege (15 minutos para el access token, 30 días
+ * para el refresh token). sameSite va en 'None' porque frontend y
+ * backend viven en subdominios distintos (cross-site), lo que significa que
+ * la cookie sí se envía en peticiones cross-site y por lo tanto NO mitiga
+ * CSRF por sí sola — esa protección vive en src/middlewares/csrf.js (token
+ * derivado por HMAC, ver src/utils/csrf.js), aplicado a las rutas de estado
+ * mutante.
  *
  * El nombre 'vigiiap_token' es el que el frontend busca al activar USE_COOKIE_AUTH.
  */
@@ -16,7 +17,7 @@ export const COOKIE_NAME = 'vigiiap_token';
 
 /**
  * Devuelve las opciones de res.cookie() para el token de sesión.
- * @param {number} [maxAgeMs] - Duración en milisegundos. Por defecto 7 días.
+ * @param {number} [maxAgeMs] - Duración en milisegundos. Por defecto 15 minutos.
  */
 export function authCookieOptions(maxAgeMs = 15 * 60 * 1000) {
   return {

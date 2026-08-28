@@ -4,9 +4,11 @@ import { slugify } from '../../utils/slugify.js';
 import logger from '../../utils/logger.js';
 import { deleteFileByUrl } from '../../config/r2.js';
 
-/** Devuelve los valores de visibilidad accesibles según el rol del usuario.
- *  - visitante/publico: solo contenido público
- *  - investigador/tecnico/institucional/admin_sig/super_admin: sin filtro (acceso total)
+/**
+ * Devuelve los valores de visibilidad accesibles según el rol del usuario:
+ * visitante y publico solo ven contenido público, mientras que
+ * investigador, tecnico, institucional, admin_sig y super_admin acceden
+ * sin filtro.
  */
 function visibilidadPermitida(user) {
   if (!user || user.rol === 'visitante' || user.rol === 'publico') return ['publico'];

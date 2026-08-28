@@ -15,8 +15,6 @@ import { setMaintenanceState } from '../../middlewares/maintenanceMode.js';
 /**
  * Genera una contraseña temporal criptográficamente segura.
  * Usa crypto.randomBytes para garantizar aleatoriedad real.
- * @param {number} length - Longitud deseada de la contraseña
- * @returns {string}
  */
 function generateTempPassword(length = 12) {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';

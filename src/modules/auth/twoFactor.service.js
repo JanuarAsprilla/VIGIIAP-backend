@@ -59,9 +59,11 @@ export async function enableTotp(userId, code) {
   return { backupCodes: rawCodes };
 }
 
-/** Verifica un código TOTP o backup code durante el login.
- *  - TOTP: previene replay guardando el último contador usado (periodo de 30s).
- *  - Backup codes: consumo atómico con SELECT FOR UPDATE para evitar race conditions.
+/**
+ * Verifica un código TOTP o backup code durante el login. Para TOTP se
+ * previene replay guardando el último contador usado (periodo de 30s); los
+ * backup codes se consumen de forma atómica con SELECT FOR UPDATE para
+ * evitar race conditions.
  */
 export async function verifyTotpOrBackup(userId, code) {
   const { rows } = await query(
