@@ -17,6 +17,11 @@ vi.mock('../src/config/database.js', () => ({
   getClient: vi.fn(),
 }));
 
+vi.mock('../src/config/r2.js', () => ({
+  uploadFile: vi.fn().mockResolvedValue('https://files.test.local/avatars/foto.png'),
+  deleteFile: vi.fn(),
+}));
+
 import * as userService from '../src/modules/usuarios/usuarios.service.js';
 
 const pubToken = jwt.sign(
@@ -131,6 +136,32 @@ describe('PATCH /api/usuarios/me/avatar', () => {
       .set('Authorization', `Bearer ${verToken}`);
     expect(res.status).toBe(422);
     expect(userService.updateAvatar).not.toHaveBeenCalled();
+  });
+
+  it('sube un avatar válido — retorna 200 con el usuario actualizado y audita la acción', async () => {
+    userService.updateAvatar.mockResolvedValue({ ...USER_FIXTURE, avatar_url: 'https://files.test.local/avatars/foto.png' });
+    const pngBuffer = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ...Array(24).fill(0)]);
+
+    const res = await request(app)
+      .patch('/api/usuarios/me/avatar')
+      .set('Authorization', `Bearer ${verToken}`)
+      .attach('avatar', pngBuffer, 'foto.png');
+
+    expect(res.status).toBe(200);
+    expect(res.body.avatar_url).toBe('https://files.test.local/avatars/foto.png');
+    expect(userService.updateAvatar).toHaveBeenCalledWith('uuid-inv', 'https://files.test.local/avatars/foto.png');
+  });
+
+  it('propaga el error al middleware de errores si el service falla', async () => {
+    userService.updateAvatar.mockRejectedValue(Object.assign(new Error('DB down'), { status: 500 }));
+    const pngBuffer = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ...Array(24).fill(0)]);
+
+    const res = await request(app)
+      .patch('/api/usuarios/me/avatar')
+      .set('Authorization', `Bearer ${verToken}`)
+      .attach('avatar', pngBuffer, 'foto.png');
+
+    expect(res.status).toBe(500);
   });
 });
 

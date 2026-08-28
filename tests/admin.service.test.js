@@ -286,6 +286,46 @@ describe('admin.service → actualizarUsuario()', () => {
       actualizarUsuario({ id: 'no-existe', activo: true, ...ADMIN_CTX })
     ).rejects.toMatchObject({ status: 404 });
   });
+
+  it('lanza 400 si el admin intenta modificar su propia cuenta desde el panel', async () => {
+    await expect(
+      actualizarUsuario({ id: 'admin-uuid', rol: 'investigador', ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 400 });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('lanza 403 si un admin_sig intenta modificar a otro admin_sig existente', async () => {
+    query.mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] });
+
+    await expect(
+      actualizarUsuario({ id: 'otro-admin-uuid', activo: false, ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 403 });
+    expect(query).toHaveBeenCalledTimes(1); // no llega al UPDATE
+  });
+
+  it('lanza 403 si un admin_sig intenta asignar el rol admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [{ rol: 'publico' }] });
+
+    await expect(
+      actualizarUsuario({ id: 'usr-uuid-1', rol: 'admin_sig', ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('super_admin sí puede modificar una cuenta admin_sig existente', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] })            // target check
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'admin_sig', activo: false }] }); // UPDATE
+
+    const result = await actualizarUsuario({
+      id: 'otro-admin-uuid',
+      activo: false,
+      adminId: 'super-uuid',
+      adminRol: 'super_admin',
+      adminEmail: 'super@iiap.org.co',
+    });
+
+    expect(result.activo).toBe(false);
+  });
 });
 
 // ─── eliminarUsuario() ────────────────────────────────────────────────────────
@@ -314,6 +354,31 @@ describe('admin.service → eliminarUsuario()', () => {
     ).rejects.toMatchObject({ status: 403 });
 
     expect(query).toHaveBeenCalledTimes(1); // solo el target check
+  });
+
+  it('lanza 403 si un admin_sig intenta eliminar a otro admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] });
+
+    await expect(
+      eliminarUsuario({ id: 'otro-admin-uuid', ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 403 });
+
+    expect(query).toHaveBeenCalledTimes(1); // no llega al DELETE
+  });
+
+  it('super_admin sí puede eliminar una cuenta admin_sig', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'otro-admin-uuid', nombre: 'Admin', email: 'admin2@iiap.org.co' }] });
+
+    const result = await eliminarUsuario({
+      id: 'otro-admin-uuid',
+      adminId: 'super-uuid',
+      adminRol: 'super_admin',
+      adminEmail: 'super@iiap.org.co',
+    });
+
+    expect(result.id).toBe('otro-admin-uuid');
   });
 
   it('lanza 400 si el admin intenta eliminarse a sí mismo', async () => {

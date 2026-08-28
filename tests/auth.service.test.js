@@ -569,6 +569,83 @@ describe('login() — bloqueo por 5 intentos fallidos', () => {
     const updateParams = query.mock.calls[1][1];
     expect(updateParams[0]).toBe(1); // null ?? 0 + 1 = 1
   });
+
+  it('rechaza el intento con 429 mientras la cuenta sigue bloqueada — no llega a comparar password', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    const bloqueadoHasta = new Date(Date.now() + 10 * 60_000); // 10 min en el futuro
+    query.mockResolvedValueOnce({ rows: [{ ...mockUser, bloqueado_hasta: bloqueadoHasta }] });
+
+    await expect(login('admin@iiap.gob.pe', 'cualquiera', '127.0.0.1', 'jest'))
+      .rejects.toMatchObject({ status: 429, code: 'ACCOUNT_LOCKED' });
+
+    expect(bcryptMock.compare).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(1); // solo el SELECT, ningún UPDATE
+  });
+
+  it('permite login normalmente si bloqueado_hasta ya pasó', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(true);
+    const bloqueadoHasta = new Date(Date.now() - 60_000); // 1 min en el pasado
+    // rol 'publico' — fuera de EXPIRY_ROLES, así el test se enfoca solo en el bloqueo temporal
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, rol: 'publico', bloqueado_hasta: bloqueadoHasta }] }) // SELECT
+      .mockResolvedValueOnce({ rows: [] })   // UPDATE reset intentos
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }); // SELECT totp_enabled
+
+    const result = await login('admin@iiap.gob.pe', 'correcta', '127.0.0.1', 'jest');
+    expect(result.user.email).toBe(mockUser.email);
+  });
+});
+
+describe('login() — expiración de contraseña', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna passwordExpired=true y un token de cambio cuando la contraseña venció (rol admin_sig)', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(true);
+    const changedAt = new Date(Date.now() - 200 * 86_400_000); // hace 200 días
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, password_changed_at: changedAt }] }) // SELECT user
+      .mockResolvedValueOnce({ rows: [] })  // UPDATE reset intentos_fallidos
+      .mockResolvedValueOnce({ rows: [] })  // SELECT configuracion passwordExpiryDays (vacío → default 90)
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE expired_token_jti
+
+    const result = await login('admin@iiap.gob.pe', 'correcta', '127.0.0.1', 'jest');
+
+    expect(result.passwordExpired).toBe(true);
+    expect(result.expiredToken).toBe('mocked-token');
+    expect(query).toHaveBeenCalledTimes(4);
+  });
+
+  it('NO exige cambio de contraseña si aún no venció el plazo configurado', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(true);
+    const changedAt = new Date(Date.now() - 5 * 86_400_000); // hace 5 días
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, password_changed_at: changedAt }] })
+      .mockResolvedValueOnce({ rows: [] })  // UPDATE reset intentos_fallidos
+      .mockResolvedValueOnce({ rows: [] })  // SELECT configuracion passwordExpiryDays
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }); // SELECT totp_enabled
+
+    const result = await login('admin@iiap.gob.pe', 'correcta', '127.0.0.1', 'jest');
+    expect(result.passwordExpired).toBeUndefined();
+    expect(result.user).toBeDefined();
+  });
+
+  it('no aplica expiración de contraseña a roles fuera de EXPIRY_ROLES (visitante)', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(true);
+    const changedAt = new Date(Date.now() - 500 * 86_400_000); // hace 500 días — vencería si aplicara
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, rol: 'publico', password_changed_at: changedAt }] })
+      .mockResolvedValueOnce({ rows: [] })  // UPDATE reset intentos_fallidos
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }); // SELECT totp_enabled (sin paso de expiración)
+
+    const result = await login('admin@iiap.gob.pe', 'correcta', '127.0.0.1', 'jest');
+    expect(result.passwordExpired).toBeUndefined();
+    // Ninguna llamada debe consultar passwordExpiryDays — el rol no aplica a esa regla
+    expect(query.mock.calls.some(([sql]) => sql.includes('passwordExpiryDays'))).toBe(false);
+  });
 });
 
 describe('register() — perfilToRol branches', () => {
