@@ -217,6 +217,29 @@ describe('verifyTotpOrBackup()', () => {
     expect(mockClient.release).toHaveBeenCalled();
   });
 
+  it('hace rollback y lanza 401 si el usuario desaparece entre el chequeo inicial y el SELECT FOR UPDATE (carrera)', async () => {
+    const hashedBackupCode = await bcrypt.hash('abc123def4', 10);
+    query.mockResolvedValueOnce({
+      rows: [{
+        totp_secret: 'JBSWY3DPEHPK3PXP',
+        totp_backup_codes: [hashedBackupCode],
+        totp_last_counter: null,
+      }],
+    });
+
+    const mockClient = {
+      query: vi.fn()
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE — el usuario ya no existe
+        .mockResolvedValueOnce({}), // ROLLBACK
+      release: vi.fn(),
+    };
+    getClient.mockResolvedValueOnce(mockClient);
+
+    await expect(verifyTotpOrBackup('user-1', 'abc123def4')).rejects.toMatchObject({ status: 401 });
+    expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
   it('hace rollback y lanza 401 cuando el backup code no coincide con ninguno', async () => {
     const hashedBackupCode = await bcrypt.hash('otro-code', 10);
     query.mockResolvedValueOnce({

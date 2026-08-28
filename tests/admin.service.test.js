@@ -561,6 +561,19 @@ describe('admin.service → getAdminEmails()', () => {
     const result = await getAdminEmails();
     expect(result).toEqual([]);
   });
+
+  it('agrega los emails de ADMIN_EMAIL (separados por coma) sin duplicar los de BD', async () => {
+    const original = process.env.ADMIN_EMAIL;
+    process.env.ADMIN_EMAIL = 'admin@iiap.org.co, backup@iiap.org.co ,';
+    try {
+      query.mockResolvedValueOnce({ rows: [{ email: 'admin@iiap.org.co' }] });
+      const result = await getAdminEmails();
+      expect(result).toEqual(['admin@iiap.org.co', 'backup@iiap.org.co']);
+    } finally {
+      if (original === undefined) delete process.env.ADMIN_EMAIL;
+      else process.env.ADMIN_EMAIL = original;
+    }
+  });
 });
 
 describe('admin.service → crearAdminSig()', () => {

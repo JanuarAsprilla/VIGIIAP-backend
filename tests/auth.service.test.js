@@ -711,6 +711,26 @@ describe('resetPassword() — token expirado', () => {
   });
 });
 
+// ─── refreshTokens() — caso exitoso ──────────────────────────────────────────
+describe('refreshTokens() — rotación exitosa', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('rota el token y emite un nuevo par cuando el refresh token es válido', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'rt-1', usuario_id: 'u1', uid: 'u1', email: 'user@iiap.gob.pe', rol: 'investigador' }],
+      })  // UPDATE principal — rotación exitosa
+      .mockResolvedValueOnce({ rows: [] }); // INSERT del nuevo refresh token (issueTokenPair)
+
+    const { refreshTokens } = await import('../src/modules/auth/auth.service.js');
+    const result = await refreshTokens('valid-refresh-token', { ip: '::1', userAgent: 'chrome' });
+
+    expect(result).toHaveProperty('accessToken');
+    expect(result).toHaveProperty('refreshToken');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+});
+
 // ─── refreshTokens() — token robado ──────────────────────────────────────────
 describe('refreshTokens() — token reutilizado (stolen)', () => {
   beforeEach(() => vi.clearAllMocks());

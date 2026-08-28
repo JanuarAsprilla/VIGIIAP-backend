@@ -82,6 +82,17 @@ describe('POST /api/mapas', () => {
     expect(res.status).toBe(201);
     expect(res.body.titulo).toBe('Mapa Amazónico');
   });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    mapaService.create.mockRejectedValueOnce(new Error('db down'));
+
+    const res = await request(app)
+      .post('/api/mapas')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ titulo: 'Mapa Amazónico', categoria: 'Biodiversidad' });
+
+    expect(res.status).toBe(500);
+  });
 });
 
 describe('DELETE /api/mapas/:id', () => {
