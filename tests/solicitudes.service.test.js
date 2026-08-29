@@ -197,7 +197,10 @@ describe('solicitudes.service → create()', () => {
       .mockResolvedValueOnce({ rows: [{ count: '0' }] })
       .mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
     const result = await create({ tipo: 'biodiversidad', descripcion: undefined }, 'usr-2');
-    expect(result).toBeDefined();
+
+    expect(result.descripcion).toBeNull();
+    const insertParams = query.mock.calls[1][1];
+    expect(insertParams[1]).toBeUndefined(); // descripcion se pasa tal cual, sin transformar
   });
 
   it('el SQL de INSERT hace RETURNING *', async () => {

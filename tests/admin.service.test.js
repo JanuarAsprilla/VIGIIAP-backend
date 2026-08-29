@@ -584,9 +584,18 @@ describe('admin.service → crearAdminSig()', () => {
     bcryptMock.hash.mockResolvedValue('hashed_password');
     query
       .mockResolvedValueOnce({ rows: [] }) // Check email duplicado
-      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'Admin', email: 'a@a.co', rol: 'admin_sig', activo: true }] }); // INSERT
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'Admin', email: 'a@a.co', rol: 'admin_sig' }] }); // INSERT
     const result = await crearAdminSig({ nombre: 'Admin', email: 'a@a.co', superAdminId: 's1' });
-    expect(result).toBeDefined();
+
+    expect(result.rol).toBe('admin_sig');
+    expect(result.email).toBe('a@a.co');
+    // La contraseña temporal se hashea antes de insertarse — nunca en texto plano
+    expect(bcryptMock.hash).toHaveBeenCalledWith(expect.any(String), 12);
+    const insertSql = query.mock.calls[1][0];
+    expect(insertSql).toMatch(/'admin_sig'/); // rol hardcoded en el SQL, no viene del input
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'create_admin', usuarioId: 's1' })
+    );
   });
 });
 
