@@ -208,6 +208,28 @@ describe('PATCH /api/usuarios/me/password', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
   });
+
+  it('invalida el access token actual tras cambiar la contraseña — reutilizarlo debe fallar', async () => {
+    userService.updatePassword.mockResolvedValue();
+    // Token con `exp` real (verToken no lleva expiresIn, así que req.user.exp sería undefined)
+    const tokenConExp = jwt.sign(
+      { id: 'uuid-inv', email: 'inv@iiap.org.co', rol: 'investigador' },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    const res = await request(app)
+      .patch('/api/usuarios/me/password')
+      .set('Authorization', `Bearer ${tokenConExp}`)
+      .send({ currentPassword: 'OldPass1!', newPassword: 'Nueva123!' });
+    expect(res.status).toBe(200);
+
+    // El mismo token ya no debe servir para autenticar
+    const res2 = await request(app)
+      .get('/api/usuarios/me')
+      .set('Authorization', `Bearer ${tokenConExp}`);
+    expect(res2.status).toBe(401);
+  });
 });
 
 describe('GET /api/usuarios', () => {

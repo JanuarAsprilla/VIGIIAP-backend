@@ -235,6 +235,18 @@ describe('usuarios.service → updateRol()', () => {
     });
   });
 
+  it('no lanza si falla la revocación de tokens o el email de notificación (best-effort, no bloquean la respuesta)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'publico' }] })   // SELECT: target check
+      .mockResolvedValueOnce({
+        rows: [{ id: 'usr-uuid-1', nombre: USER.nombre, email: USER.email, rol: 'tecnico', activo: true }],
+      })                                                                  // UPDATE
+      .mockRejectedValueOnce(new Error('DB down'));                      // revokeAllRefreshTokens falla
+    notifyRolCambiado.mockRejectedValueOnce(new Error('SMTP down'));
+
+    await expect(updateRol('usr-uuid-1', 'tecnico', true)).resolves.toMatchObject({ rol: 'tecnico' });
+  });
+
   it('NO revoca tokens ni notifica por email cuando el rol no cambia (no-op)', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'tecnico' }] })   // SELECT: target check — mismo rol
