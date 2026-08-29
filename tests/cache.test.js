@@ -133,6 +133,22 @@ describe('cacheMiddleware() — cache MISS', () => {
     }
   });
 
+  it('incluye los params whitelisteados en la cache key', async () => {
+    const middleware = cacheMiddleware(120);
+    const req = {
+      query: { page: '2', categoria: 'mapas', noPermitido: 'x' },
+      cookies: {}, headers: {}, path: '/mapas',
+    };
+    const res = mockRes();
+
+    await middleware(req, res, mockNext);
+
+    const client = getClient();
+    expect(client.get).toHaveBeenCalledWith(expect.stringContaining('page=2'));
+    expect(client.get).toHaveBeenCalledWith(expect.stringContaining('categoria=mapas'));
+    expect(client.get).toHaveBeenCalledWith(expect.not.stringContaining('noPermitido'));
+  });
+
   it('registra warning si setEx falla al guardar la respuesta en cache, sin interrumpir la respuesta', async () => {
     const client = getRedisClient();
     client.isReady = true;

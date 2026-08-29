@@ -123,6 +123,20 @@ describe('loadMaintenanceState() — hidrata desde BD al arrancar', () => {
     );
   });
 
+  it('usa el mensaje por defecto si mensajeMantenimiento no viene en BD', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ clave: 'modoMantenimiento', valor: 'true' }],
+    });
+    await loadMaintenanceState();
+
+    const req = {};
+    const res = mockRes();
+    maintenanceGate(req, res, mockNext);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('mantenimiento') })
+    );
+  });
+
   it('no lanza ni bloquea si la BD falla al cargar — asume desactivado', async () => {
     query.mockRejectedValueOnce(new Error('DB fail'));
     await expect(loadMaintenanceState()).resolves.toBeUndefined();
