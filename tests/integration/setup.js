@@ -10,6 +10,7 @@
  * al terminar cada archivo de test para mantener tests independientes.
  */
 import 'dotenv/config';
+import { beforeAll } from 'vitest';
 import { connectDB } from '../../src/config/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { query } from '../../src/config/database.js';
@@ -30,7 +31,7 @@ beforeAll(async () => {
 export async function cleanDatabase() {
   await query(`
     TRUNCATE TABLE
-      refresh_tokens, revoked_tokens, sessions,
+      refresh_tokens, revoked_tokens,
       solicitud_archivos, solicitudes,
       descarga_log, file_scan_log, geo_custodia,
       audit_log, visitantes, usuarios
