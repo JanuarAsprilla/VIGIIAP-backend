@@ -1,9 +1,20 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+// S3_ENDPOINT permite apuntar a cualquier almacenamiento compatible con S3
+// (MinIO auto-hospedado, etc.) en vez de Cloudflare R2. Si no está definida,
+// se usa el endpoint de R2 por defecto — mismo comportamiento de siempre.
+const endpoint = process.env.S3_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+
+// MinIO (y la mayoría de despliegues self-hosted) requieren path-style
+// (http://host/bucket/key) en vez del virtual-hosted style que usa R2
+// (https://bucket.host/key). S3_FORCE_PATH_STYLE lo activa explícitamente.
+const forcePathStyle = process.env.S3_FORCE_PATH_STYLE === 'true';
+
 const r2 = new S3Client({
-  region: 'auto',
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  region: process.env.S3_REGION || 'auto',
+  endpoint,
+  forcePathStyle,
   credentials: {
     accessKeyId:     process.env.R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,

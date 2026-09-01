@@ -1,0 +1,95 @@
+# Stack completo para desplegar VIGIIAP-backend en un servidor propio
+# (sin Supabase ni Cloudflare R2): app + PostgreSQL/PostGIS + MinIO.
+#
+# Uso:
+#   1. cp .env.example .env  y completar los valores (ver notas abajo)
+#   2. docker compose up -d --build
+#      (las migraciones corren solas al arrancar el server — no hace falta
+#      un paso aparte. minio-init crea los buckets antes de que 'app' arranque)
+#   3. Crear el admin inicial (el script se niega a correr con NODE_ENV=production
+#      por seguridad — el contenedor lo trae así por defecto, se pisa solo para
+#      este comando puntual, no cambia el modo del server ya corriendo):
+#        docker compose exec -e NODE_ENV=development \
+#          -e ADMIN_SEED_PASSWORD=TuPassword123! app npm run create-admin
+#
+# Variables clave en .env para este stack:
+#   DB_HOST=db  DB_SSL=false
+#   S3_ENDPOINT=http://minio:9000  S3_FORCE_PATH_STYLE=true
+#   R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY = las credenciales de MinIO de abajo
+#   CORS_ORIGIN = la URL real del frontend (sin esto, el login se rechaza)
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-vigiiap}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?la contraseña de Postgres es obligatoria}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # solo localhost — no exponer la BD a la red externa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID:?definir credenciales de MinIO}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY:?definir credenciales de MinIO}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"       # API S3
+      - "127.0.0.1:9001:9001" # consola web — solo localhost, usar túnel SSH para administrar
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Crea los buckets (privado y público) y la política de lectura anónima
+  # del público en el primer arranque. Corre una vez y termina — 'app' espera
+  # a que este servicio termine con éxito antes de arrancar.
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID:?definir credenciales de MinIO}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY:?definir credenciales de MinIO}
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+        mc mb --ignore-existing local/${R2_BUCKET_NAME:-vigiiap-files} &&
+        mc mb --ignore-existing local/${R2_PUBLIC_BUCKET_NAME:-vigiiap-files-public} &&
+        mc anonymous set download local/${R2_PUBLIC_BUCKET_NAME:-vigiiap-files-public}
+      "
+
+volumes:
+  db_data:
+  minio_data:
