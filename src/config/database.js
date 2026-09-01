@@ -3,10 +3,13 @@ import logger from '../utils/logger.js';
 
 const { Pool } = pg;
 
-// SSL: Supabase usa su propia CA — rejectUnauthorized:false mantiene cifrado TLS sin verificar chain.
-const sslConfig = process.env.NODE_ENV === 'production'
+// SSL lo controla DB_SSL explícitamente, no NODE_ENV — un Postgres propio en
+// servidor local (sin TLS configurado) también corre con NODE_ENV=production,
+// así que forzar SSL solo por estar en producción rompía esa conexión.
+// DB_SSL_REJECT_UNAUTHORIZED=false (Supabase usa su propia CA, no la del sistema).
+const sslConfig = process.env.DB_SSL === 'true'
   ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' }
-  : (process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false);
+  : false;
 
 const pool = new Pool(
   // DATABASE_URL tiene prioridad — permite configuración única en Render/AWS sin vars individuales

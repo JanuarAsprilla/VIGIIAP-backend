@@ -14,6 +14,7 @@ RUN npm ci --omit=dev
 COPY src ./src
 COPY server.js ./
 COPY db ./db
+COPY scripts ./scripts
 
 # Transferir propiedad de los archivos al usuario no-root
 RUN chown -R appuser:appgroup /app

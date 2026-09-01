@@ -43,8 +43,8 @@ async function createAdmin() {
   const hash = await bcrypt.hash(ADMIN.password, 12);
 
   const { rows } = await query(
-    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, activo)
-     VALUES ($1, $2, $3, $4, $5, true)
+    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, activo, email_verified)
+     VALUES ($1, $2, $3, $4, $5, true, true)
      RETURNING id, nombre, email, rol`,
     [ADMIN.nombre, ADMIN.email, hash, ADMIN.rol, ADMIN.institucion],
   );
