@@ -9,10 +9,8 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
  * función retorna el objeto `req` sin modificar como "key". Como cada request
  * genera un objeto `req` distinto, el Map interno del MemoryStore nunca
  * acumula hits para la misma key — el rate limiter jamás bloquea una
- * petición, sin importar cuántas lleguen desde la misma IP real. Este bug
- * desactivaba por completo authRateLimiter, downloadRateLimiter,
- * adminRateLimiter y la rama IP de rateLimiter/uploadRateLimiter/
- * passwordResetLimiter. Ver PoC y hallazgo en la auditoría de seguridad.
+ * petición, sin importar cuántas lleguen desde la misma IP real. Afecta a
+ * todos los limiters que caen a la rama IP (usuarios sin sesión).
  */
 function normalizeIp(req) {
   return ipKeyGenerator(req.ip);

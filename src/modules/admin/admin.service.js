@@ -237,8 +237,8 @@ export async function setConfiguracion(config, adminId, adminEmail) {
     );
   }
 
-  // El modo mantenimiento se aplica en memoria de inmediato — sin esto, el
-  // toggle quedaba guardado en BD pero sin ningún efecto real hasta reiniciar.
+  // El middleware lee el estado de memoria, no BD — hay que empujar el
+  // cambio ahí mismo para que el efecto sea inmediato.
   if ('modoMantenimiento' in config || 'mensajeMantenimiento' in config) {
     setMaintenanceState({
       modoMantenimiento:    config.modoMantenimiento,

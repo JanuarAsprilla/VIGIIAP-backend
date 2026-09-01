@@ -1,10 +1,6 @@
 /**
  * VIGIIAP — Modo mantenimiento
- * Antes, activar el toggle "Modo Mantenimiento" desde Configuración no tenía
- * ningún efecto real: la clave se guardaba en BD pero nada la leía para
- * bloquear nada.
- *
- * Estrategia: estado en memoria sincronizado con BD al arrancar, igual que
+ * Estado en memoria sincronizado con BD al arrancar, igual que
  * tokenBlacklist.js — el middleware es síncrono y no golpea BD en cada
  * request; adminService.setConfiguracion() actualiza este estado en memoria
  * en el momento en que un super_admin guarda el cambio, así que el efecto
