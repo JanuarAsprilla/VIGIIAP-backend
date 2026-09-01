@@ -4,7 +4,7 @@ import { connectDB } from './src/config/database.js';
 import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
 import { loadBlacklist } from './src/utils/tokenBlacklist.js';
-import { loadMaintenanceState } from './src/middlewares/maintenanceMode.js';
+import { loadMaintenanceState, startMaintenanceStatePolling, stopMaintenanceStatePolling } from './src/middlewares/maintenanceMode.js';
 import { initEmailQueue } from './src/utils/emailQueue.js';
 import logger from './src/utils/logger.js';
 
@@ -121,6 +121,7 @@ async function start() {
   await runMigrations();
   await loadBlacklist();
   await loadMaintenanceState();
+  startMaintenanceStatePolling();
   initEmailQueue();
 
   // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
@@ -139,6 +140,7 @@ async function start() {
   // Dejamos que las requests en vuelo terminen (hasta 10 s) antes de salir.
   async function shutdown(signal) {
     logger.info(`[shutdown] ${signal} recibido — cerrando servidor...`);
+    stopMaintenanceStatePolling();
     server.close(async () => {
       try {
         await pool.end();

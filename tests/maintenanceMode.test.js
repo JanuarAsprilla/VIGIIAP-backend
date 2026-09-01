@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn(),
@@ -13,6 +13,8 @@ import {
   maintenanceGate,
   loadMaintenanceState,
   setMaintenanceState,
+  startMaintenanceStatePolling,
+  stopMaintenanceStatePolling,
 } from '../src/middlewares/maintenanceMode.js';
 
 function mockRes() {
@@ -145,5 +147,54 @@ describe('loadMaintenanceState() — hidrata desde BD al arrancar', () => {
     const res = mockRes();
     maintenanceGate(req, res, mockNext);
     expect(mockNext).toHaveBeenCalledOnce();
+  });
+});
+
+describe('startMaintenanceStatePolling() — refresco periódico ante ediciones directas en BD', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    setMaintenanceState({ modoMantenimiento: false, mensajeMantenimiento: '' });
+    query.mockResolvedValue({ rows: [] });
+  });
+
+  afterEach(() => {
+    stopMaintenanceStatePolling();
+    vi.useRealTimers();
+  });
+
+  it('re-hidrata el estado a intervalos regulares, sin esperar un reinicio', async () => {
+    startMaintenanceStatePolling(1000);
+    expect(query).not.toHaveBeenCalled();
+
+    // Alguien activa el mantenimiento por SQL directo, fuera del panel admin —
+    // el próximo tick de polling debe recogerlo sin que nadie llame setMaintenanceState().
+    query.mockResolvedValue({
+      rows: [{ clave: 'modoMantenimiento', valor: 'true' }],
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(query).toHaveBeenCalledTimes(1);
+
+    const req = {};
+    const res = mockRes();
+    maintenanceGate(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(503);
+  });
+
+  it('deja de refrescar tras stopMaintenanceStatePolling()', async () => {
+    startMaintenanceStatePolling(1000);
+    stopMaintenanceStatePolling();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('startMaintenanceStatePolling() llamado dos veces no duplica el intervalo', async () => {
+    startMaintenanceStatePolling(1000);
+    startMaintenanceStatePolling(1000);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });
