@@ -6,17 +6,9 @@
 import nodemailer from 'nodemailer';
 import logger from './logger.js';
 
-/**
- * Escapa caracteres HTML especiales en cadenas de texto de usuario.
- * Previene XSS cuando datos del usuario se incrustan en plantillas HTML de email.
- * @param {unknown} value
- * @returns {string}
- */
 /** Elimina caracteres de control CRLF de valores que van en headers SMTP (Subject, To, etc.).
  *  escHtml no es suficiente — escapa HTML pero no elimina \r\n que inyectan headers. */
 function sanitizeSMTP(value) {
-  // Rango de control chars es intencional: elimina CRLF y bytes de control
-  // que un atacante podría usar para inyectar headers SMTP adicionales.
   // eslint-disable-next-line no-control-regex
   return String(value ?? '').replace(/[\r\n\t\x00-\x08\x0B-\x1F\x7F]/g, ' ').trim().slice(0, 250);
 }
@@ -98,47 +90,87 @@ async function send({ to, subject, html }) {
   }
 }
 
+// ─── Paleta institucional (misma que el frontend — ver src/index.css) ─────────
+const GREEN   = '#1A5632';
+const GOLD    = '#F7AC42';
+const RED     = '#E51A4B';
+const INK     = '#1A1A2E';
+const BODY    = '#4A5568';
+const MUTED   = '#718096';
+const BORDER  = '#E2E8F0';
+const SURFACE = '#FEFEFE';
+const PAGE_BG = '#EDF2F0';
+
+const FONT_SERIF = "'Source Serif 4', Georgia, serif";
+const FONT_SANS  = "'Source Sans 3', Arial, sans-serif";
+
 // ─── Plantilla base ───────────────────────────────────────────────────────────
-function baseTemplate(title, body) {
+function baseTemplate({ eyebrow, title, body, accent = GOLD, cta }) {
+  const ctaBlock = cta ? `
+      <tr>
+        <td style="padding:32px 40px 12px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="background:${cta.bg ?? GOLD};text-align:center;">
+              <a href="${cta.url}" style="display:block;padding:13px 28px;font-size:14px;font-weight:700;color:${cta.textColor ?? INK};text-decoration:none;">${escHtml(cta.label)}</a>
+            </td>
+          </tr></table>
+        </td>
+      </tr>` : '';
+
   return `
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>${title}</title>
+  <title>${escHtml(title)}</title>
 </head>
-<body style="margin:0;padding:0;background:#f4f7f4;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7f4;padding:40px 20px;">
+<body style="margin:0;padding:0;background:${PAGE_BG};font-family:${FONT_SANS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAGE_BG};padding:48px 24px;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <!-- Header -->
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:${SURFACE};border:1px solid ${BORDER};">
+
         <tr>
-          <td style="background:#1B4332;padding:28px 32px;">
-            <h1 style="margin:0;color:#D8F3DC;font-size:20px;font-weight:700;letter-spacing:0.5px;">
-              🌿 VIGI-IIAP
-            </h1>
-            <p style="margin:4px 0 0;color:#A8D5B7;font-size:13px;">
-              Visor Gestor de Información del Instituto de Investigaciones Ambientales del Pacífico
-            </p>
+          <td style="background:${GREEN};padding:36px 40px 28px;">
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+              <td style="padding-right:12px;vertical-align:middle;">
+                <svg width="28" height="28" viewBox="0 0 30 30" fill="none">
+                  <path d="M15 3C15 3 6 10 6 18C6 23 10 27 15 27C20 27 24 23 24 18C24 10 15 3 15 3Z" stroke="${GOLD}" stroke-width="1.6"/>
+                  <path d="M15 8V24" stroke="${GOLD}" stroke-width="1.2" stroke-linecap="round"/>
+                  <path d="M15 12L11 15" stroke="${GOLD}" stroke-width="1.2" stroke-linecap="round"/>
+                  <path d="M15 17L19 20" stroke="${GOLD}" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </td>
+              <td style="vertical-align:middle;">
+                <span style="font-family:${FONT_SERIF};font-size:19px;color:${SURFACE};letter-spacing:0.02em;">VIGÍA<span style="color:${GOLD};"> · </span>IIAP</span>
+              </td>
+            </tr></table>
+            <p style="margin:6px 0 0 40px;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#8FBBA0;">Instituto de Investigaciones Ambientales del Pacífico</p>
           </td>
         </tr>
-        <!-- Body -->
+
+        <tr><td style="background:${accent};height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>
+
         <tr>
-          <td style="padding:32px;">
-            <h2 style="margin:0 0 16px;color:#1B4332;font-size:18px;">${title}</h2>
+          <td style="padding:44px 40px 8px;">
+            ${eyebrow ? `<p style="margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${accent};">${escHtml(eyebrow)}</p>` : ''}
+            <h1 style="margin:0 0 18px;font-family:${FONT_SERIF};font-weight:600;font-size:24px;line-height:1.3;color:${INK};">${escHtml(title)}</h1>
             ${body}
           </td>
         </tr>
-        <!-- Footer -->
+        ${ctaBlock}
+
         <tr>
-          <td style="background:#f4f7f4;padding:20px 32px;border-top:1px solid #e8f0e8;">
-            <p style="margin:0;color:#6B7280;font-size:12px;text-align:center;">
-              Instituto de Investigaciones Ambientales del Pacífico (IIAP) •
-              <a href="${BASE_URL}" style="color:#1B4332;text-decoration:none;">Ir al portal</a>
-            </p>
+          <td style="padding:36px 40px 40px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid ${BORDER};">
+              <tr><td style="padding-top:24px;font-size:12px;line-height:1.7;color:${MUTED};">
+                VIGÍA-IIAP · Instituto de Investigaciones Ambientales del Pacífico · Quibdó, Chocó ·
+                <a href="${BASE_URL}" style="color:${GREEN};font-weight:600;text-decoration:none;">Ir al portal</a>
+              </td></tr>
+            </table>
           </td>
         </tr>
+
       </table>
     </td></tr>
   </table>
@@ -146,43 +178,41 @@ function baseTemplate(title, body) {
 </html>`;
 }
 
+// Filas etiqueta/valor con línea inferior — reemplaza las cajas de color plano.
+function detailRow(label, value) {
+  return `
+    <tr>
+      <td style="padding:16px 0;border-bottom:1px solid ${BORDER};width:120px;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:${MUTED};vertical-align:top;">${escHtml(label)}</td>
+      <td style="padding:16px 0;border-bottom:1px solid ${BORDER};font-size:15px;color:${INK};">${value}</td>
+    </tr>`;
+}
+
+function detailPanel(rows) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid ${BORDER};margin:8px 0 24px;">${rows.join('')}</table>`;
+}
+
+function bodyText(html) {
+  return `<p style="margin:0 0 20px;font-size:15px;line-height:1.65;color:${BODY};">${html}</p>`;
+}
+
 // ─── Emails específicos ───────────────────────────────────────────────────────
 
 /** Notifica al admin cuando un nuevo usuario se registra */
 export async function notifyAdminNewRegistro({ adminEmail, nombre, email, institucion, motivo }) {
-  const eNombre     = escHtml(nombre);
-  const eEmail      = escHtml(email);
-  const eInstit     = escHtml(institucion) || 'No especificada';
-  const eMotivo     = escHtml(motivo) || 'No especificado';
   await send({
     to: adminEmail,
     subject: `[VIGI-IIAP] Nuevo registro: ${sanitizeSMTP(nombre)}`,
-    html: baseTemplate('Nuevo registro de usuario', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Un nuevo usuario se ha registrado en VIGI-IIAP y requiere revisión:
-      </p>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
-        <tr style="background:#f4f7f4;">
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;border-radius:4px;">Nombre</td>
-          <td style="padding:8px 12px;color:#374151;">${eNombre}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Email</td>
-          <td style="padding:8px 12px;color:#374151;">${eEmail}</td>
-        </tr>
-        <tr style="background:#f4f7f4;">
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Institución</td>
-          <td style="padding:8px 12px;color:#374151;">${eInstit}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Motivo</td>
-          <td style="padding:8px 12px;color:#374151;">${eMotivo}</td>
-        </tr>
-      </table>
-      <a href="${BASE_URL}/admin/usuarios" style="display:inline-block;background:#1B4332;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;margin-top:8px;">
-        Gestionar usuario en el panel
-      </a>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Nuevo registro',
+      title: 'Un usuario nuevo se registró en VIGÍA',
+      body: bodyText('Requiere revisión antes de quedar activo:') + detailPanel([
+        detailRow('Nombre', escHtml(nombre)),
+        detailRow('Correo', escHtml(email)),
+        detailRow('Institución', escHtml(institucion) || 'No especificada'),
+        detailRow('Motivo', escHtml(motivo) || 'No especificado'),
+      ]),
+      cta: { url: `${BASE_URL}/admin/usuarios`, label: 'Gestionar en el panel' },
+    }),
   });
 }
 
@@ -190,370 +220,214 @@ export async function notifyAdminNewRegistro({ adminEmail, nombre, email, instit
 export async function notifyUsuarioActivacion({ email, nombre, activo, rol }) {
   const estado = activo ? 'activada' : 'desactivada';
   const rolLabel = { admin_sig: 'Administrador SIG', investigador: 'Investigador', publico: 'Público' }[rol] ?? rol;
-  const eNombre   = escHtml(nombre);
-  const eRolLabel = escHtml(rolLabel);
   await send({
     to: email,
     subject: `[VIGI-IIAP] Cuenta ${sanitizeSMTP(estado)}`,
-    html: baseTemplate(`Tu cuenta ha sido ${estado}`, `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        ${activo
-          ? `Tu cuenta en VIGI-IIAP ha sido <strong>activada</strong>. Ahora puedes ingresar al portal con el rol de <strong>${eRolLabel}</strong>.`
-          : `Tu cuenta en VIGI-IIAP ha sido <strong>desactivada</strong>. Si tienes dudas, contacta al administrador.`
-        }
-      </p>
-      ${activo ? `
-      <a href="${BASE_URL}/login" style="display:inline-block;background:#1B4332;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;margin-top:8px;">
-        Ingresar al portal
-      </a>` : ''}
-    `),
+    html: baseTemplate({
+      eyebrow: 'Tu cuenta',
+      title: `Tu cuenta ha sido ${estado}`,
+      accent: activo ? GOLD : RED,
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, ` + (activo
+        ? `tu cuenta en VIGÍA ha sido <strong>activada</strong> con el rol de <strong>${escHtml(rolLabel)}</strong>.`
+        : `tu cuenta en VIGÍA ha sido <strong>desactivada</strong>. Si tienes dudas, contacta al administrador.`)),
+      cta: activo ? { url: `${BASE_URL}/login`, label: 'Ingresar al portal' } : undefined,
+    }),
   });
 }
 
 /** Notifica al usuario que su cuenta fue creada por un administrador */
 export async function notifyUsuarioCreado({ email, nombre, passwordTemporal, rol }) {
-  const rolLabel  = { admin_sig: 'Administrador SIG', investigador: 'Investigador', publico: 'Público' }[rol] ?? rol;
-  const eNombre   = escHtml(nombre);
-  const eEmail    = escHtml(email);
-  const eRolLabel = escHtml(rolLabel);
-  // passwordTemporal es generado por el sistema (crypto.randomBytes) — se escapa igualmente por consistencia
-  const ePassword = escHtml(passwordTemporal);
+  const rolLabel = { admin_sig: 'Administrador SIG', investigador: 'Investigador', publico: 'Público' }[rol] ?? rol;
   await send({
     to: email,
     subject: '[VIGI-IIAP] Bienvenido — Tu cuenta ha sido creada',
-    html: baseTemplate('Bienvenido a VIGI-IIAP', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Un administrador ha creado tu cuenta en VIGI-IIAP con el rol de <strong>${eRolLabel}</strong>.
-        Tus credenciales de acceso son:
-      </p>
-      <div style="background:#f4f7f4;border-left:4px solid #1B4332;padding:14px 18px;border-radius:4px;margin:16px 0;">
-        <p style="margin:0;font-size:13px;"><strong>Email:</strong> ${eEmail}</p>
-        <p style="margin:6px 0 0;font-size:13px;"><strong>Contraseña temporal:</strong> <code style="background:#e8f0e8;padding:2px 6px;border-radius:4px;">${ePassword}</code></p>
-      </div>
-      <p style="color:#6B7280;font-size:12px;">
-        Por seguridad, te recomendamos cambiar tu contraseña después del primer ingreso.
-      </p>
-      <a href="${BASE_URL}/login" style="display:inline-block;background:#1B4332;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;margin-top:8px;">
-        Ingresar al portal
-      </a>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Bienvenida',
+      title: 'Tu cuenta en VIGÍA está lista',
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, un administrador creó tu cuenta con el rol de <strong>${escHtml(rolLabel)}</strong>. Tus credenciales:`)
+        + detailPanel([
+          detailRow('Correo', escHtml(email)),
+          detailRow('Contraseña temporal', `<code style="background:${PAGE_BG};padding:2px 8px;">${escHtml(passwordTemporal)}</code>`),
+        ])
+        + bodyText('Por seguridad, cambia tu contraseña después del primer ingreso.'),
+      cta: { url: `${BASE_URL}/login`, label: 'Ingresar al portal' },
+    }),
   });
 }
 
 /** Notifica al usuario el cambio de estado de su solicitud */
 export async function notifySolicitudEstado({ email, nombre, tipo, estado, nota }) {
-  const estadoLabel = {
-    pendiente:   'Pendiente',
-    en_revision: 'En revisión',
-    aprobada:    '✅ Aprobada',
-    rechazada:   '❌ Rechazada',
-  }[estado] ?? estado;
-
-  const colorEstado = estado === 'aprobada' ? '#166534' : estado === 'rechazada' ? '#991B1B' : '#1B4332';
-  const eNombre     = escHtml(nombre);
-  const eTipoLabel  = escHtml(TIPO_LABEL[tipo] ?? tipo);
-  const eEstadoLabel= escHtml(estadoLabel);
-  const eNota       = nota ? escHtml(nota) : '';
-
+  const estadoLabel = { pendiente: 'Pendiente', en_revision: 'En revisión', aprobada: 'Aprobada', rechazada: 'Rechazada' }[estado] ?? estado;
+  const accent = estado === 'aprobada' ? GREEN : estado === 'rechazada' ? RED : GOLD;
   await send({
     to: email,
     subject: `[VIGI-IIAP] Tu solicitud fue ${estado === 'aprobada' ? 'aprobada' : estado === 'rechazada' ? 'rechazada' : 'actualizada'}`,
-    html: baseTemplate('Actualización de solicitud', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        El estado de tu solicitud de tipo <strong>"${eTipoLabel}"</strong> ha sido actualizado:
-      </p>
-      <div style="background:#f4f7f4;border-left:4px solid ${colorEstado};padding:14px 18px;border-radius:4px;margin:16px 0;">
-        <p style="margin:0;font-size:15px;font-weight:700;color:${colorEstado};">${eEstadoLabel}</p>
-        ${eNota ? `<p style="margin:8px 0 0;font-size:13px;color:#374151;"><strong>Nota del administrador:</strong> ${eNota}</p>` : ''}
-      </div>
-      <a href="${BASE_URL}/solicitudes" style="display:inline-block;background:#1B4332;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;margin-top:8px;">
-        Ver mis solicitudes
-      </a>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Actualización de solicitud',
+      title: `Tu solicitud de "${TIPO_LABEL[tipo] ?? tipo}" — ${estadoLabel}`,
+      accent,
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, el estado de tu solicitud cambió.`)
+        + detailPanel([
+          detailRow('Estado', `<strong style="color:${accent};">${escHtml(estadoLabel)}</strong>`),
+          ...(nota ? [detailRow('Nota del administrador', escHtml(nota))] : []),
+        ]),
+      cta: { url: `${BASE_URL}/solicitudes`, label: 'Ver mis solicitudes' },
+    }),
   });
 }
 
 /** Envía el email de verificación de correo al registrarse */
 export async function notifyVerificacionEmail({ email, nombre, verificationToken }) {
   const verifyUrl = `${BASE_URL}/verificar-email/${encodeURIComponent(verificationToken)}`;
-  const eNombre   = escHtml(nombre);
   await send({
     to: email,
     subject: '[VIGI-IIAP] Verifica tu correo electrónico',
-    html: baseTemplate('Verifica tu correo', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Gracias por registrarte en VIGI-IIAP. Para completar tu solicitud de acceso, debes verificar
-        tu dirección de correo electrónico haciendo clic en el botón a continuación:
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${verifyUrl}"
-           style="display:inline-block;background:#1B4332;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">
-          Verificar mi correo
-        </a>
-      </div>
-      <div style="background:#f4f7f4;border-left:4px solid #1B4332;padding:12px 16px;border-radius:4px;margin:16px 0;">
-        <p style="margin:0;font-size:12px;color:#6B7280;">
-          Si el botón no funciona, copia y pega este enlace en tu navegador:
-        </p>
-        <p style="margin:6px 0 0;font-size:12px;color:#1B4332;word-break:break-all;">${verifyUrl}</p>
-      </div>
-      <p style="color:#6B7280;font-size:12px;margin-top:16px;">
-        Este enlace expira en <strong>24 horas</strong>. Si no te registraste en VIGI-IIAP, ignora este correo.
-      </p>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Un paso más',
+      title: 'Verifica tu correo electrónico',
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, gracias por registrarte en VIGÍA. Confirma tu correo para completar tu solicitud de acceso.`)
+        + `<p style="margin:20px 0;font-size:12px;color:${MUTED};">Si el botón no funciona, copia este enlace: <br><span style="color:${GREEN};word-break:break-all;">${verifyUrl}</span></p>`
+        + `<p style="margin:0;font-size:12px;color:${MUTED};">Este enlace expira en <strong>24 horas</strong>. Si no fuiste tú, ignora este correo.</p>`,
+      cta: { url: verifyUrl, label: 'Verificar mi correo', bg: GREEN, textColor: SURFACE },
+    }),
   });
 }
 
 /** Envía email con enlace para recuperar contraseña */
 export async function notifyRecuperarPassword({ email, nombre, resetToken }) {
   const resetUrl = `${BASE_URL}/reset-password/${encodeURIComponent(resetToken)}`;
-  const eNombre  = escHtml(nombre);
   await send({
     to: email,
     subject: '[VIGI-IIAP] Recuperación de contraseña',
-    html: baseTemplate('Recuperar contraseña', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Recibimos una solicitud para restablecer la contraseña de tu cuenta en VIGI-IIAP.
-        Haz clic en el botón a continuación para crear una nueva contraseña:
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${resetUrl}"
-           style="display:inline-block;background:#1B4332;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">
-          Restablecer contraseña
-        </a>
-      </div>
-      <div style="background:#f4f7f4;border-left:4px solid #1B4332;padding:12px 16px;border-radius:4px;margin:16px 0;">
-        <p style="margin:0;font-size:12px;color:#6B7280;">
-          Si el botón no funciona, copia y pega este enlace en tu navegador:
-        </p>
-        <p style="margin:6px 0 0;font-size:12px;color:#1B4332;word-break:break-all;">${resetUrl}</p>
-      </div>
-      <p style="color:#6B7280;font-size:12px;margin-top:16px;">
-        Este enlace expira en <strong>30 minutos</strong>.
-        Si no solicitaste este cambio, ignora este correo — tu contraseña no será modificada.
-      </p>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Seguridad de tu cuenta',
+      title: 'Recuperar tu contraseña',
+      accent: RED,
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, recibimos una solicitud para restablecer tu contraseña.`)
+        + `<p style="margin:20px 0;font-size:12px;color:${MUTED};">Si el botón no funciona, copia este enlace: <br><span style="color:${GREEN};word-break:break-all;">${resetUrl}</span></p>`
+        + `<p style="margin:0;font-size:12px;color:${MUTED};">Expira en <strong>30 minutos</strong>. Si no fuiste tú, ignora este correo — tu contraseña sigue igual.</p>`,
+      cta: { url: resetUrl, label: 'Restablecer contraseña', bg: GREEN, textColor: SURFACE },
+    }),
   });
 }
 
 /** Notifica al usuario que su solicitud de registro fue recibida */
 export async function notifyRegistroRecibido({ email, nombre }) {
-  const eNombre = escHtml(nombre);
   await send({
     to: email,
     subject: '[VIGI-IIAP] Solicitud de acceso recibida',
-    html: baseTemplate('Solicitud recibida', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hemos recibido tu solicitud de acceso a VIGI-IIAP. Un administrador revisará tu información
-        y recibirás un correo cuando tu cuenta sea activada.
-      </p>
-      <p style="color:#6B7280;font-size:13px;">
-        Si tienes preguntas, puedes contactarnos a través del portal.
-      </p>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Registro',
+      title: 'Recibimos tu solicitud de acceso',
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, un administrador revisará tu información y te avisaremos por correo cuando tu cuenta quede activa.`),
+    }),
   });
 }
 
 /** Notifica a los admins que un usuario verificó su correo y está listo para ser activado */
 export async function notifyAdminUsuarioVerificado({ adminEmail, nombre, email, activationUrl }) {
-  const eNombre = escHtml(nombre);
-  const eEmail  = escHtml(email);
   await send({
     to: adminEmail,
-    subject: `[VIGI-IIAP] ✅ Usuario listo para activar: ${sanitizeSMTP(eNombre)}`,
-    html: baseTemplate('Usuario verificado — pendiente de activación', `
-      <div style="background:#ECFDF5;border-left:4px solid #059669;padding:14px 18px;border-radius:4px;margin-bottom:20px;">
-        <p style="margin:0;font-size:14px;color:#065F46;font-weight:600;">
-          ✅ Un usuario ha verificado su correo electrónico
-        </p>
-        <p style="margin:6px 0 0;font-size:13px;color:#047857;">
-          Su cuenta está pendiente de aprobación y requiere activación manual.
-        </p>
-      </div>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        El siguiente usuario completó la verificación de su correo y está esperando que un administrador active su acceso a VIGI-IIAP:
-      </p>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
-        <tr style="background:#f4f7f4;">
-          <td style="padding:10px 14px;font-weight:600;color:#1B4332;width:120px;">Nombre</td>
-          <td style="padding:10px 14px;color:#374151;">${eNombre}</td>
-        </tr>
-        <tr>
-          <td style="padding:10px 14px;font-weight:600;color:#1B4332;">Correo</td>
-          <td style="padding:10px 14px;color:#374151;">${eEmail}</td>
-        </tr>
-        <tr style="background:#f4f7f4;">
-          <td style="padding:10px 14px;font-weight:600;color:#1B4332;">Estado</td>
-          <td style="padding:10px 14px;">
-            <span style="background:#FEF3C7;color:#92400E;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">
-              Pendiente de activación
-            </span>
-          </td>
-        </tr>
-      </table>
-      <p style="color:#374151;font-size:13px;line-height:1.6;">
-        Haz clic en el botón a continuación para ir al panel de gestión de usuarios y activar la cuenta:
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${activationUrl}"
-           style="display:inline-block;background:#1B4332;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:700;">
-          Activar usuario en el panel
-        </a>
-      </div>
-      <p style="color:#9CA3AF;font-size:11px;text-align:center;margin-top:16px;">
-        Si no puedes hacer clic en el botón, visita: <br>
-        <a href="${activationUrl}" style="color:#1B4332;">${activationUrl}</a>
-      </p>
-    `),
+    subject: `[VIGI-IIAP] Usuario listo para activar: ${sanitizeSMTP(nombre)}`,
+    html: baseTemplate({
+      eyebrow: 'Pendiente de activación',
+      title: 'Un usuario verificó su correo',
+      body: bodyText('Está esperando que un administrador active su acceso a VIGÍA:')
+        + detailPanel([
+          detailRow('Nombre', escHtml(nombre)),
+          detailRow('Correo', escHtml(email)),
+        ]),
+      cta: { url: activationUrl, label: 'Activar usuario en el panel' },
+    }),
   });
 }
 
 /** Notifica al usuario que su solicitud fue tramitada con respuesta formal del admin */
 export async function notifySolicitudRespuesta({ email, nombre, tipo, respuesta }) {
-  const eNombre    = escHtml(nombre);
-  const eTipoLabel = escHtml(TIPO_LABEL[tipo] ?? tipo);
-  const eRespuesta = escHtml(respuesta);
   await send({
     to: email,
-    subject: `[VIGI-IIAP] Tu solicitud fue tramitada — ${sanitizeSMTP(eTipoLabel)}`,
-    html: baseTemplate('Tu solicitud ha sido tramitada', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        El equipo del IIAP ha procesado tu solicitud de tipo
-        <strong>"${eTipoLabel}"</strong> y te envía la siguiente respuesta:
-      </p>
-      <div style="background:#ECFDF5;border-left:4px solid #059669;padding:16px 20px;border-radius:6px;margin:20px 0;">
-        <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#065F46;text-transform:uppercase;letter-spacing:0.08em;">
-          Respuesta del administrador
-        </p>
-        <p style="margin:0;font-size:14px;color:#1F2937;line-height:1.7;">${eRespuesta}</p>
-      </div>
-      <div style="background:#FFF7ED;border-left:4px solid #D4A373;padding:12px 16px;border-radius:6px;margin:16px 0;">
-        <p style="margin:0;font-size:13px;color:#92400E;line-height:1.6;">
-          <strong>Nota:</strong> Si tu solicitud incluye archivos, mapas u otros documentos,
-          serán enviados por separado a este correo electrónico.
-          También puedes revisar el estado de tu solicitud directamente en el portal VIGI-IIAP.
-        </p>
-      </div>
-      <div style="text-align:center;margin:28px 0 16px;">
-        <a href="${BASE_URL}/solicitudes"
-           style="display:inline-block;background:#1B4332;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
-          Ver mis solicitudes en el portal
-        </a>
-      </div>
-    `),
+    subject: `[VIGI-IIAP] Tu solicitud fue tramitada — ${sanitizeSMTP(TIPO_LABEL[tipo] ?? tipo)}`,
+    html: baseTemplate({
+      eyebrow: 'Solicitud tramitada',
+      title: `Respuesta a tu solicitud de "${TIPO_LABEL[tipo] ?? tipo}"`,
+      accent: GREEN,
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, el equipo del IIAP procesó tu solicitud:`)
+        + `<div style="border-top:2px solid ${GREEN};padding-top:14px;margin:0 0 24px;">
+             <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${GREEN};text-transform:uppercase;letter-spacing:0.08em;">Respuesta del administrador</p>
+             <p style="margin:0;font-size:15px;color:${INK};line-height:1.7;">${escHtml(respuesta)}</p>
+           </div>`
+        + bodyText('Si tu solicitud incluye archivos o mapas, llegarán por separado a este correo.'),
+      cta: { url: `${BASE_URL}/solicitudes`, label: 'Ver mis solicitudes' },
+    }),
   });
 }
 
 /** Confirma al solicitante que su solicitud fue recibida y está pendiente de revisión */
 export async function notifySolicitudRecibida({ email, nombre, tipo }) {
-  const eNombre    = escHtml(nombre);
-  const eTipoLabel = escHtml(TIPO_LABEL[tipo] ?? tipo);
   await send({
     to: email,
     subject: `[VIGI-IIAP] Solicitud recibida — ${TIPO_LABEL[tipo] ?? tipo}`,
-    html: baseTemplate('Solicitud recibida', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hola <strong>${eNombre}</strong>,
-      </p>
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Hemos recibido tu solicitud de tipo <strong>"${eTipoLabel}"</strong>.
-        El equipo del IIAP la revisará y te notificará por este correo sobre el avance.
-      </p>
-      <div style="background:#F0FDF4;border-left:4px solid #16A34A;padding:12px 16px;border-radius:6px;margin:20px 0;">
-        <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">
-          <strong>Estado actual:</strong> Pendiente de revisión.
-          Recibirás un correo cada vez que el estado de tu solicitud cambie.
-        </p>
-      </div>
-      <p style="color:#6B7280;font-size:13px;line-height:1.6;">
-        Puedes consultar el estado de todas tus solicitudes en el portal en cualquier momento.
-      </p>
-      <div style="text-align:center;margin:24px 0 16px;">
-        <a href="${BASE_URL}/solicitudes"
-           style="display:inline-block;background:#1B4332;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">
-          Ver mis solicitudes
-        </a>
-      </div>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Solicitud recibida',
+      title: `Recibimos tu solicitud de "${TIPO_LABEL[tipo] ?? tipo}"`,
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, el equipo del IIAP la revisará y te notificaremos por este correo sobre el avance.`),
+      cta: { url: `${BASE_URL}/solicitudes`, label: 'Ver mis solicitudes' },
+    }),
   });
 }
 
 /** Notifica nueva solicitud creada al admin */
 export async function notifyAdminNuevaSolicitud({ adminEmail, solicitante, email, tipo, descripcion }) {
-  const eSolicitante  = escHtml(solicitante);
-  const eEmail        = escHtml(email);
-  const eTipoLabel    = escHtml(TIPO_LABEL[tipo] ?? tipo);
-  const eDescripcion  = escHtml(descripcion);
   await send({
     to: adminEmail,
     subject: `[VIGI-IIAP] Nueva solicitud: ${TIPO_LABEL[tipo] ?? tipo}`,
-    html: baseTemplate('Nueva solicitud recibida', `
-      <p style="color:#374151;font-size:14px;line-height:1.6;">
-        Se ha recibido una nueva solicitud en VIGI-IIAP:
-      </p>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
-        <tr style="background:#f4f7f4;">
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Solicitante</td>
-          <td style="padding:8px 12px;color:#374151;">${eSolicitante}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Email</td>
-          <td style="padding:8px 12px;color:#374151;">${eEmail}</td>
-        </tr>
-        <tr style="background:#f4f7f4;">
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Tipo</td>
-          <td style="padding:8px 12px;color:#374151;">${eTipoLabel}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Descripción</td>
-          <td style="padding:8px 12px;color:#374151;">${eDescripcion}</td>
-        </tr>
-      </table>
-      <a href="${BASE_URL}/admin/solicitudes" style="display:inline-block;background:#1B4332;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;margin-top:8px;">
-        Gestionar en el panel
-      </a>
-    `),
+    html: baseTemplate({
+      eyebrow: 'Nueva solicitud recibida',
+      title: `Un investigador solicitó "${TIPO_LABEL[tipo] ?? tipo}"`,
+      body: bodyText('Está pendiente de tu revisión:') + detailPanel([
+        detailRow('Solicitante', escHtml(solicitante)),
+        detailRow('Correo', escHtml(email)),
+        detailRow('Descripción', escHtml(descripcion)),
+      ]),
+      cta: { url: `${BASE_URL}/admin/solicitudes`, label: 'Revisar en el panel' },
+    }),
   });
 }
 
 /** Notifica al usuario que su rol ha sido cambiado por un administrador. */
 export async function notifyRolCambiado({ email, nombre, rolAnterior, rolNuevo }) {
-  const eNombre = escHtml(nombre);
-  const eRolAnterior = escHtml(rolAnterior);
-  const eRolNuevo = escHtml(rolNuevo);
   return send({
     to: email,
     subject: `[VIGI-IIAP] Tu rol en el sistema ha sido actualizado`,
-    html: `
-      <p>Hola <strong>${eNombre}</strong>,</p>
-      <p>Tu rol en VIGIIAP ha sido actualizado:</p>
-      <table>
-        <tr><td><strong>Rol anterior:</strong></td><td>${eRolAnterior}</td></tr>
-        <tr><td><strong>Nuevo rol:</strong></td><td>${eRolNuevo}</td></tr>
-      </table>
-      <p>Si tienes dudas, contacta al administrador del sistema.</p>
-    `,
+    html: baseTemplate({
+      eyebrow: 'Cambio de rol',
+      title: 'Tu rol en VIGÍA fue actualizado',
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, tu rol en el sistema cambió:`) + detailPanel([
+        detailRow('Rol anterior', escHtml(rolAnterior)),
+        detailRow('Rol nuevo', `<strong>${escHtml(rolNuevo)}</strong>`),
+      ]) + bodyText('Si tienes dudas, contacta al administrador del sistema.'),
+    }),
+  });
+}
+
+/** Alerta de seguridad al propio usuario cuando su cuenta inicia sesión. */
+export async function notifyNuevoInicioSesion({ email, nombre, ip, userAgent, fecha }) {
+  await send({
+    to: email,
+    subject: '[VIGI-IIAP] Nuevo inicio de sesión en tu cuenta',
+    html: baseTemplate({
+      eyebrow: 'Alerta de seguridad',
+      title: 'Nuevo inicio de sesión en tu cuenta',
+      accent: RED,
+      body: bodyText(`Hola <strong>${escHtml(nombre)}</strong>, detectamos un inicio de sesión en tu cuenta de VIGÍA. Si fuiste tú, no necesitas hacer nada.`)
+        + detailPanel([
+          detailRow('Fecha', escHtml(fecha)),
+          detailRow('IP', `<span style="font-family:monospace;">${escHtml(ip || 'desconocida')}</span>`),
+          detailRow('Navegador', escHtml(userAgent || 'desconocido')),
+        ])
+        + bodyText('Si no reconoces esta actividad, cambia tu contraseña de inmediato y contacta a un administrador.'),
+      cta: { url: `${BASE_URL}/perfil`, label: 'Cambiar mi contraseña', bg: GREEN, textColor: SURFACE },
+    }),
   });
 }
 

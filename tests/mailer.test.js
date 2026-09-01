@@ -447,7 +447,7 @@ describe('notifySolicitudEstado() — casos edge de labels', () => {
     const { subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
     expect(subject).toContain('actualizada');
     expect(html).toContain('archivada');
-    expect(html).toContain('#1B4332');
+    expect(html).toContain('#F7AC42');
   });
 
   it('usa el tipo crudo cuando no está en TIPO_LABEL', async () => {
