@@ -12,6 +12,13 @@ export async function notificaciones(req, res, next) {
   } catch (err) { next(err); }
 }
 
+/** GET /api/admin/reportes?periodo=dia|semana|mes|anio|custom&desde=&hasta= */
+export async function reportes(req, res, next) {
+  try {
+    res.json(await adminService.getReporte(req.query));
+  } catch (err) { next(err); }
+}
+
 /** GET /api/admin/configuracion */
 export async function getConfiguracion(req, res, next) {
   try {

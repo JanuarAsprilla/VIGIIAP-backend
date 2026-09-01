@@ -32,6 +32,9 @@ vi.mock('../src/middlewares/fileGuard.js', () => ({
 vi.mock('../src/modules/admin/admin.service.js', () => ({
   getAdminEmails: vi.fn().mockResolvedValue([]),
 }));
+vi.mock('../src/utils/configFlags.js', () => ({
+  notificacionHabilitada: vi.fn().mockResolvedValue(true),
+}));
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
@@ -40,6 +43,7 @@ import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
 import { query } from '../src/config/database.js';
 import { notifySolicitudEstado, notifySolicitudRecibida, notifyAdminNuevaSolicitud, notifySolicitudRespuesta } from '../src/utils/mailer.js';
 import { getAdminEmails } from '../src/modules/admin/admin.service.js';
+import { notificacionHabilitada } from '../src/utils/configFlags.js';
 import logger from '../src/utils/logger.js';
 import {
   show, getArchivos, uploadArchivo, deleteArchivo, downloadArchivo,
@@ -366,5 +370,33 @@ describe('store()', () => {
         '[solicitudes] getAdminEmails error:', expect.any(String),
       );
     });
+  });
+
+  it('NO notifica a los admins cuando solicitudNotifs está deshabilitado', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    notificacionHabilitada.mockResolvedValueOnce(false);
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+    await vi.waitFor(() => {
+      expect(notificacionHabilitada).toHaveBeenCalledWith('solicitudNotifs');
+    });
+    expect(notifyAdminNuevaSolicitud).not.toHaveBeenCalled();
+    expect(getAdminEmails).not.toHaveBeenCalled();
+  });
+
+  it('la confirmación al solicitante se envía siempre, sin importar solicitudNotifs', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+    notificacionHabilitada.mockResolvedValueOnce(false);
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+    await vi.waitFor(() => expect(notifySolicitudRecibida).toHaveBeenCalled());
   });
 });

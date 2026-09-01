@@ -2,6 +2,7 @@ import { createSolicitudSchema, updateEstadoSchema, responderSchema } from './so
 import * as solService from './solicitudes.service.js';
 import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespuesta, notifySolicitudRecibida } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
+import { notificacionHabilitada } from '../../utils/configFlags.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { query } from '../../config/database.js';
 import logger from '../../utils/logger.js';
@@ -41,9 +42,11 @@ export async function store(req, res, next) {
         tipo:   data.tipo,
       }).catch(err => logger.error('[solicitudes] Email recibida error:', err.message));
 
-      // Aviso a todos los admins
-      getAdminEmails()
-        .then((adminEmails) =>
+      // Aviso a todos los admins — condicionado a solicitudNotifs/emailNotifs
+      notificacionHabilitada('solicitudNotifs')
+        .then(async (habilitada) => {
+          if (!habilitada) return;
+          const adminEmails = await getAdminEmails();
           adminEmails.forEach((adminEmail) =>
             notifyAdminNuevaSolicitud({
               adminEmail,
@@ -52,8 +55,8 @@ export async function store(req, res, next) {
               tipo:         data.tipo,
               descripcion:  data.descripcion,
             }).catch(err => logger.error('[solicitudes] Email admin error:', err.message))
-          )
-        )
+          );
+        })
         .catch(err => logger.error('[solicitudes] getAdminEmails error:', err.message));
     }
 
