@@ -23,9 +23,9 @@ export function getRedisClient() {
  */
 export function cacheMiddleware(ttlSeconds) {
   return async (req, res, next) => {
-    // No cachear requests autenticados.
-    // admin=true en query string era un bypass de cache controlado por el cliente
-    // → cualquier usuario podía forzar hits directos a BD (DoS). Eliminado.
+    // No cachear requests autenticados — un bypass de cache controlado por
+    // el cliente (ej. un parámetro de query) permitiría forzar hits directos
+    // a BD en cada request (DoS), así que el bypass nunca queda del lado del cliente.
     if (req.cookies?.vigiiap_token || req.headers.authorization) {
       return next();
     }

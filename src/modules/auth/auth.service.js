@@ -54,8 +54,8 @@ const REUSE_GRACE_MS = 15_000;
 export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-  // Fix 1 (TOCTOU): el UPDATE atómico con WHERE revocado=false y expira_en>NOW()
-  // garantiza que solo un proceso puede usar el token — si dos requests llegan al
+  // El UPDATE atómico con WHERE revocado=false y expira_en>NOW() garantiza
+  // que solo un proceso puede usar el token — si dos requests llegan al
   // mismo tiempo, solo uno obtiene filas en el RETURNING.
   const { rows } = await query(
     `UPDATE refresh_tokens rt
@@ -72,8 +72,8 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   );
 
   if (!rows[0]) {
-    // Fix 2 (family revocation): token inválido/ya-usado puede indicar robo.
-    // Buscamos si el token existía pero estaba revocado — si es así, invalidamos
+    // Token inválido/ya-usado puede indicar robo. Buscamos si el token
+    // existía pero estaba revocado — si es así, invalidamos
     // TODA la familia de tokens del usuario (evicción total del posible atacante),
     // salvo que la revocación haya ocurrido hace muy poco (ventana de gracia):
     // ahí es casi seguro una carrera del propio cliente, no un atacante.

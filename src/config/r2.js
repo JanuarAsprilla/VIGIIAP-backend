@@ -83,7 +83,6 @@ export function extractKey(url) {
     return url.slice(PUBLIC_URL.length).replace(/^\//, '');
   }
   // No aceptar URLs de otros dominios como keys R2 — podría causar borrado arbitrario de objetos.
-  // Si la URL no pertenece a ninguno de nuestros buckets configurados, retornar null.
   return null;
 }
 
