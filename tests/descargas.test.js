@@ -171,6 +171,25 @@ describe('descargarMapa()', () => {
     await descargarMapa(req, res, mockNext);
     expect(res.redirect).toHaveBeenCalledWith(302, mapaUsuarios.archivo_pdf_url);
   });
+
+  it('permite acceso a mapa visibilidad usuarios con rol tecnico (no elevado, cae en la regla visibilidad=usuarios)', async () => {
+    const mapaUsuarios = { ...MAPA_PUBLICO, visibilidad: 'usuarios' };
+    query.mockResolvedValueOnce({ rows: [mapaUsuarios] });
+    isPublicUrl.mockReturnValueOnce(true);
+    const res = mockRes();
+    const req = mockReq({ params: { id: 'uuid-mapa-1' }, user: { rol: 'tecnico' } });
+    await descargarMapa(req, res, mockNext);
+    expect(res.redirect).toHaveBeenCalledWith(302, mapaUsuarios.archivo_pdf_url);
+  });
+
+  it('retorna 403 para mapa acreditados con rol tecnico (no elevado, requiere rol elevado)', async () => {
+    const mapaAcreditados = { ...MAPA_PUBLICO, visibilidad: 'acreditados' };
+    query.mockResolvedValueOnce({ rows: [mapaAcreditados] });
+    const res = mockRes();
+    const req = mockReq({ params: { id: 'uuid-mapa-1' }, user: { rol: 'tecnico' } });
+    await descargarMapa(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
 });
 
 // ── descargarDocumento() ───────────────────────────────────────────────────

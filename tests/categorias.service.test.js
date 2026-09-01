@@ -138,4 +138,16 @@ describe('categorias.service → updateThumbnail()', () => {
     await updateThumbnail("Bio", "https://files.test.local/old.jpg");
     expect(deleteFile).not.toHaveBeenCalled();
   });
+
+  it('no lanza si deleteFile falla al borrar el thumbnail anterior (best-effort, no bloquea la respuesta)', async () => {
+    const OLD_URL = 'https://files.test.local/old.jpg';
+    const NEW_URL = 'https://files.test.local/new.jpg';
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: OLD_URL }] })
+      .mockResolvedValueOnce({ rows: [{ nombre: 'Bio', thumbnail_url: NEW_URL }] });
+    extractKey.mockReturnValue('old.jpg');
+    deleteFile.mockRejectedValueOnce(new Error('R2 error'));
+
+    await expect(updateThumbnail('Bio', NEW_URL)).resolves.toMatchObject({ thumbnail_url: NEW_URL });
+  });
 });

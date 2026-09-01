@@ -162,6 +162,21 @@ describe('exportSolicitudes()', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
+  it('llama next(err) con 422 si "desde" no es una fecha ISO válida', async () => {
+    const req = { query: { desde: 'no-es-fecha' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await exportSolicitudes(req, res, mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ status: 422 }));
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('llama next(err) con 422 si "hasta" no es una fecha ISO válida', async () => {
+    const req = { query: { hasta: '31-12-2025' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await exportSolicitudes(req, res, mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ status: 422 }));
+  });
+
   it('llama next(err) ante error de DB', async () => {
     query.mockRejectedValueOnce(new Error('DB fail'));
     const req = { query: {}, user: ADMIN_USER, ip: '10.0.0.1' };
@@ -235,6 +250,15 @@ describe('exportDescargas()', () => {
     const res = mockRes();
     await exportDescargas(req, res, mockNext);
     expect(res.json).toHaveBeenCalledOnce();
+  });
+
+  it('retorna 400 si hay 10.000 o más registros', async () => {
+    const rows = Array.from({ length: 10_000 }, () => ({ ...DL_ROW }));
+    query.mockResolvedValueOnce({ rows });
+    const req = { query: {}, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await exportDescargas(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   it('llama next(err) ante error de DB', async () => {

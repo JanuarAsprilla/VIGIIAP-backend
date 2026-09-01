@@ -23,6 +23,7 @@ import {
   create,
   update,
   remove,
+  setActivo,
 } from '../src/modules/documentos/documentos.service.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -421,5 +422,28 @@ describe('remove()', () => {
     deleteFileByUrl.mockRejectedValue(new Error('R2 error'));
 
     await expect(remove('doc-uuid-001')).resolves.toBeUndefined();
+  });
+});
+
+// ─── setActivo() ────────────────────────────────────────────────────────────
+describe('setActivo()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('activa el documento y retorna el registro actualizado', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...mockDocumento, activo: true }] });
+
+    const result = await setActivo('doc-uuid-001', true);
+
+    expect(result.activo).toBe(true);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('activo=$1'),
+      [true, 'doc-uuid-001']
+    );
+  });
+
+  it('lanza 404 cuando el id no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(setActivo('uuid-inexistente', false)).rejects.toMatchObject({ status: 404 });
   });
 });

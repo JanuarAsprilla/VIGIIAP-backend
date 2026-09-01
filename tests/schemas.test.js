@@ -79,6 +79,18 @@ describe('mapas.schema — trustedUrl (thumbnail/archivo_pdf/archivo_img)', () =
     })).toThrow();
   });
 
+  it('regresión: sigue rechazando URLs externas si R2_PUBLIC_BUCKET_URL no está configurada — no debe actuar como comodín', () => {
+    const original = process.env.R2_PUBLIC_BUCKET_URL;
+    delete process.env.R2_PUBLIC_BUCKET_URL;
+    try {
+      expect(() => createMapaSchema.parse({
+        ...baseMapa, archivo_pdf_url: 'https://evil.example.com/a.pdf',
+      })).toThrow();
+    } finally {
+      process.env.R2_PUBLIC_BUCKET_URL = original;
+    }
+  });
+
   it('acepta string vacío (se transforma a null)', () => {
     const parsed = createMapaSchema.parse({ ...baseMapa, thumbnail_url: '' });
     expect(parsed.thumbnail_url).toBeNull();
@@ -145,6 +157,18 @@ describe('documentos.schema — r2Url (archivo_url)', () => {
     expect(() => createDocumentoSchema.parse({
       titulo: 'Doc', tipo: 'informe', archivo_url: 'https://evil.example.com/a.pdf',
     })).toThrow();
+  });
+
+  it('regresión: sigue rechazando URLs externas si R2_PUBLIC_BUCKET_URL no está configurada — no debe actuar como comodín', () => {
+    const original = process.env.R2_PUBLIC_BUCKET_URL;
+    delete process.env.R2_PUBLIC_BUCKET_URL;
+    try {
+      expect(() => createDocumentoSchema.parse({
+        titulo: 'Doc', tipo: 'informe', archivo_url: 'https://evil.example.com/a.pdf',
+      })).toThrow();
+    } finally {
+      process.env.R2_PUBLIC_BUCKET_URL = original;
+    }
   });
 });
 

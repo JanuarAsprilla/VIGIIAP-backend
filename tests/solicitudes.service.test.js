@@ -113,6 +113,27 @@ describe('solicitudes.service → getAll()', () => {
   it('lanza 400 para tipo inválido (no en whitelist)', async () => {
     await expect(getAll({ tipo: 'agua' })).rejects.toMatchObject({ status: 400 });
   });
+
+  it('filtra por búsqueda de texto (q) sobre nombre/email del solicitante', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...SOL, solicitante: 'Juan Pérez' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+
+    const result = await getAll({ q: 'Juan' });
+    const firstCallParams = query.mock.calls[0][1];
+    expect(firstCallParams).toContain('%Juan%');
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('escapa caracteres especiales de LIKE en la búsqueda (q)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await getAll({ q: '50%_off' });
+    const firstCallParams = query.mock.calls[0][1];
+    expect(firstCallParams).toContain('%50\\%\\_off%');
+  });
 });
 
 // ─── getMine() ────────────────────────────────────────────────────────────────
@@ -176,7 +197,10 @@ describe('solicitudes.service → create()', () => {
       .mockResolvedValueOnce({ rows: [{ count: '0' }] })
       .mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
     const result = await create({ tipo: 'biodiversidad', descripcion: undefined }, 'usr-2');
-    expect(result).toBeDefined();
+
+    expect(result.descripcion).toBeNull();
+    const insertParams = query.mock.calls[1][1];
+    expect(insertParams[1]).toBeUndefined(); // descripcion se pasa tal cual, sin transformar
   });
 
   it('el SQL de INSERT hace RETURNING *', async () => {
@@ -581,5 +605,33 @@ describe('solicitudes.service → getArchivoPresignedUrl()', () => {
     const firstParams = query.mock.calls[0][1];
     expect(firstParams).toHaveLength(2);
     expect(result.url).toBe('https://presigned.test/key2');
+  });
+});
+
+// ─── removeArchivo() ────────────────────────────────────────────────────────
+
+describe('solicitudes.service → removeArchivo()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('borra el archivo de R2 y elimina el registro en BD', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ url: 'https://files.test.local/sol/doc.pdf' }] }) // SELECT
+      .mockResolvedValueOnce({ rows: [] }); // DELETE
+
+    await removeArchivo('sol-uuid-1', 'archivo-uuid-1', 'admin-uuid');
+
+    expect(deleteFileByUrl).toHaveBeenCalledWith('https://files.test.local/sol/doc.pdf');
+    expect(query.mock.calls[1][0]).toMatch(/DELETE FROM solicitud_archivos/i);
+    expect(query.mock.calls[1][1]).toEqual(['archivo-uuid-1']);
+  });
+
+  it('lanza 404 si el archivo no existe y no llama a deleteFileByUrl', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      removeArchivo('sol-uuid-1', 'no-existe', 'admin-uuid')
+    ).rejects.toMatchObject({ status: 404 });
+    expect(deleteFileByUrl).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

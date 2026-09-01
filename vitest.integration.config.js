@@ -17,7 +17,8 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     // Secuencial — evita race conditions entre tests que comparten BD
+    // (poolOptions.forks.singleFork fue removido en Vitest 4, reemplazado por fileParallelism)
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
+    fileParallelism: false,
   },
 });

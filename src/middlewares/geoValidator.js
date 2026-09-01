@@ -4,13 +4,10 @@
  * Garantiza que los recursos cartográficos cargados en VIGIIAP cumplen
  * con los estándares del IGAC (Instituto Geográfico Agustín Codazzi),
  * MAGNA-SIRGAS como CRS oficial de Colombia y los requisitos de
- * documentación mínima exigidos por el IIAP.
- *
- * Referencias normativas:
- *  - Resolución IGAC 068/2005 — estándares cartográficos nacionales
- *  - CONPES 3975 — gobernanza del dato público
- *  - ISO 19115:2003 — metadatos geográficos
- *  - MAGNA-SIRGAS (Marco de Referencia Geocéntrico para las Américas)
+ * documentación mínima exigidos por el IIAP, según la Resolución IGAC
+ * 068/2005 (estándares cartográficos nacionales), CONPES 3975
+ * (gobernanza del dato público), ISO 19115:2003 (metadatos geográficos)
+ * y MAGNA-SIRGAS (Marco de Referencia Geocéntrico para las Américas).
  */
 
 // ─── Sistemas de Referencia de Coordenadas válidos para Colombia ─────────────

@@ -141,3 +141,10 @@ vite.config.ts.timestamp-*
 
 # Internal dev artifacts
 docs/superpowers/
+
+# Notas locales para asistentes de IA — no se versionan
+CLAUDE.md
+AGENTS.md
+.cursorrules
+.cursor/
+.github/copilot-instructions.md

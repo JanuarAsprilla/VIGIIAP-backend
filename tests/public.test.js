@@ -28,6 +28,14 @@ describe('GET /api/v1/public/configuracion', () => {
     expect(res.status).toBe(200);
   });
 
+  it('propaga el error al middleware de errores si el service falla', async () => {
+    publicService.getConfiguracionPublica.mockRejectedValue(new Error('DB down'));
+
+    const res = await request(app).get('/api/v1/public/configuracion');
+
+    expect(res.status).toBe(500);
+  });
+
   it('devuelve únicamente las 3 claves whitelisteadas — nunca el objeto de configuración completo', async () => {
     publicService.getConfiguracionPublica.mockResolvedValue({
       politicaPrivacidad: 'Texto legal.',

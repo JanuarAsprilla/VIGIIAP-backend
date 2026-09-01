@@ -5,8 +5,6 @@ import { COOKIE_NAME } from '../utils/cookieOptions.js';
 /**
  * Extrae el JWT de la cookie HttpOnly (preferido) o del header Authorization: Bearer.
  * Devuelve null si no hay token disponible.
- * @param {import('express').Request} req
- * @returns {string|null}
  */
 function extractToken(req) {
   // 1. Cookie HttpOnly — inmune a XSS, prioridad cuando está presente

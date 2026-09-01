@@ -286,6 +286,46 @@ describe('admin.service → actualizarUsuario()', () => {
       actualizarUsuario({ id: 'no-existe', activo: true, ...ADMIN_CTX })
     ).rejects.toMatchObject({ status: 404 });
   });
+
+  it('lanza 400 si el admin intenta modificar su propia cuenta desde el panel', async () => {
+    await expect(
+      actualizarUsuario({ id: 'admin-uuid', rol: 'investigador', ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 400 });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('lanza 403 si un admin_sig intenta modificar a otro admin_sig existente', async () => {
+    query.mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] });
+
+    await expect(
+      actualizarUsuario({ id: 'otro-admin-uuid', activo: false, ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 403 });
+    expect(query).toHaveBeenCalledTimes(1); // no llega al UPDATE
+  });
+
+  it('lanza 403 si un admin_sig intenta asignar el rol admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [{ rol: 'publico' }] });
+
+    await expect(
+      actualizarUsuario({ id: 'usr-uuid-1', rol: 'admin_sig', ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('super_admin sí puede modificar una cuenta admin_sig existente', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] })            // target check
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'admin_sig', activo: false }] }); // UPDATE
+
+    const result = await actualizarUsuario({
+      id: 'otro-admin-uuid',
+      activo: false,
+      adminId: 'super-uuid',
+      adminRol: 'super_admin',
+      adminEmail: 'super@iiap.org.co',
+    });
+
+    expect(result.activo).toBe(false);
+  });
 });
 
 // ─── eliminarUsuario() ────────────────────────────────────────────────────────
@@ -314,6 +354,31 @@ describe('admin.service → eliminarUsuario()', () => {
     ).rejects.toMatchObject({ status: 403 });
 
     expect(query).toHaveBeenCalledTimes(1); // solo el target check
+  });
+
+  it('lanza 403 si un admin_sig intenta eliminar a otro admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] });
+
+    await expect(
+      eliminarUsuario({ id: 'otro-admin-uuid', ...ADMIN_CTX })
+    ).rejects.toMatchObject({ status: 403 });
+
+    expect(query).toHaveBeenCalledTimes(1); // no llega al DELETE
+  });
+
+  it('super_admin sí puede eliminar una cuenta admin_sig', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'otro-admin-uuid', nombre: 'Admin', email: 'admin2@iiap.org.co' }] });
+
+    const result = await eliminarUsuario({
+      id: 'otro-admin-uuid',
+      adminId: 'super-uuid',
+      adminRol: 'super_admin',
+      adminEmail: 'super@iiap.org.co',
+    });
+
+    expect(result.id).toBe('otro-admin-uuid');
   });
 
   it('lanza 400 si el admin intenta eliminarse a sí mismo', async () => {
@@ -496,6 +561,19 @@ describe('admin.service → getAdminEmails()', () => {
     const result = await getAdminEmails();
     expect(result).toEqual([]);
   });
+
+  it('agrega los emails de ADMIN_EMAIL (separados por coma) sin duplicar los de BD', async () => {
+    const original = process.env.ADMIN_EMAIL;
+    process.env.ADMIN_EMAIL = 'admin@iiap.org.co, backup@iiap.org.co ,';
+    try {
+      query.mockResolvedValueOnce({ rows: [{ email: 'admin@iiap.org.co' }] });
+      const result = await getAdminEmails();
+      expect(result).toEqual(['admin@iiap.org.co', 'backup@iiap.org.co']);
+    } finally {
+      if (original === undefined) delete process.env.ADMIN_EMAIL;
+      else process.env.ADMIN_EMAIL = original;
+    }
+  });
 });
 
 describe('admin.service → crearAdminSig()', () => {
@@ -506,9 +584,18 @@ describe('admin.service → crearAdminSig()', () => {
     bcryptMock.hash.mockResolvedValue('hashed_password');
     query
       .mockResolvedValueOnce({ rows: [] }) // Check email duplicado
-      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'Admin', email: 'a@a.co', rol: 'admin_sig', activo: true }] }); // INSERT
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'Admin', email: 'a@a.co', rol: 'admin_sig' }] }); // INSERT
     const result = await crearAdminSig({ nombre: 'Admin', email: 'a@a.co', superAdminId: 's1' });
-    expect(result).toBeDefined();
+
+    expect(result.rol).toBe('admin_sig');
+    expect(result.email).toBe('a@a.co');
+    // La contraseña temporal se hashea antes de insertarse — nunca en texto plano
+    expect(bcryptMock.hash).toHaveBeenCalledWith(expect.any(String), 12);
+    const insertSql = query.mock.calls[1][0];
+    expect(insertSql).toMatch(/'admin_sig'/); // rol hardcoded en el SQL, no viene del input
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'create_admin', usuarioId: 's1' })
+    );
   });
 });
 

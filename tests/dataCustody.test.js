@@ -191,6 +191,20 @@ describe('registrarScanArchivo()', () => {
     expect(params[7]).toBe('Windows PE/EXE detectado');
   });
 
+  it('usa "clean" como resultado por defecto si no se especifica', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await registrarScanArchivo({
+      archivoKey: 'mapas/uuid-mapa.pdf',
+      sha256Hash: 'abc123def456',
+      mimeType: 'application/pdf',
+      tamanioBytes: 204800,
+    });
+
+    const [, params] = query.mock.calls[0];
+    expect(params[6]).toBe('clean');
+  });
+
   it('no lanza si query falla — solo emite warning', async () => {
     query.mockRejectedValueOnce(new Error('Connection refused'));
 

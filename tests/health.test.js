@@ -32,6 +32,18 @@ describe('GET /health', () => {
     expect(res.body).toHaveProperty('timestamp');
   });
 
+  it('reporta redis:not_configured cuando REDIS_URL no está definida', async () => {
+    const original = process.env.REDIS_URL;
+    delete process.env.REDIS_URL;
+    try {
+      query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+      const res = await request(app).get('/health');
+      expect(res.body.redis).toBe('not_configured');
+    } finally {
+      if (original !== undefined) process.env.REDIS_URL = original;
+    }
+  });
+
   it('retorna 503 con status:degraded cuando la BD falla', async () => {
     query.mockRejectedValueOnce(new Error('Connection refused'));
     const res = await request(app).get('/health');

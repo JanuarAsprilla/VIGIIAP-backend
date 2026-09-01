@@ -78,6 +78,13 @@ describe('errorHandler middleware', () => {
     expect(r.json.mock.calls[0][0].error).toBe('sin stack');
   });
 
+  it('usa "Error interno del servidor" cuando un error 500 no tiene message (fuera de producción)', () => {
+    const err = { status: 500 };
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.json.mock.calls[0][0].error).toBe('Error interno del servidor');
+  });
+
   it('usa fallback "Error del servidor" cuando el error < 500 no tiene message', () => {
     const err = { status: 400 };
     const r = res();

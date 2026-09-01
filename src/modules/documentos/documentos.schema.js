@@ -6,9 +6,11 @@ const CURRENT_YEAR = new Date().getFullYear();
 // comprometido apunte documentos a URLs maliciosas externas eludiendo fileGuard.
 const r2Url = z.string().url().refine(
   (url) => {
-    const publicUrl  = process.env.R2_PUBLIC_URL ?? '';
-    const privateUrl = process.env.R2_PUBLIC_BUCKET_URL ?? '';
-    return url.startsWith(publicUrl) || url.startsWith(privateUrl);
+    const publicUrl  = process.env.R2_PUBLIC_URL;
+    const privateUrl = process.env.R2_PUBLIC_BUCKET_URL;
+    // Si una de las variables no está configurada, no debe actuar como comodín
+    // (startsWith('') es true para cualquier string) — solo compara contra valores reales.
+    return (!!publicUrl && url.startsWith(publicUrl)) || (!!privateUrl && url.startsWith(privateUrl));
   },
   { message: 'archivo_url debe ser una URL del almacenamiento propio (R2)' },
 ).optional();
