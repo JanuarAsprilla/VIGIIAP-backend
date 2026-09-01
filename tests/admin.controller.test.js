@@ -14,6 +14,7 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   getAuditLog:        vi.fn(),
   getSuperStats:      vi.fn(),
   crearAdminSig:      vi.fn(),
+  getReporte:         vi.fn(),
 }));
 
 vi.mock('../src/config/database.js', () => ({
@@ -53,7 +54,7 @@ import {
   notificaciones, getConfiguracion, setConfiguracion, stats, resetStatsCache,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
-  descargasStats, scanLog, batchUsuarios,
+  descargasStats, scanLog, batchUsuarios, reportes,
 } from '../src/modules/admin/admin.controller.js';
 
 const mockNext = vi.fn();
@@ -82,6 +83,24 @@ describe('admin.controller → notificaciones()', () => {
   it('llama next(err) si el servicio lanza', async () => {
     adminService.getNotificaciones.mockRejectedValue(new Error('db'));
     await notificaciones({}, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('admin.controller → reportes()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('responde con el resultado de adminService.getReporte(req.query)', async () => {
+    adminService.getReporte.mockResolvedValue({ periodo: 'semana' });
+    const r = res();
+    await reportes({ query: { periodo: 'semana' } }, r, mockNext);
+    expect(adminService.getReporte).toHaveBeenCalledWith({ periodo: 'semana' });
+    expect(r.json).toHaveBeenCalledWith({ periodo: 'semana' });
+  });
+
+  it('llama next(err) si el servicio lanza (ej. período inválido → 400)', async () => {
+    adminService.getReporte.mockRejectedValue(Object.assign(new Error('bad'), { status: 400 }));
+    await reportes({ query: { periodo: 'x' } }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

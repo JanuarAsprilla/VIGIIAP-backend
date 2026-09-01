@@ -3,6 +3,9 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { notifyNuevoInicioSesion } from '../../utils/mailer.js';
+import { notificacionHabilitada } from '../../utils/configFlags.js';
+import logger from '../../utils/logger.js';
 
 const SALT_ROUNDS = 12;
 
@@ -252,6 +255,15 @@ export async function login(email, password, ip, userAgent) {
     ip,
     userAgent,
   });
+
+  // Alerta de seguridad al propio usuario — apagada por defecto (loginNotifs)
+  notificacionHabilitada('loginNotifs').then((habilitado) => {
+    if (!habilitado) return;
+    notifyNuevoInicioSesion({
+      email: user.email, nombre: user.nombre, ip, userAgent,
+      fecha: new Date().toLocaleString('es-CO'),
+    }).catch((err) => logger.error('[auth] Error email login notif:', err.message));
+  }).catch((err) => logger.error('[auth] Error chequeando loginNotifs:', err.message));
 
   return {
     token: accessToken,

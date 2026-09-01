@@ -556,3 +556,37 @@ export async function notifyRolCambiado({ email, nombre, rolAnterior, rolNuevo }
     `,
   });
 }
+
+/** Alerta de seguridad al propio usuario cuando su cuenta inicia sesión. */
+export async function notifyNuevoInicioSesion({ email, nombre, ip, userAgent, fecha }) {
+  const eNombre = escHtml(nombre);
+  await send({
+    to: email,
+    subject: '[VIGI-IIAP] Nuevo inicio de sesión en tu cuenta',
+    html: baseTemplate('Nuevo inicio de sesión', `
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Hola <strong>${eNombre}</strong>,
+      </p>
+      <p style="color:#374151;font-size:14px;line-height:1.6;">
+        Detectamos un inicio de sesión en tu cuenta de VIGI-IIAP:
+      </p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;">
+        <tr style="background:#f4f7f4;">
+          <td style="padding:8px 12px;font-weight:600;color:#1B4332;width:100px;">Fecha</td>
+          <td style="padding:8px 12px;color:#374151;">${escHtml(fecha)}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">IP</td>
+          <td style="padding:8px 12px;color:#374151;font-family:monospace;">${escHtml(ip || 'desconocida')}</td>
+        </tr>
+        <tr style="background:#f4f7f4;">
+          <td style="padding:8px 12px;font-weight:600;color:#1B4332;">Navegador</td>
+          <td style="padding:8px 12px;color:#374151;">${escHtml(userAgent || 'desconocido')}</td>
+        </tr>
+      </table>
+      <p style="color:#6B7280;font-size:12px;">
+        Si no fuiste tú, cambia tu contraseña de inmediato y contacta a un administrador.
+      </p>
+    `),
+  });
+}

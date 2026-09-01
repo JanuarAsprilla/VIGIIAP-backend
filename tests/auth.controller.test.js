@@ -44,6 +44,9 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   getAuditLog:       vi.fn(),
   getSuperStats:     vi.fn(),
 }));
+vi.mock('../src/utils/configFlags.js', () => ({
+  notificacionHabilitada: vi.fn().mockResolvedValue(true),
+}));
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn().mockResolvedValue({ rows: [] }),
   getClient: vi.fn(),
@@ -341,12 +344,31 @@ describe('auth.controller → register()', () => {
     });
     expect(mailer.notifyAdminNewRegistro).not.toHaveBeenCalled();
   });
+
+  it('no notifica a los admins cuando emailNotifs está deshabilitado (el email de verificación al usuario sí se envía siempre)', async () => {
+    authService.register.mockResolvedValue({
+      id: 'u3', nombre: 'Carla', email: 'c@c.co', verificationToken: 'tok3',
+    });
+    mailer.notifyVerificacionEmail.mockResolvedValueOnce(undefined);
+    notificacionHabilitada.mockResolvedValueOnce(false);
+
+    const r = res();
+    await register({
+      body: { nombre: 'Carla', email: 'c@c.co', password: 'Pass1234!', institucion: 'IIAP', motivo: 'x' },
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+
+    await vi.waitFor(() => expect(mailer.notifyVerificacionEmail).toHaveBeenCalled());
+    expect(adminService.getAdminEmails).not.toHaveBeenCalled();
+    expect(mailer.notifyAdminNewRegistro).not.toHaveBeenCalled();
+  });
 });
 
 // ── verifyEmail() ─────────────────────────────────────────────────────────
 
 import * as adminService from '../src/modules/admin/admin.service.js';
 import * as mailer from '../src/utils/mailer.js';
+import { notificacionHabilitada } from '../src/utils/configFlags.js';
 
 describe('auth.controller → verifyEmail()', () => {
   beforeEach(() => {
@@ -404,6 +426,19 @@ describe('auth.controller → verifyEmail()', () => {
     authService.verifyEmail.mockRejectedValue(new Error('invalid token'));
     await verifyEmail({ params: { token: 'bad' } }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('no notifica a los admins cuando emailNotifs está deshabilitado (la confirmación al usuario sí se envía siempre)', async () => {
+    authService.verifyEmail.mockResolvedValue({ alreadyVerified: false, email: 'j@j.co', nombre: 'Juan' });
+    mailer.notifyRegistroRecibido.mockResolvedValueOnce(undefined);
+    notificacionHabilitada.mockResolvedValueOnce(false);
+
+    const r = res();
+    await verifyEmail({ params: { token: 'tok-valid' } }, r, mockNext);
+
+    await vi.waitFor(() => expect(mailer.notifyRegistroRecibido).toHaveBeenCalled());
+    expect(adminService.getAdminEmails).not.toHaveBeenCalled();
+    expect(mailer.notifyAdminUsuarioVerificado).not.toHaveBeenCalled();
   });
 });
 

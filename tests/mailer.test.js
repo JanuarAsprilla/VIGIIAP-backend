@@ -37,6 +37,7 @@ import {
   notifyAdminUsuarioVerificado,
   notifySolicitudRespuesta,
   notifyRolCambiado,
+  notifyNuevoInicioSesion,
 } from '../src/utils/mailer.js';
 
 // Credenciales mínimas para que send() no salga temprano
@@ -409,6 +410,29 @@ describe('notifyRolCambiado()', () => {
     expect(to).toBe('usuario@test.co');
     expect(html).toContain('investigador');
     expect(html).toContain('admin_sig');
+  });
+});
+
+describe('notifyNuevoInicioSesion()', () => {
+  it('envía la alerta de seguridad con IP y navegador al propio usuario', async () => {
+    await notifyNuevoInicioSesion({
+      email: 'usuario@test.co', nombre: 'Usuario',
+      ip: '192.168.1.10', userAgent: 'Mozilla/5.0 Test', fecha: '1/9/2026, 9:00:00 a.m.',
+    });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('usuario@test.co');
+    expect(subject).toContain('Nuevo inicio de sesión');
+    expect(html).toContain('192.168.1.10');
+    expect(html).toContain('Mozilla/5.0 Test');
+  });
+
+  it('usa "desconocida"/"desconocido" cuando falta IP o user-agent, sin romper el envío', async () => {
+    await notifyNuevoInicioSesion({ email: 'u@test.co', nombre: 'U', fecha: 'hoy' });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).toContain('desconocida');
+    expect(html).toContain('desconocido');
   });
 });
 

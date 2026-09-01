@@ -30,6 +30,15 @@ vi.mock('../src/utils/tokenBlacklist.js', () => ({
   loadBlacklist: vi.fn().mockResolvedValue(undefined),
   revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../src/utils/mailer.js', () => ({
+  notifyNuevoInicioSesion: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../src/utils/configFlags.js', () => ({
+  notificacionHabilitada: vi.fn().mockResolvedValue(false),
+}));
+vi.mock('../src/utils/logger.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
 
 // ─── Imports bajo prueba ───────────────────────────────────────────────────────
 import { query } from '../src/config/database.js';
@@ -44,6 +53,8 @@ import {
   resetPassword,
 } from '../src/modules/auth/auth.service.js';
 import { revokeAllRefreshTokens } from '../src/utils/tokenBlacklist.js';
+import { notifyNuevoInicioSesion } from '../src/utils/mailer.js';
+import { notificacionHabilitada } from '../src/utils/configFlags.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 const mockUser = {
@@ -169,6 +180,60 @@ describe('login()', () => {
       expect.stringContaining('WHERE email = $1'),
       ['admin@iiap.gob.pe']
     );
+  });
+});
+
+describe('login() — notificación de nuevo inicio de sesión (loginNotifs)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('no envía el correo cuando loginNotifs está deshabilitado (default)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })              // SELECT usuario
+      .mockResolvedValueOnce({ rows: [] })                      // UPDATE last_login_at
+      .mockResolvedValueOnce({ rows: [{ valor: '90' }] })       // SELECT passwordExpiryDays (mockUser.rol = admin_sig)
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
+      .mockResolvedValueOnce({ rows: [] });                     // INSERT refresh_tokens
+    bcrypt.compare.mockResolvedValueOnce(true);
+    notificacionHabilitada.mockResolvedValueOnce(false);
+
+    await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
+
+    await vi.waitFor(() => expect(notificacionHabilitada).toHaveBeenCalledWith('loginNotifs'));
+    expect(notifyNuevoInicioSesion).not.toHaveBeenCalled();
+  });
+
+  it('envía el correo con IP y user-agent cuando loginNotifs está habilitado', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ valor: '90' }] })
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [] });
+    bcrypt.compare.mockResolvedValueOnce(true);
+    notificacionHabilitada.mockResolvedValueOnce(true);
+
+    await login('admin@iiap.gob.pe', 'Segura123!', '203.0.113.5', 'TestAgent/1.0');
+
+    await vi.waitFor(() => {
+      expect(notifyNuevoInicioSesion).toHaveBeenCalledWith(
+        expect.objectContaining({ email: mockUser.email, ip: '203.0.113.5', userAgent: 'TestAgent/1.0' }),
+      );
+    });
+  });
+
+  it('no se envía en el camino de 2FA requerido — el login aún no está completo', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [mockUser] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ valor: '90' }] })
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: true }] });
+    bcrypt.compare.mockResolvedValueOnce(true);
+
+    const result = await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
+
+    expect(result.requiresTwoFactor).toBe(true);
+    expect(notificacionHabilitada).not.toHaveBeenCalledWith('loginNotifs');
+    expect(notifyNuevoInicioSesion).not.toHaveBeenCalled();
   });
 });
 

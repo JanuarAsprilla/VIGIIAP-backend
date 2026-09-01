@@ -3,7 +3,7 @@ import { getPapelera, restaurar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog,
-  getConfiguracion, setConfiguracion, notificaciones,
+  getConfiguracion, setConfiguracion, notificaciones, reportes,
   superStats, crearAdmin,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
   batchUsuarios,
@@ -20,6 +20,7 @@ router.use(authenticate, authorize('admin_sig'), csrfProtection, adminRateLimite
 
 router.get('/stats',            stats);
 router.get('/notificaciones',   notificaciones);
+router.get('/reportes',         reportes);
 router.get('/usuarios',         listarUsuarios);
 router.post('/usuarios',        crearUsuario);
 router.patch('/usuarios/batch',  batchUsuarios);      // ANTES de /:id para no conflictar

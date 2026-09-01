@@ -8,6 +8,7 @@ import {
   notifyRecuperarPassword,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
+import { notificacionHabilitada } from '../../utils/configFlags.js';
 import { revokeToken } from '../../utils/tokenBlacklist.js';
 import {
   COOKIE_NAME, authCookieOptions, clearCookieOptions,
@@ -148,8 +149,10 @@ export async function register(req, res, next) {
       verificationToken: user.verificationToken,
     }).catch((err) => logger.error(`[auth] Error email verificación a ${user.email}:`, err.message));
 
-    // Notificar a los admins del nuevo registro
-    getAdminEmails().then((adminEmails) => {
+    // Notificar a los admins del nuevo registro — condicionado a emailNotifs
+    notificacionHabilitada('emailNotifs').then(async (habilitado) => {
+      if (!habilitado) return;
+      const adminEmails = await getAdminEmails();
       adminEmails.forEach((adminEmail) =>
         notifyAdminNewRegistro({
           adminEmail,
@@ -179,8 +182,10 @@ export async function verifyEmail(req, res, next) {
       notifyRegistroRecibido({ email: result.email, nombre: result.nombre })
         .catch((err) => logger.error(`[auth] Error email registro recibido a ${result.email}:`, err.message));
 
-      // 2. Notificar a todos los admins con botón de activación directa
-      getAdminEmails().then((adminEmails) => {
+      // 2. Notificar a todos los admins con botón de activación directa — condicionado a emailNotifs
+      notificacionHabilitada('emailNotifs').then(async (habilitado) => {
+        if (!habilitado) return;
+        const adminEmails = await getAdminEmails();
         adminEmails.forEach((adminEmail) =>
           notifyAdminUsuarioVerificado({
             adminEmail,

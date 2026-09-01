@@ -392,3 +392,85 @@ export async function crearAdminSig({ nombre, email, institucion, superAdminId }
 
   return rows[0];
 }
+
+// ── Reportes de actividad bajo demanda ──────────────────────────────────────
+
+// toISOString() es UTC — en Colombia (UTC-5) corre la fecha un día cerca de medianoche.
+function fmtLocalDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function calcularRango({ periodo, desde, hasta }) {
+  const ahora = new Date();
+  if (periodo === 'dia') {
+    return { desde: new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()), hasta: ahora };
+  }
+  if (periodo === 'semana') {
+    const d = new Date(ahora);
+    d.setDate(ahora.getDate() - 7);
+    return { desde: d, hasta: ahora };
+  }
+  if (periodo === 'mes') {
+    return { desde: new Date(ahora.getFullYear(), ahora.getMonth(), 1), hasta: ahora };
+  }
+  if (periodo === 'anio') {
+    return { desde: new Date(ahora.getFullYear(), 0, 1), hasta: ahora };
+  }
+  if (periodo === 'custom') {
+    if (!desde || !hasta) {
+      throw Object.assign(new Error('Rango de fechas requerido para período personalizado'), { status: 400 });
+    }
+    // new Date('YYYY-MM-DD') es UTC, new Date(y,m,d) es local — no mezclar.
+    const [dy, dm, dd] = desde.split('-').map(Number);
+    const [hy, hm, hd] = hasta.split('-').map(Number);
+    return {
+      desde: new Date(dy, dm - 1, dd),
+      hasta: new Date(hy, hm - 1, hd, 23, 59, 59),
+    };
+  }
+  throw Object.assign(new Error('Período inválido'), { status: 400 });
+}
+
+/** Reporte de actividad bajo demanda — agrega sobre audit_log + solicitudes. */
+export async function getReporte(reqQuery) {
+  const { desde, hasta } = calcularRango(reqQuery);
+
+  const [conteos, porModulo, pendientes] = await Promise.all([
+    query(`
+      SELECT
+        COUNT(*) FILTER (WHERE accion = 'registro')                        AS usuarios_nuevos,
+        COUNT(*) FILTER (WHERE accion = 'create_usuario')                  AS usuarios_creados_admin,
+        COUNT(*) FILTER (WHERE accion = 'create_solicitud')                AS solicitudes_nuevas,
+        COUNT(*) FILTER (WHERE accion = 'update_solicitud_estado')         AS solicitudes_resueltas,
+        COUNT(*) FILTER (WHERE accion = 'create_documento')                AS documentos_creados,
+        COUNT(*) FILTER (WHERE accion = 'publish_documento')               AS documentos_publicados,
+        COUNT(*) FILTER (WHERE accion = 'create_mapa')                     AS mapas_creados,
+        COUNT(*) FILTER (WHERE accion = 'publish_mapa')                    AS mapas_publicados,
+        COUNT(*) FILTER (WHERE accion = 'login')                           AS logins_exitosos,
+        COUNT(*) FILTER (WHERE accion IN ('login_failed', 'login_blocked')) AS logins_fallidos
+      FROM audit_log
+      WHERE creado_en BETWEEN $1 AND $2
+    `, [desde, hasta]),
+    query(
+      `SELECT modulo, COUNT(*) AS total FROM audit_log WHERE creado_en BETWEEN $1 AND $2 GROUP BY modulo ORDER BY total DESC`,
+      [desde, hasta]
+    ),
+    query(`SELECT COUNT(*) FROM solicitudes WHERE estado IN ('pendiente', 'en_revision')`),
+  ]);
+
+  const c = conteos.rows[0];
+  return {
+    periodo: reqQuery.periodo,
+    desde: fmtLocalDate(desde),
+    hasta: fmtLocalDate(hasta),
+    usuarios:    { nuevos: Number(c.usuarios_nuevos), creadosPorAdmin: Number(c.usuarios_creados_admin) },
+    solicitudes: { nuevas: Number(c.solicitudes_nuevas), resueltas: Number(c.solicitudes_resueltas), pendientes: Number(pendientes.rows[0].count) },
+    documentos:  { creados: Number(c.documentos_creados), publicados: Number(c.documentos_publicados) },
+    mapas:       { creados: Number(c.mapas_creados), publicados: Number(c.mapas_publicados) },
+    logins:      { exitosos: Number(c.logins_exitosos), fallidos: Number(c.logins_fallidos) },
+    actividadPorModulo: porModulo.rows.map((r) => ({ modulo: r.modulo, total: Number(r.total) })),
+  };
+}
