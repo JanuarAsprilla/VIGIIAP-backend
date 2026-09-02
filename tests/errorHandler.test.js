@@ -5,7 +5,12 @@ vi.mock('../src/utils/logger.js', () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock('../src/utils/errorTracking.js', () => ({
+  registrarError: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { errorHandler } from '../src/middlewares/errorHandler.js';
+import { registrarError } from '../src/utils/errorTracking.js';
 
 function res() {
   return { status: vi.fn().mockReturnThis(), json: vi.fn() };
@@ -113,5 +118,19 @@ describe('errorHandler middleware', () => {
     errorHandler(err, req, r, next);
     expect(r.status).toHaveBeenCalledWith(409);
     expect(r.json.mock.calls[0][0].error).toBe('Ya existe un registro con esos datos.');
+  });
+
+  it('registra en errorTracking los errores 500, sin retrasar la respuesta al cliente', () => {
+    const err = new Error('boom');
+    const r = res();
+    errorHandler(err, { method: 'POST', path: '/api/v1/mapas' }, r, next);
+    expect(r.status).toHaveBeenCalledWith(500);
+    expect(registrarError).toHaveBeenCalledWith({ err, metodo: 'POST', ruta: '/api/v1/mapas' });
+  });
+
+  it('no registra en errorTracking los errores por debajo de 500', () => {
+    const err = Object.assign(new Error('no encontrado'), { status: 404 });
+    errorHandler(err, req, res(), next);
+    expect(registrarError).not.toHaveBeenCalled();
   });
 });

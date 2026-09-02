@@ -481,7 +481,7 @@ describe('admin.service → setConfiguracion()', () => {
 });
 
 // ─── Additional imports ────────────────────────────────────────────────────
-import { getNotificaciones, getAuditLog, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
+import { getNotificaciones, getAuditLog, getErrorLog, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
 
 describe('admin.service → getNotificaciones()', () => {
@@ -534,6 +534,20 @@ describe('admin.service → getAuditLog()', () => {
     await getAuditLog({ accion: 'login' });
     const params = query.mock.calls[0][1];
     expect(params).toContain('login');
+  });
+});
+
+describe('admin.service → getErrorLog()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna el registro de errores paginado, más recientes primero', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 1, mensaje: 'boom', ocurrencias: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+    const result = await getErrorLog({});
+    expect(result.data).toHaveLength(1);
+    expect(result.meta.total).toBe(1);
+    expect(query.mock.calls[0][0]).toContain('ORDER BY ultima_vez DESC');
   });
 });
 

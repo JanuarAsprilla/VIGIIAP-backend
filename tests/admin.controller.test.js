@@ -12,6 +12,7 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   actualizarUsuario:  vi.fn(),
   eliminarUsuario:    vi.fn(),
   getAuditLog:        vi.fn(),
+  getErrorLog:        vi.fn(),
   getSuperStats:      vi.fn(),
   crearAdminSig:      vi.fn(),
   getReporte:         vi.fn(),
@@ -53,7 +54,7 @@ import { revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import {
   notificaciones, getConfiguracion, setConfiguracion, stats, resetStatsCache,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
-  auditLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
+  auditLog, errorLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
   descargasStats, scanLog, batchUsuarios, reportes,
 } from '../src/modules/admin/admin.controller.js';
 
@@ -355,6 +356,25 @@ describe('admin.controller → auditLog()', () => {
   it('llama next(err) si el servicio lanza', async () => {
     adminService.getAuditLog.mockRejectedValue(new Error('db'));
     await auditLog({ query: {} }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── errorLog() ───────────────────────────────────────────────────────────
+
+describe('admin.controller → errorLog()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna el registro de errores', async () => {
+    adminService.getErrorLog.mockResolvedValue({ data: [{ id: 1 }], meta: {} });
+    const r = res();
+    await errorLog({ query: {} }, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ data: expect.any(Array) }));
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    adminService.getErrorLog.mockRejectedValue(new Error('db'));
+    await errorLog({ query: {} }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

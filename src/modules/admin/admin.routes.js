@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getPapelera, restaurar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
-  stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog,
+  stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
   getConfiguracion, setConfiguracion, notificaciones, reportes,
   superStats, crearAdmin,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
@@ -27,6 +27,7 @@ router.patch('/usuarios/batch',  batchUsuarios);      // ANTES de /:id para no c
 router.patch('/usuarios/:id',   actualizarUsuario);
 router.delete('/usuarios/:id',  eliminarUsuario);
 router.get('/audit',            auditLog);
+router.get('/errores',          errorLog);
 router.get('/configuracion',    getConfiguracion);
 router.put('/configuracion',    setConfiguracion);
 
