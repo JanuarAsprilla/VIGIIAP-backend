@@ -105,3 +105,135 @@ describe('registrarError()', () => {
     expect(notifyErrorCritico).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('registrarError() — redacción de datos sensibles', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAdminEmails.mockResolvedValue(['admin@iiap.gov.co']);
+    notifyErrorCritico.mockResolvedValue(undefined);
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+  });
+
+  it('redacta un JWT en el mensaje antes de guardarlo', async () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.dQw4w9WgXcQ_abc123XYZ';
+    const err = new Error(`token inválido: ${jwt}`);
+    await registrarError({ err, metodo: 'GET', ruta: '/auth/me' });
+
+    const mensajeGuardado = query.mock.calls[0][1][1];
+    expect(mensajeGuardado).not.toContain(jwt);
+    expect(mensajeGuardado).toContain('[REDACTED_JWT]');
+  });
+
+  it('redacta un header Authorization: Bearer en el stack', async () => {
+    const err = new Error('fetch failed');
+    err.stack = 'Error: fetch failed\n    Authorization: Bearer abc.def.ghi123';
+    await registrarError({ err, metodo: 'GET', ruta: '/x' });
+
+    const stackGuardado = query.mock.calls[0][1][2];
+    expect(stackGuardado).not.toContain('abc.def.ghi123');
+    expect(stackGuardado).toContain('Authorization: [REDACTED]');
+  });
+
+  it('redacta un Bearer suelto sin key: prefijo (p.ej. en un comando curl logueado)', async () => {
+    const err = new Error('curl -H "Bearer abc.def.ghi123" https://api.example.com falló');
+    await registrarError({ err, metodo: 'GET', ruta: '/x' });
+
+    const mensajeGuardado = query.mock.calls[0][1][1];
+    expect(mensajeGuardado).not.toContain('abc.def.ghi123');
+  });
+
+  it('redacta el valor de una connection string con credenciales', async () => {
+    const err = new Error('conexión fallida: postgres://miuser:miclave123@db.host:5432/vigiiap');
+    await registrarError({ err, metodo: 'GET', ruta: '/x' });
+
+    const mensajeGuardado = query.mock.calls[0][1][1];
+    expect(mensajeGuardado).not.toContain('miclave123');
+    expect(mensajeGuardado).toContain('[REDACTED]@');
+  });
+
+  it('redacta un campo password= embebido en el mensaje', async () => {
+    const err = new Error('body inválido: password=SuperSecreta123');
+    await registrarError({ err, metodo: 'POST', ruta: '/auth/login' });
+
+    const mensajeGuardado = query.mock.calls[0][1][1];
+    expect(mensajeGuardado).not.toContain('SuperSecreta123');
+    expect(mensajeGuardado).toContain('[REDACTED]');
+  });
+
+  it('trunca mensajes extremadamente largos', async () => {
+    const err = new Error('x'.repeat(10_000));
+    await registrarError({ err, metodo: 'GET', ruta: '/x' });
+
+    const mensajeGuardado = query.mock.calls[0][1][1];
+    expect(mensajeGuardado.length).toBeLessThan(6000);
+    expect(mensajeGuardado).toContain('truncado');
+  });
+
+  it('no altera un mensaje sin datos sensibles', async () => {
+    const err = new Error('el servicio de mapas no respondió a tiempo');
+    await registrarError({ err, metodo: 'GET', ruta: '/mapas' });
+
+    const mensajeGuardado = query.mock.calls[0][1][1];
+    expect(mensajeGuardado).toBe('el servicio de mapas no respondió a tiempo');
+  });
+});
+
+describe('registrarError() — agrupación tolerante a valores dinámicos', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAdminEmails.mockResolvedValue(['admin@iiap.gov.co']);
+    notifyErrorCritico.mockResolvedValue(undefined);
+  });
+
+  it('agrupa el mismo error aunque el mensaje traiga un id numérico distinto', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    await registrarError({ err: new Error('Usuario 4821 no existe'), metodo: 'GET', ruta: '/usuarios' });
+    const fp1 = query.mock.calls[0][1][0];
+
+    query.mockClear();
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 2, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    await registrarError({ err: new Error('Usuario 99012 no existe'), metodo: 'GET', ruta: '/usuarios' });
+    const fp2 = query.mock.calls[0][1][0];
+
+    expect(fp1).toBe(fp2);
+  });
+
+  it('agrupa el mismo error aunque la ruta traiga un UUID distinto', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    await registrarError({
+      err: new Error('recurso no encontrado'), metodo: 'GET',
+      ruta: '/api/v1/mapas/9f3e2a10-1111-2222-3333-abcdefabcdef',
+    });
+    const fp1 = query.mock.calls[0][1][0];
+
+    query.mockClear();
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 2, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    await registrarError({
+      err: new Error('recurso no encontrado'), metodo: 'GET',
+      ruta: '/api/v1/mapas/00000000-9999-8888-7777-666655554444',
+    });
+    const fp2 = query.mock.calls[0][1][0];
+
+    expect(fp1).toBe(fp2);
+  });
+
+  it('mensajes de tipos de error distintos NO se agrupan entre sí', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    await registrarError({ err: new Error('timeout de conexión'), metodo: 'GET', ruta: '/x' });
+    const fp1 = query.mock.calls[0][1][0];
+
+    query.mockClear();
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    await registrarError({ err: new Error('permiso denegado'), metodo: 'GET', ruta: '/x' });
+    const fp2 = query.mock.calls[0][1][0];
+
+    expect(fp1).not.toBe(fp2);
+  });
+});
