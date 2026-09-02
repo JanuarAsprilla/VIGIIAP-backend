@@ -77,7 +77,7 @@ services:
       - key: FRONTEND_URL
         value: https://vigiiap.onrender.com
 
-      # ─── Redis (opcional — cache + email queue con retry) ───────────────────
+      # ─── Redis (opcional — solo cache) ───────────────────────────────────────
       # Dejar vacío si no se usa Redis; el sistema cae en fallback sin cache.
       - key: REDIS_URL
         sync: false
