@@ -430,3 +430,25 @@ export async function notifyNuevoInicioSesion({ email, nombre, ip, userAgent, fe
     }),
   });
 }
+
+/** Reporte semanal de actividad enviado a los admins (reportesSemanal en configuración). */
+export async function notifyReporteSemanal({ adminEmail, reporte }) {
+  await send({
+    to: adminEmail,
+    subject: `[VIGI-IIAP] Reporte semanal de actividad — ${reporte.desde} al ${reporte.hasta}`,
+    html: baseTemplate({
+      eyebrow: 'Reporte semanal',
+      title: `Actividad del ${reporte.desde} al ${reporte.hasta}`,
+      body: bodyText('Resumen automático de actividad en la plataforma durante la última semana.')
+        + detailPanel([
+          detailRow('Usuarios nuevos', String(reporte.usuarios.nuevos)),
+          detailRow('Solicitudes nuevas', String(reporte.solicitudes.nuevas)),
+          detailRow('Solicitudes pendientes', String(reporte.solicitudes.pendientes)),
+          detailRow('Documentos publicados', String(reporte.documentos.publicados)),
+          detailRow('Mapas publicados', String(reporte.mapas.publicados)),
+          detailRow('Inicios de sesión', `${reporte.logins.exitosos} exitosos / ${reporte.logins.fallidos} fallidos`),
+        ]),
+      cta: { url: `${BASE_URL}/admin`, label: 'Ver panel de administración' },
+    }),
+  });
+}
