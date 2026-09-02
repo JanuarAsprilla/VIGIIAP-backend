@@ -17,9 +17,22 @@ jobs:
     steps:
       - name: Ping
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 30 \
-            https://vigiiap-backend.onrender.com/health)
+          # Render free tier puede tardar bastante más de 30s en despertar desde
+          # frío — un solo intento corto genera falsos negativos en este workflow
+          # (no bloquea nada, solo mantiene el servicio despierto). Dos intentos
+          # con --max-time generoso distinguen eso de una caída real.
+          ping_once() {
+            curl -s -o /dev/null -w "%{http_code}" --max-time 55 \
+              https://vigiiap-backend.onrender.com/health
+          }
+
+          STATUS=$(ping_once) || STATUS="000"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
+            echo "Primer intento: HTTP $STATUS — reintentando en 10s..."
+            sleep 10
+            STATUS=$(ping_once) || STATUS="000"
+          fi
+
           echo "HTTP $STATUS"
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
             echo "Unexpected status: $STATUS"

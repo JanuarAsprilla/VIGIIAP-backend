@@ -5,7 +5,7 @@ import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
 import { loadBlacklist } from './src/utils/tokenBlacklist.js';
 import { loadMaintenanceState, startMaintenanceStatePolling, stopMaintenanceStatePolling } from './src/middlewares/maintenanceMode.js';
-import { initEmailQueue } from './src/utils/emailQueue.js';
+import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportScheduler } from './src/utils/weeklyReportScheduler.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 4000;
@@ -122,7 +122,8 @@ async function start() {
   await loadBlacklist();
   await loadMaintenanceState();
   startMaintenanceStatePolling();
-  initEmailQueue();
+  await loadWeeklyReportState();
+  startWeeklyReportScheduler();
 
   // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
   const { query } = await import('./src/config/database.js');
@@ -141,6 +142,7 @@ async function start() {
   async function shutdown(signal) {
     logger.info(`[shutdown] ${signal} recibido — cerrando servidor...`);
     stopMaintenanceStatePolling();
+    stopWeeklyReportScheduler();
     server.close(async () => {
       try {
         await pool.end();
