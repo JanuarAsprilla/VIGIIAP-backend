@@ -1,5 +1,6 @@
 import { ZodError } from 'zod';
 import logger from '../utils/logger.js';
+import { registrarError } from '../utils/errorTracking.js';
 
 export function errorHandler(err, _req, res, _next) {
   // Errores de validación Zod → 422 con detalle de campos
@@ -37,6 +38,9 @@ export function errorHandler(err, _req, res, _next) {
       path:    _req.path,
       method:  _req.method,
     });
+    // Fire-and-forget: no debe retrasar la respuesta al cliente ni tumbar el
+    // request si la propia BD/mailer falla — registrarError() ya atrapa sus errores.
+    registrarError({ err, metodo: _req.method, ruta: _req.path });
     // En producción no exponemos detalles internos al cliente
     const publicMessage = process.env.NODE_ENV === 'production'
       ? 'Error interno del servidor'

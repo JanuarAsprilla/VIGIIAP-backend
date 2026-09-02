@@ -474,3 +474,21 @@ export async function getReporte(reqQuery) {
     actividadPorModulo: porModulo.rows.map((r) => ({ modulo: r.modulo, total: Number(r.total) })),
   };
 }
+
+/** Registro propio de errores 5xx (ver src/utils/errorTracking.js) */
+export async function getErrorLog(reqQuery) {
+  const { limit, offset, meta } = paginate(reqQuery);
+
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT id, mensaje, stack, metodo, ruta, status_code, ocurrencias, primera_vez, ultima_vez
+       FROM error_log
+       ORDER BY ultima_vez DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset],
+    ),
+    query(`SELECT COUNT(*) FROM error_log`),
+  ]);
+
+  return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
+}

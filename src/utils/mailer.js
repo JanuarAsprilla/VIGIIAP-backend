@@ -452,3 +452,28 @@ export async function notifyReporteSemanal({ adminEmail, reporte }) {
     }),
   });
 }
+
+/**
+ * Alerta a los admins de un error 5xx nuevo o recurrente (ver errorTracking.js).
+ * No depende de emailNotifs/solicitudNotifs/loginNotifs — es una señal de
+ * salud del sistema, no una preferencia de negocio que se pueda apagar.
+ */
+export async function notifyErrorCritico({ adminEmail, mensaje, metodo, ruta, ocurrencias }) {
+  await send({
+    to: adminEmail,
+    subject: `[VIGI-IIAP] Error en producción — ${metodo} ${ruta}`,
+    html: baseTemplate({
+      eyebrow: 'Alerta del sistema',
+      title: 'Se detectó un error en producción',
+      accent: RED,
+      body: bodyText('El sistema registró un error 5xx que requiere atención.')
+        + detailPanel([
+          detailRow('Mensaje', escHtml(mensaje)),
+          detailRow('Endpoint', `<span style="font-family:monospace;">${escHtml(metodo)} ${escHtml(ruta)}</span>`),
+          detailRow('Ocurrencias', String(ocurrencias)),
+        ])
+        + bodyText('Revisa el detalle completo (stack trace) en el panel de administración.'),
+      cta: { url: `${BASE_URL}/admin/errores`, label: 'Ver registro de errores' },
+    }),
+  });
+}

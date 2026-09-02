@@ -38,6 +38,8 @@ import {
   notifySolicitudRespuesta,
   notifyRolCambiado,
   notifyNuevoInicioSesion,
+  notifyReporteSemanal,
+  notifyErrorCritico,
 } from '../src/utils/mailer.js';
 
 // Credenciales mínimas para que send() no salga temprano
@@ -433,6 +435,40 @@ describe('notifyNuevoInicioSesion()', () => {
     const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
     expect(html).toContain('desconocida');
     expect(html).toContain('desconocido');
+  });
+});
+
+describe('notifyReporteSemanal()', () => {
+  it('envía el resumen de actividad al admin con las métricas de la semana', async () => {
+    await notifyReporteSemanal({
+      adminEmail: 'admin@iiap.gov.co',
+      reporte: {
+        desde: '2026-08-26', hasta: '2026-09-02',
+        usuarios: { nuevos: 3 }, solicitudes: { nuevas: 5, pendientes: 2 },
+        documentos: { publicados: 1 }, mapas: { publicados: 0 },
+        logins: { exitosos: 20, fallidos: 1 },
+      },
+    });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('admin@iiap.gov.co');
+    expect(subject).toContain('2026-08-26');
+    expect(html).toContain('20 exitosos / 1 fallidos');
+  });
+});
+
+describe('notifyErrorCritico()', () => {
+  it('alerta al admin con el endpoint y el número de ocurrencias', async () => {
+    await notifyErrorCritico({
+      adminEmail: 'admin@iiap.gov.co',
+      mensaje: 'Connection timeout', metodo: 'POST', ruta: '/api/v1/mapas', ocurrencias: 7,
+    });
+
+    const { to, subject, html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(to).toBe('admin@iiap.gov.co');
+    expect(subject).toContain('POST /api/v1/mapas');
+    expect(html).toContain('Connection timeout');
+    expect(html).toContain('7');
   });
 });
 

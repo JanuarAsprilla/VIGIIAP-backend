@@ -217,6 +217,16 @@ export async function auditLog(req, res, next) {
   }
 }
 
+/** GET /api/admin/errores */
+export async function errorLog(req, res, next) {
+  try {
+    const result = await adminService.getErrorLog(req.query);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** GET /api/admin/super/stats — exclusivo super_admin */
 export async function superStats(req, res, next) {
   try {
