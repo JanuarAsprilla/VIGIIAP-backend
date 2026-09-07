@@ -26,4 +26,4 @@ EXPOSE 4000
 
 ENV NODE_ENV=production
 
-CMD ["node", "--import", "./src/instrument.js", "server.js"]
+CMD ["node", "server.js"]

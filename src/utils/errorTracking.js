@@ -1,11 +1,11 @@
 /**
- * VIGIIAP — Registro y alerta de errores 5xx, sin depender de Sentry.
+ * VIGIIAP — Registro y alerta de errores 5xx (monitoreo propio, sin Sentry
+ * ni ningún servicio externo).
  * errorHandler.js llama a registrarError() para cada error 500+; se agrupa
  * por fingerprint (método+ruta+mensaje, normalizados) en error_log y, si no
  * se avisó a los admins por este mismo error en la última hora, se les manda
  * un correo. Mensaje y stack se redactan antes de guardarse o enviarse —
- * mismo principio que beforeSend() en instrument.js (Sentry) y
- * sanitizeSMTP() en mailer.js: un stack trace puede traer credenciales
+ * mismo principio que sanitizeSMTP() en mailer.js: un stack trace puede traer credenciales
  * (JWT en un header logueado, connection string con password, etc.) y esto
  * termina en una tabla y en un correo, no en un servicio externo con acceso
  * controlado.
