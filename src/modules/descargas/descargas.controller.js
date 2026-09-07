@@ -39,7 +39,7 @@ export async function descargarMapa(req, res, next) {
 
     const { rows } = await query(
       `SELECT id, titulo, activo, visibilidad, archivo_pdf_url, archivo_img_url
-       FROM mapas WHERE id = $1`,
+       FROM mapas WHERE id = $1 AND deleted_at IS NULL`,
       [req.params.id],
     );
     const mapa = rows[0];
@@ -83,7 +83,7 @@ export async function descargarDocumento(req, res, next) {
   try {
     const { rows } = await query(
       `SELECT id, titulo, activo, visibilidad, archivo_url
-       FROM documentos WHERE id = $1`,
+       FROM documentos WHERE id = $1 AND deleted_at IS NULL`,
       [req.params.id],
     );
     const doc = rows[0];

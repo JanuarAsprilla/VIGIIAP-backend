@@ -174,14 +174,19 @@ export async function crearUsuario(req, res, next) {
   }
 }
 
+const actualizarUsuarioSchema = z.object({
+  rol:    z.enum(['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico']).optional(),
+  activo: z.boolean().optional(),
+});
+
 /** PATCH /api/admin/usuarios/:id */
 export async function actualizarUsuario(req, res, next) {
   try {
-    const { rol, activo } = req.body;
+    const { rol, activo } = actualizarUsuarioSchema.parse(req.body);
     const usuario = await adminService.actualizarUsuario({
       id:         req.params.id,
       rol,
-      activo:     activo !== undefined ? Boolean(activo) : undefined,
+      activo,
       adminId:    req.user.id,
       adminRol:   req.user.rol,
       adminEmail: req.user.email,

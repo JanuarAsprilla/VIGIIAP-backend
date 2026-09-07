@@ -190,6 +190,17 @@ describe('descargarMapa()', () => {
     await descargarMapa(req, res, mockNext);
     expect(res.status).toHaveBeenCalledWith(403);
   });
+
+  // Regresión: un mapa en papelera (deleted_at seteado) no debe seguir siendo
+  // descargable vía enlace directo aunque su columna `activo` no haya cambiado
+  // — el soft-delete solo toca deleted_at, no activo (ver mapas.service.js#remove).
+  it('la query filtra deleted_at IS NULL — un mapa en papelera no es descargable', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const res = mockRes();
+    await descargarMapa(mockReq({ params: { id: 'uuid-mapa-borrado' } }), res, mockNext);
+    expect(query).toHaveBeenCalledWith(expect.stringMatching(/deleted_at IS NULL/), ['uuid-mapa-borrado']);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
 });
 
 // ── descargarDocumento() ───────────────────────────────────────────────────
@@ -261,5 +272,15 @@ describe('descargarDocumento()', () => {
     const res = mockRes();
     await descargarDocumento(mockReq({ params: { id: 'id' } }), res, mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  // Regresión: mismo caso que en descargarMapa() — un documento en papelera
+  // no debe seguir siendo descargable vía enlace directo.
+  it('la query filtra deleted_at IS NULL — un documento en papelera no es descargable', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    const res = mockRes();
+    await descargarDocumento(mockReq({ params: { id: 'uuid-doc-borrado' } }), res, mockNext);
+    expect(query).toHaveBeenCalledWith(expect.stringMatching(/deleted_at IS NULL/), ['uuid-doc-borrado']);
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 });
