@@ -97,3 +97,21 @@ export const passwordResetLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes de recuperación para este correo. Intenta en 1 hora.' },
 });
+
+/**
+ * Registro y reenvío de verificación: máximo 5 solicitudes por hora por email
+ * destino, además del límite por IP (authRateLimiter) ya existente. Sin esto,
+ * un atacante con varias IPs puede "mail bombing" la bandeja de un usuario
+ * específico repitiendo envíos de verificación con el mismo correo.
+ */
+export const emailActionRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    return email ? `email-action:${String(email).trim().toLowerCase()}` : normalizeIp(req);
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes para este correo. Intenta en 1 hora.' },
+});

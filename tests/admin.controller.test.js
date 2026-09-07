@@ -319,6 +319,24 @@ describe('admin.controller → actualizarUsuario()', () => {
     await actualizarUsuario({ params: { id: 'u1' }, body: {}, user: ADMIN }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  // Regresión: activo debe validarse como boolean real, no coercionarse con
+  // Boolean(). Boolean("false") === true — un admin que envíe activo:"false"
+  // (ej. desde un formulario sin JS o un cliente que serializa a string)
+  // dejaría la cuenta activa creyendo haberla desactivado.
+  it('rechaza activo como string en vez de silenciarlo con Boolean()', async () => {
+    await actualizarUsuario({ params: { id: 'u1' }, body: { activo: 'false' }, user: ADMIN }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(adminService.actualizarUsuario).not.toHaveBeenCalled();
+  });
+
+  it('acepta activo como boolean real y lo pasa tal cual al servicio', async () => {
+    adminService.actualizarUsuario.mockResolvedValue({ id: 'u1', activo: false });
+    await actualizarUsuario({ params: { id: 'u1' }, body: { activo: false }, user: ADMIN }, res(), mockNext);
+    expect(adminService.actualizarUsuario).toHaveBeenCalledWith(
+      expect.objectContaining({ activo: false })
+    );
+  });
 });
 
 // ── eliminarUsuario() ─────────────────────────────────────────────────────

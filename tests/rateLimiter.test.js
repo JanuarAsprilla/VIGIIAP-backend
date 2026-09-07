@@ -9,6 +9,7 @@ import {
   downloadRateLimiter,
   adminRateLimiter,
   passwordResetLimiter,
+  emailActionRateLimiter,
 } from '../src/middlewares/rateLimiter.js';
 
 function buildApp(limiter, { withUser = false } = {}) {
@@ -178,5 +179,26 @@ describe('passwordResetLimiter — key por email vs. IP', () => {
 
     const res = await request(app).get('/ping');
     expect(res.status).toBe(200);
+  });
+});
+
+// Regresión: /registro y /reenviar-verificacion solo limitaban por IP —
+// un atacante con varias IPs podía "mail bombing" la bandeja de un email
+// específico repitiendo envíos con el mismo correo destino.
+describe('emailActionRateLimiter — key por email vs. IP (registro / reenviar-verificacion)', () => {
+  it('usa `email-action:<email>` como key cuando el body trae un email', async () => {
+    const app = buildApp(emailActionRateLimiter);
+    const res = await request(app).post('/ping').send({ email: 'Victima@IIAP.gob.co' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('5');
+  });
+
+  it('usa la IP normalizada como key cuando el body no trae email', async () => {
+    const app = buildApp(emailActionRateLimiter);
+    const res = await request(app).post('/ping').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('5');
   });
 });

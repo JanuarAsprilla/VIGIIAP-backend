@@ -14,7 +14,7 @@ import {
 } from './auth.controller.js';
 import { authenticate } from '../../middlewares/auth.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
-import { authRateLimiter, loginAccountRateLimiter, passwordResetLimiter } from '../../middlewares/rateLimiter.js';
+import { authRateLimiter, loginAccountRateLimiter, passwordResetLimiter, emailActionRateLimiter } from '../../middlewares/rateLimiter.js';
 import { getSessions, revokeSession, revokeAllSessions } from './sessions.controller.js';
 import { setup as tfSetup, verify as tfVerify, disable as tfDisable, confirm as tfConfirm } from './twoFactor.controller.js';
 import { changeExpiredPassword } from './expiredPassword.controller.js';
@@ -29,9 +29,9 @@ router.post('/login',                  authRateLimiter, loginAccountRateLimiter,
 router.post('/refresh',                authRateLimiter, refresh);
 router.post('/logout',                 authenticate, csrfProtection, logout);
 router.post('/visitante',              authRateLimiter, visitante);
-router.post('/registro',               authRateLimiter, register);
+router.post('/registro',               authRateLimiter, emailActionRateLimiter, register);
 router.get('/verificar-email/:token',  verifyEmail);
-router.post('/reenviar-verificacion',  authRateLimiter, reenviarVerificacion);
+router.post('/reenviar-verificacion',  authRateLimiter, emailActionRateLimiter, reenviarVerificacion);
 router.post('/recuperar-password',     authRateLimiter, passwordResetLimiter, recuperarPassword);
 router.post('/reset-password',         authRateLimiter, resetPassword);
 router.get('/me',                      authenticate, me);
