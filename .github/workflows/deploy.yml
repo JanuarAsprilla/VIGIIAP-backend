@@ -48,8 +48,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vigiiap-backend:latest
-            ghcr.io/${{ github.repository_owner }}/vigiiap-backend:${{ github.event.workflow_run.head_sha }}
+            ghcr.io/januarasprilla/vigiiap-backend:latest
+            ghcr.io/januarasprilla/vigiiap-backend:${{ github.event.workflow_run.head_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
