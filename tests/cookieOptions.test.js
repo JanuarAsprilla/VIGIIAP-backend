@@ -25,9 +25,9 @@ describe('cookieOptions', () => {
     expect(clearRefreshCookieOptions().path).toBe(refreshCookieOptions().path);
   });
 
-  it('refreshCookieOptions() sigue siendo httpOnly/secure/sameSite=None y respeta los días pedidos', () => {
+  it('refreshCookieOptions() sigue siendo httpOnly/secure/sameSite=Lax y respeta los días pedidos', () => {
     const opts = refreshCookieOptions(7);
-    expect(opts).toMatchObject({ httpOnly: true, secure: true, sameSite: 'None' });
+    expect(opts).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax' });
     expect(opts.maxAge).toBe(7 * 24 * 60 * 60 * 1000);
   });
 

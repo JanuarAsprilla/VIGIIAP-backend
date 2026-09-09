@@ -2,11 +2,12 @@
  * Protección CSRF (double-submit vía HMAC) — src/utils/csrf.js y
  * src/middlewares/csrf.js.
  *
- * Contexto: las cookies de sesión usan sameSite: 'None' (frontend y backend
- * en subdominios distintos), así que el navegador SÍ adjunta la cookie en
- * peticiones cross-site. express.urlencoded está deshabilitado, pero multer
- * sigue parseando multipart/form-data (subida de archivos) sin preflight
- * CORS — ese es el vector real. Estos tests verifican que el middleware
+ * Contexto: las cookies de sesión usan sameSite: 'Lax' (frontend y backend
+ * bajo el mismo origen en el despliegue propio), pero esa protección
+ * depende de que el navegador de cada usuario la respete. express.urlencoded
+ * está deshabilitado, pero multer sigue parseando multipart/form-data
+ * (subida de archivos) sin preflight CORS — ese es el vector real que esta
+ * capa cierra de forma explícita. Estos tests verifican que el middleware
  * bloquea peticiones mutantes autenticadas por cookie sin el token CSRF
  * correcto, y que no interfiere con clientes Bearer (no vulnerables a CSRF).
  */

@@ -174,12 +174,15 @@ app.use(express.json({ limit: '1mb' }));
 // multipart/form-data es procesado por multer en las rutas de subida de archivos.
 //
 // IMPORTANTE: deshabilitar urlencoded NO es, por sí solo, una mitigación de CSRF.
-// Las cookies de sesión usan sameSite: 'None' (ver src/utils/cookieOptions.js), así
-// que el navegador SÍ adjunta la cookie en peticiones cross-site, y tanto un <form>
+// Las cookies de sesión usan sameSite: 'Lax' (ver src/utils/cookieOptions.js), que
+// ya bloquea el envío de la cookie en un POST cross-site (incluido un <form>
+// enviado desde otro sitio) — pero eso depende de que el navegador de cada
+// usuario respete esa marca, y no es una garantía absoluta. Tanto un <form>
 // multipart/form-data (procesado por multer en /documentos, /mapas,
 // /categorias/:nombre/thumbnail, /solicitudes/:id/archivos) como uno con
 // Content-Type "simple" son peticiones que el navegador envía sin preflight CORS.
-// La protección real es el middleware CSRF explícito (src/middlewares/csrf.js),
+// La protección real, explícita y no dependiente del navegador, es el
+// middleware CSRF (src/middlewares/csrf.js),
 // aplicado a las rutas de estado mutante bajo /admin, /usuarios, /solicitudes,
 // /mapas, /documentos, /categorias y las de sesión de /auth.
 

@@ -67,7 +67,7 @@ export async function confirm(req, res, next) {
       ip: req.ip, userAgent: req.headers['user-agent'],
     });
 
-    res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'None' });
+    res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'Lax' });
     res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
     res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, refreshCookieOptions());
     // Mismo shape que /auth/me — el frontend igual pide el perfil completo tras

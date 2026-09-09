@@ -4,16 +4,19 @@ import crypto from 'node:crypto';
  * Protección CSRF — patrón "double submit" sin estado, derivado del propio
  * access token (HMAC), sin necesidad de una cookie ni almacenamiento extra.
  *
- * Por qué es necesario: las cookies de sesión usan sameSite: 'None' (ver
- * src/utils/cookieOptions.js) porque frontend y backend viven en subdominios
- * distintos. Eso significa que el navegador SÍ adjunta la cookie httpOnly en
- * peticiones cross-site — el CORS estricto de app.js bloquea que JavaScript
- * de un origen no permitido pueda LEER la respuesta, pero no impide que un
- * <form> cross-site con Content-Type "simple" (multipart/form-data,
- * x-www-form-urlencoded, text/plain) dispare la petición real sin preflight,
- * ejecutando el efecto secundario en el servidor. express.urlencoded está
- * deshabilitado, pero multer sigue parseando multipart/form-data en las
- * rutas de subida de archivos — ese es el vector real de CSRF.
+ * Por qué es necesario: aunque las cookies de sesión usan sameSite: 'Lax'
+ * (ver src/utils/cookieOptions.js), esa protección depende de que el
+ * navegador de cada usuario la respete — no es una garantía absoluta, y no
+ * cubre casos donde el frontend y el backend vuelvan a vivir en dominios
+ * distintos (ver el comentario en cookieOptions.js). El CORS estricto de
+ * app.js bloquea que JavaScript de un origen no permitido pueda LEER la
+ * respuesta, pero no impide que un <form> cross-site con Content-Type
+ * "simple" (multipart/form-data, x-www-form-urlencoded, text/plain) dispare
+ * la petición real sin preflight, ejecutando el efecto secundario en el
+ * servidor si el navegador llegara a adjuntar la cookie. express.urlencoded
+ * está deshabilitado, pero multer sigue parseando multipart/form-data en las
+ * rutas de subida de archivos — ese es el vector real de CSRF que esta capa
+ * cierra de forma explícita, sin depender del navegador.
  *
  * El token se calcula con HMAC-SHA256(JWT_SECRET + ':csrf', accessToken):
  * no requiere una cookie adicional ni tocar cada punto donde se emite la
