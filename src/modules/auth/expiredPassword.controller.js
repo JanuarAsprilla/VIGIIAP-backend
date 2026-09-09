@@ -72,7 +72,7 @@ export async function changeExpiredPassword(req, res, next) {
     const user   = rows[0];
     const tokens = await issueTokenPair(user, { ip: req.ip, userAgent: req.headers['user-agent'] });
 
-    res.clearCookie('vigiiap_expired_temp', { httpOnly: true, secure: true, sameSite: 'None' });
+    res.clearCookie('vigiiap_expired_temp', { httpOnly: true, secure: true, sameSite: 'Lax' });
     res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
     res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, refreshCookieOptions());
     res.json({

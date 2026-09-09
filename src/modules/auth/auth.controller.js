@@ -79,7 +79,7 @@ export async function login(req, res, next) {
     // Contraseña expirada — emitir token temporal y forzar cambio
     if (result.passwordExpired) {
       res.cookie('vigiiap_expired_temp', result.expiredToken, {
-        httpOnly: true, secure: true, sameSite: 'None',
+        httpOnly: true, secure: true, sameSite: 'Lax',
         maxAge: 15 * 60 * 1000, path: '/api/auth/change-expired-password',
       });
       return res.status(403).json({ passwordExpired: true, code: 'PASSWORD_EXPIRED' });
@@ -88,7 +88,7 @@ export async function login(req, res, next) {
     // 2FA activo — emitir token temporal y pedir segundo factor
     if (result.requiresTwoFactor) {
       res.cookie('vigiiap_2fa_temp', result.twoFactorToken, {
-        httpOnly: true, secure: true, sameSite: 'None',
+        httpOnly: true, secure: true, sameSite: 'Lax',
         maxAge: 15 * 60 * 1000, path: '/api/auth/2fa/confirm',
       });
       return res.json({ requiresTwoFactor: true });
