@@ -443,6 +443,22 @@ describe('loginVisitante()', () => {
     expect(result.user.nombre).toBe('Visitante');
   });
 
+  it('incluye el nombre en el payload del JWT — /auth/me lo lee de ahí, no de la BD', async () => {
+    // Regresión: el nombre se guardaba en la tabla visitantes pero nunca viajaba
+    // en el token, así que /auth/me devolvía 'Visitante' fijo sin importar lo
+    // que la persona hubiera escrito al entrar.
+    query.mockResolvedValueOnce({ rows: [{ id: 'vis-003' }] });
+    const jwt = (await import('jsonwebtoken')).default;
+
+    await loginVisitante({ nombre: 'Ana Torres', ip: '::1', userAgent: 'test' });
+
+    expect(jwt.sign).toHaveBeenCalledWith(
+      expect.objectContaining({ nombre: 'Ana Torres', tipo: 'visitante' }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('inserta null en BD cuando el nombre es undefined', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'vis-003' }] });
 

@@ -267,9 +267,12 @@ export async function resetPassword(req, res, next) {
 export async function me(req, res, next) {
   try {
     if (req.user?.tipo === 'visitante') {
+      // El nombre viaja en el JWT desde loginVisitante() — antes se devolvía
+      // 'Visitante' fijo aquí, sin importar el nombre que la persona escribió
+      // al entrar, así que nunca se veía reflejado en la UI.
       return res.json({
         id:     req.user.visitanteId,
-        nombre: 'Visitante',
+        nombre: req.user.nombre || 'Visitante',
         email:  null,
         rol:    'visitante',
         tipo:   'visitante',
