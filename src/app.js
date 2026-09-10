@@ -5,7 +5,18 @@ import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { openApiSpec } from './docs/openapi.js';
+
+// Version leída de package.json (no de una env var) — así /health siempre
+// refleja el código realmente empaquetado en la imagen, sin depender de que
+// nadie recuerde actualizar una variable en el deploy.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const { version: APP_VERSION } = JSON.parse(
+  readFileSync(join(__dirname, '..', 'package.json'), 'utf8'),
+);
 
 import { query } from './config/database.js';
 import logger from './utils/logger.js';
@@ -123,6 +134,7 @@ app.get('/health', async (_req, res) => {
 
   res.status(critical ? 503 : 200).json({
     status:    critical ? 'degraded' : 'ok',
+    version:   APP_VERSION,
     uptime:    Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     ...checks,

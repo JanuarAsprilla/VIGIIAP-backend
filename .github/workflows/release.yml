@@ -15,19 +15,25 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
 
+      # skip-github-pull-request quedaba en true: release-please dejaba el
+      # bump de versión + changelog preparado en una rama propia
+      # (release-please--branches--main--...) que nadie fusionaba nunca —
+      # cero releases ni tags nuevos desde v1.0.0 pese a 90+ PRs. Con el flag
+      # en false (default), abre un PR real "chore(main): release X.Y.Z" que
+      # se revisa y fusiona como cualquier otro — ahí es cuando se corta el
+      # tag y el GitHub Release con el changelog real.
       - name: Create Release PR or Tag
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           release-type: node
           token: ${{ secrets.GITHUB_TOKEN }}
-          skip-github-pull-request: true

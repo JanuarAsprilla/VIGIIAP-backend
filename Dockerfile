@@ -26,4 +26,8 @@ EXPOSE 4000
 
 ENV NODE_ENV=production
 
-CMD ["node", "server.js"]
+# Migraciones antes de servir tráfico: db/migrate.js es idempotente (tabla
+# _migraciones), así que correrlo en cada arranque es seguro. Si una migración
+# nueva falla, el contenedor no llega a levantar el servidor — el healthcheck
+# lo marca como caído en vez de servir con un esquema a medio aplicar.
+CMD ["sh", "-c", "node db/migrate.js && node server.js"]
