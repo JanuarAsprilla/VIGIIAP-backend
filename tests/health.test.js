@@ -32,6 +32,13 @@ describe('GET /health', () => {
     expect(res.body).toHaveProperty('timestamp');
   });
 
+  it('expone la versión del package.json empaquetado en la imagen — trazabilidad de qué corre en producción', async () => {
+    query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+    const { version } = await import('../package.json', { with: { type: 'json' } });
+    const res = await request(app).get('/health');
+    expect(res.body.version).toBe(version);
+  });
+
   it('reporta redis:not_configured cuando REDIS_URL no está definida', async () => {
     const original = process.env.REDIS_URL;
     delete process.env.REDIS_URL;
