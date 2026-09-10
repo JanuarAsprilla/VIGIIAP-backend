@@ -290,7 +290,7 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
   const visitanteId = rows[0].id;
 
   const token = signToken(
-    { visitanteId, rol: 'visitante', tipo: 'visitante' },
+    { visitanteId, rol: 'visitante', tipo: 'visitante', nombre: nombre || null },
     '8h'
   );
 
