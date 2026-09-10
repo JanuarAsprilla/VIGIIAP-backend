@@ -142,18 +142,21 @@ app.get('/health', async (_req, res) => {
 });
 
 // ─── CORS estricto ────────────────────────────────────────────────────────────
-const IS_PROD = process.env.NODE_ENV === 'production';
 app.use(
   cors({
     origin(origin, callback) {
-      // En producción se requiere Origin explícito — bloquea peticiones server-side anónimas.
-      // En desarrollo se permiten curl y Postman (sin Origin) para facilitar el trabajo local.
-      if (!origin) {
-        if (IS_PROD) {
-          return callback(Object.assign(new Error('CORS: Origin requerido en producción'), { status: 403 }));
-        }
-        return callback(null, true);
-      }
+      // Sin Origin: se deja pasar en todo entorno. Exigirlo en producción se
+      // pensó como defensa contra peticiones server-side anónimas, pero el
+      // proxy de borde real del instituto (fuera de nuestro control) no
+      // siempre reenvía el header Origin — eso dejó CADA petición real de
+      // navegador (login incluido) bloqueada con 403 en producción, un
+      // apagón total detectado en vivo. La protección real contra CSRF no
+      // depende de Origin: es el token HMAC explícito (src/middlewares/csrf.js)
+      // más sameSite:'Lax' — Origin ausente tampoco demuestra nada por sí
+      // solo, cualquier cliente no-navegador puede omitirlo u omitir su
+      // verificación igual de fácil. Cuando SÍ llega un Origin, se sigue
+      // validando estricto contra la lista blanca.
+      if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       callback(Object.assign(new Error(`CORS: origen no permitido — ${origin}`), { status: 403 }));
     },

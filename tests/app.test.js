@@ -123,9 +123,13 @@ describe('app.js — CORS en producción (NODE_ENV=production)', () => {
     delete process.env.CORS_ORIGIN;
   });
 
-  it('rechaza requests sin Origin en producción', async () => {
+  it('permite requests sin Origin en producción — un proxy de borde real puede no reenviarlo', async () => {
+    // Regresión: esto estaba en 403 y tumbó CADA petición real de navegador
+    // en producción (login incluido) porque el proxy de borde del instituto
+    // no siempre reenvía el header Origin. La protección real contra CSRF
+    // (token HMAC + sameSite:'Lax') no depende de este header.
     const res = await request(app).get(`/verificar-email/${HEX_TOKEN}`);
-    expect(res.status).toBe(403);
+    expect(res.status).not.toBe(403);
   });
 
   it('no monta /api/docs.json en producción', async () => {
