@@ -3,7 +3,7 @@ import { getPapelera, restaurar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
-  getConfiguracion, setConfiguracion, notificaciones, reportes,
+  getConfiguracion, setConfiguracion, probarCorreo, notificaciones, reportes,
   superStats, crearAdmin,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
   batchUsuarios,
@@ -38,8 +38,9 @@ router.get('/descargas/stats',  descargasStats);
 router.get('/scan-log',         scanLog);
 
 // ── Rutas exclusivas de super_admin ──────────────────────────────────────────
-router.get('/super/stats',         requireSuperAdmin, superStats);
-router.post('/super/crear-admin',  requireSuperAdmin, crearAdmin);
+router.get('/super/stats',              requireSuperAdmin, superStats);
+router.post('/super/crear-admin',       requireSuperAdmin, crearAdmin);
+router.post('/configuracion/probar-correo', requireSuperAdmin, probarCorreo);
 
 // ── Exports CSV/JSON (admin_sig y super_admin) ────────────────────────────────
 router.get('/export/usuarios',    exportUsuarios);

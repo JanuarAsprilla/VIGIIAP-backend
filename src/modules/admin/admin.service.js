@@ -8,7 +8,8 @@ import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 import { paginate } from '../../utils/paginate.js';
-import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado } from '../../utils/mailer.js';
+import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado, clearMailConfigCache, notifyCambioConfigCritica } from '../../utils/mailer.js';
+import { SUPER_ADMIN_ONLY_KEYS, CONFIG_LABELS } from './configSchema.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { setMaintenanceState } from '../../middlewares/maintenanceMode.js';
 
@@ -246,6 +247,13 @@ export async function setConfiguracion(config, adminId, adminEmail) {
     });
   }
 
+  // mailer.js cachea la config SMTP 5 min — sin esto, "guardado" en la UI no
+  // significaría "ya está en efecto" hasta que el cache expirara solo.
+  const MAIL_KEYS = ['mail_host', 'mail_port', 'mail_secure', 'mail_user', 'mail_pass', 'mail_remitente', 'mail_remitente_nombre'];
+  if (MAIL_KEYS.some((k) => k in config)) {
+    clearMailConfigCache();
+  }
+
   registrarAuditoria({
     accion:      'update_configuracion',
     modulo:      'admin',
@@ -253,6 +261,29 @@ export async function setConfiguracion(config, adminId, adminEmail) {
     usuarioId:   adminId,
     usuarioEmail: adminEmail,
   });
+
+  // Un ajuste solo-super_admin (SMTP, mantenimiento, política de privacidad)
+  // que cambia sin que nadie más se entere es exactamente el escenario que
+  // esto cierra: cada super_admin activo recibe el detalle de qué cambió y
+  // quién lo hizo, además de quedar en la bitácora de arriba. Un correo por
+  // destinatario (no uno solo con varios "to") — mismo patrón que las demás
+  // alertas a admins (ver alertarAdmins en errorTracking.js).
+  const criticalKeys = Object.keys(config).filter((k) => SUPER_ADMIN_ONLY_KEYS.has(k));
+  if (criticalKeys.length) {
+    const superAdminEmails = await getSuperAdminEmails();
+    const cambios = criticalKeys.map((k) => CONFIG_LABELS[k] || k);
+    await Promise.all(
+      superAdminEmails.map((email) => notifyCambioConfigCritica({ email, cambios, adminEmail })),
+    );
+  }
+}
+
+/** Emails de los super_admin activos — para la alerta de cambio crítico de configuración. */
+export async function getSuperAdminEmails() {
+  const { rows } = await query(
+    "SELECT email FROM usuarios WHERE rol = 'super_admin' AND activo = true"
+  );
+  return rows.map((r) => r.email);
 }
 
 /** Obtiene los admins para enviar notificaciones */

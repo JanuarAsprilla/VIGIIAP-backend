@@ -39,6 +39,7 @@ vi.mock('../src/utils/auditLog.js', () => ({
 vi.mock('../src/utils/mailer.js', () => ({
   notifyUsuarioActivacion: vi.fn().mockResolvedValue(undefined),
   notifyRolCambiado:       vi.fn().mockResolvedValue(undefined),
+  sendTestEmail:           vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../src/modules/auth/auth.service.js', () => ({
@@ -49,10 +50,10 @@ import * as adminService from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../src/utils/dataCustody.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
-import { notifyUsuarioActivacion, notifyRolCambiado } from '../src/utils/mailer.js';
+import { notifyUsuarioActivacion, notifyRolCambiado, sendTestEmail } from '../src/utils/mailer.js';
 import { revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import {
-  notificaciones, getConfiguracion, setConfiguracion, stats, resetStatsCache,
+  notificaciones, getConfiguracion, setConfiguracion, probarCorreo, stats, resetStatsCache,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, errorLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
   descargasStats, scanLog, batchUsuarios, reportes,
@@ -115,7 +116,16 @@ describe('admin.controller → getConfiguracion()', () => {
     adminService.getConfiguracion.mockResolvedValue({ siteName: 'VIGIIAP' });
     const r = res();
     await getConfiguracion({}, r, mockNext);
-    expect(r.json).toHaveBeenCalledWith({ siteName: 'VIGIIAP' });
+    expect(r.json).toHaveBeenCalledWith({ siteName: 'VIGIIAP', mail_pass_configurado: false });
+  });
+
+  it('nunca devuelve mail_pass en texto plano — solo si hay algo guardado', async () => {
+    adminService.getConfiguracion.mockResolvedValue({ siteName: 'VIGIIAP', mail_pass: 'secreto-real' });
+    const r = res();
+    await getConfiguracion({}, r, mockNext);
+    const body = r.json.mock.calls[0][0];
+    expect(body.mail_pass).toBeUndefined();
+    expect(body.mail_pass_configurado).toBe(true);
   });
 
   it('llama next(err) si el servicio lanza', async () => {
@@ -199,6 +209,51 @@ describe('admin.controller → setConfiguracion()', () => {
   it('llama next(err) si el servicio lanza', async () => {
     adminService.setConfiguracion.mockRejectedValue(new Error('db'));
     await setConfiguracion({ body: { siteName: 'X' }, user: ADMIN }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('retorna 403 si admin_sig intenta modificar cualquier ajuste SMTP (mail_host, mail_pass, etc.)', async () => {
+    const r = res();
+    await setConfiguracion({ body: { mail_host: 'smtp.evil.co' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('super_admin sí puede guardar la config SMTP completa', async () => {
+    adminService.setConfiguracion.mockResolvedValue(undefined);
+    const r = res();
+    await setConfiguracion({
+      body: { mail_host: 'smtp.instituto.co', mail_port: '587', mail_secure: false, mail_user: 'x@iiap.org.co', mail_pass: 'clave' },
+      user: SUPERADMIN,
+    }, r, mockNext);
+    expect(adminService.setConfiguracion).toHaveBeenCalledOnce();
+    expect(r.json).toHaveBeenCalledWith({ message: expect.any(String) });
+  });
+
+  it('retorna 400 si mail_port no es un número', async () => {
+    const r = res();
+    await setConfiguracion({ body: { mail_port: 'ochenta-y-siete' }, user: SUPERADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+});
+
+// ── probarCorreo() ────────────────────────────────────────────────────────
+
+describe('admin.controller → probarCorreo()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('envía el correo de prueba a la dirección del propio usuario autenticado, nunca a una del body', async () => {
+    const r = res();
+    await probarCorreo({ user: SUPERADMIN, body: { to: 'otro@fuera.co' } }, r, mockNext);
+    expect(sendTestEmail).toHaveBeenCalledWith(SUPERADMIN.email);
+    expect(sendTestEmail).not.toHaveBeenCalledWith('otro@fuera.co');
+    expect(r.json).toHaveBeenCalledWith({ message: expect.stringContaining(SUPERADMIN.email) });
+  });
+
+  it('llama next(err) si el envío falla — el super_admin necesita ver la razón real', async () => {
+    sendTestEmail.mockRejectedValue(Object.assign(new Error('SMTP no configurado'), { status: 400 }));
+    await probarCorreo({ user: SUPERADMIN, body: {} }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

@@ -526,16 +526,16 @@ describe('send() — errores de transporte SMTP', () => {
 // ── createTransport() — valores por defecto ──────────────────────────────────────
 
 describe('createTransport() — valores por defecto de host/puerto/seguridad', () => {
-  it('usa smtp.gmail.com:587 sin TLS cuando MAIL_HOST/MAIL_PORT/MAIL_SECURE no están definidos', async () => {
+  it('con MAIL_HOST ausente (aunque USER/PASS sí estén), no adivina un host — cae a BD, y si BD está vacía, omite el envío', async () => {
+    // Antes existía un default implícito a smtp.gmail.com — se quitó a propósito:
+    // el instituto puede usar cualquier proveedor, y adivinar Gmail con
+    // credenciales ajenas nunca iba a autenticar de verdad. Las TRES env vars
+    // (host+user+pass) deben estar completas para que la vía env-var anule BD.
     delete process.env.MAIL_HOST;
-    delete process.env.MAIL_PORT;
-    delete process.env.MAIL_SECURE;
 
     await notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
 
-    expect(nodemailer.createTransport).toHaveBeenCalledWith(
-      expect.objectContaining({ host: 'smtp.gmail.com', port: 587, secure: false }),
-    );
+    expect(nodemailer.createTransport).not.toHaveBeenCalled();
   });
 
   it('usa secure:true cuando MAIL_SECURE es "true"', async () => {
@@ -599,5 +599,107 @@ describe('getFromAddress() — ramas de fallback de BD', () => {
     const call = sendMailSpy.mock.calls[0]?.[0];
     expect(call?.from).toContain('Nombre De Emergencia');
     delete process.env.MAIL_FROM_NAME;
+  });
+});
+
+// ── SMTP dinámico desde BD (panel del super_admin) — módulo aislado ────────────
+
+describe('SMTP dinámico — config desde la tabla configuracion', () => {
+  async function loadMailerFresh() {
+    vi.resetModules();
+    const dbMod = await import('../src/config/database.js');
+    const mailerMod = await import('../src/utils/mailer.js');
+    return { query: dbMod.query, mailer: mailerMod };
+  }
+
+  const SMTP_ROWS = [
+    { clave: 'mail_host',   valor: 'smtp.instituto.co' },
+    { clave: 'mail_port',   valor: '465' },
+    { clave: 'mail_secure', valor: 'true' },
+    { clave: 'mail_user',   valor: 'panel@iiap.org.co' },
+    { clave: 'mail_pass',   valor: 'clave-guardada-desde-el-panel' },
+  ];
+
+  it('sin env vars completas, usa la config SMTP guardada en el panel', async () => {
+    delete process.env.MAIL_HOST;
+    delete process.env.MAIL_USER;
+    delete process.env.MAIL_PASS;
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: SMTP_ROWS });
+
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: 'smtp.instituto.co', port: 465, secure: true,
+        auth: { user: 'panel@iiap.org.co', pass: 'clave-guardada-desde-el-panel' },
+      }),
+    );
+  });
+
+  it('si en BD falta mail_pass (config a medias), no envía en vez de fallar con credenciales incompletas', async () => {
+    delete process.env.MAIL_HOST;
+    delete process.env.MAIL_USER;
+    delete process.env.MAIL_PASS;
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({
+      rows: SMTP_ROWS.filter((r) => r.clave !== 'mail_pass'),
+    });
+
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+
+    expect(nodemailer.createTransport).not.toHaveBeenCalled();
+  });
+
+  it('clearMailConfigCache() fuerza releer BD en el siguiente envío en vez de esperar los 5 min de cache', async () => {
+    delete process.env.MAIL_HOST;
+    delete process.env.MAIL_USER;
+    delete process.env.MAIL_PASS;
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: SMTP_ROWS });
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+    expect(freshQuery).toHaveBeenCalledTimes(2); // smtp config + from address
+
+    // Segundo envío inmediato: sin invalidar, ambos caches (SMTP y from-address) sirven de memoria
+    freshQuery.mockClear();
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+    expect(freshQuery).not.toHaveBeenCalled();
+
+    // Tras invalidar, vuelve a consultar BD para SMTP
+    freshQuery.mockClear();
+    mailer.clearMailConfigCache();
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+    expect(freshQuery).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── sendTestEmail() — botón "probar correo" del panel ───────────────────────────
+
+describe('sendTestEmail()', () => {
+  async function loadMailerFresh() {
+    vi.resetModules();
+    const dbMod = await import('../src/config/database.js');
+    const mailerMod = await import('../src/utils/mailer.js');
+    return { query: dbMod.query, mailer: mailerMod };
+  }
+
+  it('envía y no lanza cuando SMTP está configurado', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] }); // env vars (beforeEach) cubren host/user/pass
+
+    await expect(mailer.sendTestEmail('super@iiap.org.co')).resolves.toBeUndefined();
+    expect(sendMailSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'super@iiap.org.co', subject: expect.stringContaining('prueba') }),
+    );
+  });
+
+  it('lanza un error claro (no un log silencioso) cuando SMTP no está configurado — a diferencia de send()', async () => {
+    delete process.env.MAIL_HOST;
+    delete process.env.MAIL_USER;
+    delete process.env.MAIL_PASS;
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+
+    await expect(mailer.sendTestEmail('super@iiap.org.co')).rejects.toThrow(/SMTP no configurado/);
   });
 });
