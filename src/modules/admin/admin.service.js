@@ -12,6 +12,7 @@ import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, n
 import { SUPER_ADMIN_ONLY_KEYS, CONFIG_LABELS } from './configSchema.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { setMaintenanceState } from '../../middlewares/maintenanceMode.js';
+import { clearDynamicConfigCache, getAdminEmailFallback } from '../../config/dynamicConfig.js';
 
 /**
  * Genera una contraseña temporal criptográficamente segura.
@@ -254,6 +255,13 @@ export async function setConfiguracion(config, adminId, adminEmail) {
     clearMailConfigCache();
   }
 
+  // Mismo motivo — dynamicConfig.js cachea CORS extra / rate limit / correo
+  // de respaldo 5 min.
+  const DYNAMIC_KEYS = ['cors_extra_origins', 'rate_limit_max', 'admin_email_fallback'];
+  if (DYNAMIC_KEYS.some((k) => k in config)) {
+    clearDynamicConfigCache();
+  }
+
   registrarAuditoria({
     accion:      'update_configuracion',
     modulo:      'admin',
@@ -292,11 +300,11 @@ export async function getAdminEmails() {
     "SELECT email FROM usuarios WHERE rol IN ('admin_sig', 'super_admin') AND activo = true"
   );
   const dbEmails = rows.map((r) => r.email);
-  // Fallback: ADMIN_EMAIL env var (separado por comas) — cubre el caso donde el
-  // email del admin en BD no es un dominio válido o aún no hay admins en BD.
-  const envEmails = process.env.ADMIN_EMAIL
-    ? process.env.ADMIN_EMAIL.split(',').map((e) => e.trim()).filter(Boolean)
-    : [];
+  // Fallback: cubre el caso donde el email del admin en BD no es un dominio
+  // válido o aún no hay admins en BD. admin_email_fallback (panel) tiene
+  // prioridad sobre ADMIN_EMAIL (env var) si el super_admin lo configuró.
+  const fallback = (await getAdminEmailFallback()) || process.env.ADMIN_EMAIL || '';
+  const envEmails = fallback.split(',').map((e) => e.trim()).filter(Boolean);
   return [...new Set([...dbEmails, ...envEmails])];
 }
 

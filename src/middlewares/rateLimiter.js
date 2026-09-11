@@ -1,4 +1,5 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { getRateLimitMax } from '../config/dynamicConfig.js';
 
 /**
  * Normaliza IP usando el helper oficial de express-rate-limit (IPv4 e IPv6).
@@ -16,9 +17,18 @@ function normalizeIp(req) {
   return ipKeyGenerator(req.ip);
 }
 
+// windowMs NO es dinámico a propósito: express-rate-limit lo fija al crear
+// este middleware — cambiarlo en caliente exigiría destruir y recrear todo
+// el limiter (y su store de conteos en memoria), perdiendo el conteo en
+// curso. max sí acepta una función async re-evaluada en cada petición, así
+// que solo ese valor se hizo editable desde el panel del super_admin.
 export const rateLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: (req) => (req.user ? 500 : (Number(process.env.RATE_LIMIT_MAX) || 100)),
+  max: async (req) => {
+    if (req.user) return 500;
+    const dynamic = await getRateLimitMax();
+    return dynamic ?? (Number(process.env.RATE_LIMIT_MAX) || 100);
+  },
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
   standardHeaders: true,
   legacyHeaders: false,
