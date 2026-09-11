@@ -9,6 +9,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { openApiSpec } from './docs/openapi.js';
+import { getExtraCorsOrigins } from './config/dynamicConfig.js';
 
 // Version leída de package.json (no de una env var) — así /health siempre
 // refleja el código realmente empaquetado en la imagen, sin depender de que
@@ -144,7 +145,7 @@ app.get('/health', async (_req, res) => {
 // ─── CORS estricto ────────────────────────────────────────────────────────────
 app.use(
   cors({
-    origin(origin, callback) {
+    async origin(origin, callback) {
       // Sin Origin: se deja pasar en todo entorno. Exigirlo en producción se
       // pensó como defensa contra peticiones server-side anónimas, pero el
       // proxy de borde real del instituto (fuera de nuestro control) no
@@ -155,9 +156,14 @@ app.use(
       // más sameSite:'Lax' — Origin ausente tampoco demuestra nada por sí
       // solo, cualquier cliente no-navegador puede omitirlo u omitir su
       // verificación igual de fácil. Cuando SÍ llega un Origin, se sigue
-      // validando estricto contra la lista blanca.
+      // validando estricto contra la lista blanca (env var + extra del panel).
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Orígenes extra del super_admin (panel) — SIEMPRE se suman a los de
+      // arriba, nunca los reemplazan. Así un error al guardarlos no puede
+      // bloquear el acceso al propio panel que los edita.
+      const extraOrigins = await getExtraCorsOrigins();
+      if (extraOrigins.includes(origin)) return callback(null, true);
       callback(Object.assign(new Error(`CORS: origen no permitido — ${origin}`), { status: 403 }));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

@@ -7,6 +7,9 @@ vi.mock('../src/config/database.js', () => ({
   default: { end: vi.fn() },
 }));
 
+import { query } from '../src/config/database.js';
+import { clearDynamicConfigCache } from '../src/config/dynamicConfig.js';
+
 vi.mock('../src/utils/tokenBlacklist.js', () => ({
   isRevoked: vi.fn().mockReturnValue(false),
   revokeToken: vi.fn(),
@@ -38,6 +41,18 @@ describe('app.js — CORS, redirects, docs, 404 (NODE_ENV=test)', () => {
       .get(`/verificar-email/${HEX_TOKEN}`)
       .set('Origin', 'https://evil.example.com');
     expect(res.status).toBe(403);
+  });
+
+  it('permite un origen extra guardado por el super_admin en el panel (cors_extra_origins), sin estar en CORS_ORIGIN', async () => {
+    clearDynamicConfigCache(); // el test anterior ya calentó el cache en vacío
+    query.mockResolvedValueOnce({ rows: [{ clave: 'cors_extra_origins', valor: 'https://extra-del-panel.co' }] });
+
+    const res = await request(app)
+      .get(`/verificar-email/${HEX_TOKEN}`)
+      .set('Origin', 'https://extra-del-panel.co');
+
+    expect(res.headers['access-control-allow-origin']).toBe('https://extra-del-panel.co');
+    clearDynamicConfigCache(); // no filtrar este mock a los tests siguientes
   });
 
   it('permite requests sin Origin en entornos no-producción (curl/Postman)', async () => {
