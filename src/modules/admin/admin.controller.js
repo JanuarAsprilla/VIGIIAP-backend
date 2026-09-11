@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { query } from '../../config/database.js';
-import { notifyUsuarioActivacion, notifyRolCambiado } from '../../utils/mailer.js';
+import { notifyUsuarioActivacion, notifyRolCambiado, sendTestEmail } from '../../utils/mailer.js';
 import * as adminService from './admin.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
 
 /** GET /api/admin/notificaciones */
 export async function notificaciones(req, res, next) {
@@ -22,39 +23,18 @@ export async function reportes(req, res, next) {
 /** GET /api/admin/configuracion */
 export async function getConfiguracion(req, res, next) {
   try {
-    res.json(await adminService.getConfiguracion());
+    res.json(redactConfig(await adminService.getConfiguracion()));
   } catch (err) { next(err); }
 }
 
-// Claves permitidas para configuración del sistema (ver migración 005_configuracion.sql)
-const CONFIG_SCHEMA = {
-  siteName:             { type: 'string', maxLength: 100 },
-  siteDesc:             { type: 'string', maxLength: 500 },
-  region:               { type: 'string', maxLength: 200 },
-  email:                { type: 'string', maxLength: 254 },
-  phone:                { type: 'string', maxLength: 50 },
-  address:              { type: 'string', maxLength: 300 },
-  // Modo mantenimiento saca de línea la plataforma pública para todo usuario no
-  // admin — solo el super_admin puede modificarlo (ver check en setConfiguracion
-  // más abajo).
-  modoMantenimiento:    { type: 'boolean' },
-  mensajeMantenimiento: { type: 'string', maxLength: 1000 },
-  // Correo remitente — editable desde el panel del super_admin
-  mail_remitente:       { type: 'string', maxLength: 254 },
-  mail_remitente_nombre: { type: 'string', maxLength: 100 },
-  // Preferencias de notificaciones y permisos — panel de Configuración
-  emailNotifs:           { type: 'boolean' },
-  solicitudNotifs:       { type: 'boolean' },
-  loginNotifs:           { type: 'boolean' },
-  reportesSemanal:       { type: 'boolean' },
-  publicoCanSolicitar:   { type: 'boolean' },
-  investigadorCanUpload: { type: 'boolean' },
-  requireApproval:       { type: 'boolean' },
-  // Política de privacidad (Ley 1581 de 2012) — expuesta públicamente en
-  // GET /api/v1/public/configuracion. Contenido legal/compliance: solo el
-  // super_admin puede modificarla (ver check en setConfiguracion más abajo).
-  politicaPrivacidad:    { type: 'string', maxLength: 20000 },
-};
+/** mail_pass es un secreto — nunca viaja de vuelta al navegador, ni siquiera
+ *  al propio super_admin que lo guardó. Se reemplaza por un booleano de
+ *  "¿hay algo guardado?" para que la UI pueda mostrar "configurado" sin
+ *  reexponer la contraseña real en cada GET. */
+function redactConfig(config) {
+  const { mail_pass, ...rest } = config;
+  return { ...rest, mail_pass_configurado: Boolean(mail_pass) };
+}
 
 /** PUT /api/admin/configuracion */
 export async function setConfiguracion(req, res, next) {
@@ -68,22 +48,11 @@ export async function setConfiguracion(req, res, next) {
       return res.status(400).json({ error: `Claves no permitidas: ${unknownKeys.join(', ')}` });
     }
 
-    // politicaPrivacidad es contenido legal/compliance (Ley 1581 de 2012), no un
-    // ajuste rutinario del sitio — solo el super_admin puede modificarlo. Resto
-    // de las claves de CONFIG_SCHEMA siguen disponibles para admin_sig sin cambios.
-    if ('politicaPrivacidad' in req.body && req.user.rol !== 'super_admin') {
-      return res.status(403).json({ error: 'Solo el Super Administrador puede modificar la política de privacidad' });
-    }
-
-    // El modo mantenimiento deja fuera de línea toda la plataforma pública para
-    // cualquier usuario no admin — igual de sensible que la política de privacidad,
-    // solo el super_admin puede modificarlo. Resto de las claves de CONFIG_SCHEMA
-    // siguen disponibles para admin_sig sin cambios.
-    if (
-      ('modoMantenimiento' in req.body || 'mensajeMantenimiento' in req.body) &&
-      req.user.rol !== 'super_admin'
-    ) {
-      return res.status(403).json({ error: 'Solo el Super Administrador puede modificar el modo mantenimiento' });
+    const restrictedKeysSent = Object.keys(req.body).filter((k) => SUPER_ADMIN_ONLY_KEYS.has(k));
+    if (restrictedKeysSent.length && req.user.rol !== 'super_admin') {
+      return res.status(403).json({
+        error: `Solo el Super Administrador puede modificar: ${restrictedKeysSent.join(', ')}`,
+      });
     }
 
     const errors = [];
@@ -96,12 +65,25 @@ export async function setConfiguracion(req, res, next) {
         if (rule.maxLength && value.length > rule.maxLength) {
           errors.push(`'${key}' supera el máximo de ${rule.maxLength} caracteres`);
         }
+        if (rule.pattern && value && !rule.pattern.test(value)) {
+          errors.push(`'${key}' tiene un formato inválido`);
+        }
       }
     }
     if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
     await adminService.setConfiguracion(req.body, req.user.id, req.user.email);
     res.json({ message: 'Configuración guardada' });
+  } catch (err) { next(err); }
+}
+
+/** POST /api/admin/configuracion/probar-correo — solo super_admin (ver rutas).
+ *  Envía un correo de prueba real al propio super_admin que lo pide, nunca a
+ *  una dirección del body — evita que este endpoint se use como relay abierto. */
+export async function probarCorreo(req, res, next) {
+  try {
+    await sendTestEmail(req.user.email);
+    res.json({ message: `Correo de prueba enviado a ${req.user.email}` });
   } catch (err) { next(err); }
 }
 

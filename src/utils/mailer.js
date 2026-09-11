@@ -23,23 +23,73 @@ function escHtml(value) {
     .replace(/'/g, '&#x27;');
 }
 
-// ─── Transporte ───────────────────────────────────────────────────────────────
-function createTransport() {
+// ─── Transporte SMTP dinámico — leído de la tabla configuracion con cache de
+// 5 min, igual que el remitente. El super_admin lo edita desde el panel sin
+// redesplegar (útil: el instituto cambia de proveedor de correo de vez en
+// cuando). Las env vars MAIL_HOST/MAIL_USER/MAIL_PASS, si las TRES están
+// definidas, anulan la config de BD por completo — vía de escape operativa
+// para una emergencia sin tocar el panel. ────────────────────────────────────
+import { query as dbQuery } from '../config/database.js';
+
+let _smtpCache = null;
+let _smtpCacheAt = 0;
+const SMTP_CACHE_TTL_MS = 5 * 60_000;
+
+/** Invalidado por admin.service.js apenas el super_admin guarda cambios de
+ *  SMTP — evita que la UI diga "guardado" pero el próximo envío siga usando
+ *  la config vieja hasta que expire el cache. */
+export function clearMailConfigCache() {
+  _smtpCache = null;
+  _smtpCacheAt = 0;
+  _fromCache = null;
+  _fromCacheAt = 0;
+}
+
+async function getSmtpConfig() {
+  if (process.env.MAIL_HOST && process.env.MAIL_USER && process.env.MAIL_PASS) {
+    return {
+      host:   process.env.MAIL_HOST,
+      port:   Number(process.env.MAIL_PORT) || 587,
+      secure: process.env.MAIL_SECURE === 'true',
+      user:   process.env.MAIL_USER,
+      pass:   process.env.MAIL_PASS,
+    };
+  }
+  if (_smtpCacheAt && Date.now() - _smtpCacheAt < SMTP_CACHE_TTL_MS) return _smtpCache;
+  try {
+    const { rows } = await dbQuery(
+      "SELECT clave, valor FROM configuracion WHERE clave IN ('mail_host','mail_port','mail_secure','mail_user','mail_pass')"
+    );
+    const cfg = Object.fromEntries(rows.map((r) => [r.clave, r.valor]));
+    _smtpCache = (cfg.mail_host && cfg.mail_user && cfg.mail_pass)
+      ? {
+          host:   cfg.mail_host,
+          port:   Number(cfg.mail_port) || 587,
+          secure: cfg.mail_secure === 'true',
+          user:   cfg.mail_user,
+          pass:   cfg.mail_pass,
+        }
+      : null;
+  } catch {
+    _smtpCache = null; // BD no disponible — no se envía, pero tampoco rompe el flujo
+  }
+  _smtpCacheAt = Date.now();
+  return _smtpCache;
+}
+
+/** null si SMTP no está configurado (ni por BD ni por env vars) — send() lo trata como "omitir envío". */
+async function createTransport() {
+  const cfg = await getSmtpConfig();
+  if (!cfg) return null;
   return nodemailer.createTransport({
-    host:   process.env.MAIL_HOST   || 'smtp.gmail.com',
-    port:   Number(process.env.MAIL_PORT) || 587,
-    secure: process.env.MAIL_SECURE === 'true', // true → 465, false → TLS
-    auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASS,
-    },
+    host: cfg.host, port: cfg.port, secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
   });
 }
 
 // ─── Remitente dinámico — leído de la tabla configuracion con cache de 5 min ──
 // El super_admin puede cambiar mail_remitente y mail_remitente_nombre desde el
 // panel sin necesidad de redesplegar. MAIL_FROM env var tiene prioridad si existe.
-import { query as dbQuery } from '../config/database.js';
 let _fromCache = null;
 let _fromCacheAt = 0;
 
@@ -51,19 +101,19 @@ async function getFromAddress() {
       "SELECT clave, valor FROM configuracion WHERE clave IN ('mail_remitente','mail_remitente_nombre')"
     );
     const cfg = Object.fromEntries(rows.map((r) => [r.clave, r.valor]));
-    const addr = (cfg.mail_remitente || process.env.MAIL_USER || 'no-reply@iiap.gov.co').replace(/[\r\n]/g, '');
+    const addr = (cfg.mail_remitente || process.env.MAIL_USER || 'no-reply@iiap.org.co').replace(/[\r\n]/g, '');
     const name = (cfg.mail_remitente_nombre || 'VIGIIAP — IIAP').replace(/[\r\n"\\]/g, '');
     _fromCache = `"${name}" <${addr}>`;
     _fromCacheAt = Date.now();
   } catch {
     // BD no disponible — usar env var o default sin romper el envío
     const safe = (process.env.MAIL_FROM_NAME || 'VIGIIAP — IIAP').replace(/[\r\n"\\]/g, '');
-    _fromCache = `"${safe}" <${process.env.MAIL_USER || 'no-reply@iiap.gov.co'}>`;
+    _fromCache = `"${safe}" <${process.env.MAIL_USER || 'no-reply@iiap.org.co'}>`;
     _fromCacheAt = Date.now();
   }
   return _fromCache;
 }
-const BASE_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co';
+const BASE_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co';
 
 const TIPO_LABEL = {
   'uso-suelo':         'Certificado de Uso de Suelo',
@@ -76,18 +126,39 @@ const TIPO_LABEL = {
 
 // ─── Helper de envío ──────────────────────────────────────────────────────────
 async function send({ to, subject, html }) {
-  if (!process.env.MAIL_USER || !process.env.MAIL_PASS) {
-    logger.warn(`[mailer] MAIL_USER/MAIL_PASS no configurados — email a ${to} omitido`);
+  const transporter = await createTransport();
+  if (!transporter) {
+    logger.warn(`[mailer] SMTP no configurado (ni panel ni env vars) — email a ${to} omitido`);
     return;
   }
   try {
-    const transporter = createTransport();
     const info = await transporter.sendMail({ from: await getFromAddress(), to, subject, html });
     logger.info(`[mailer] Email enviado a ${to} — messageId: ${info.messageId}`);
   } catch (err) {
     // El fallo de email NO debe romper el flujo principal
     logger.error(`[mailer] Error enviando email a ${to}:`, err.message);
   }
+}
+
+/**
+ * Envía un correo de prueba real usando la config SMTP actual (panel o env
+ * vars) — a diferencia de send(), SÍ propaga el error: el super_admin necesita
+ * saber exactamente por qué falló (host incorrecto, credenciales rechazadas,
+ * puerto/TLS mal combinado) en vez de un log silencioso que nunca ve.
+ */
+export async function sendTestEmail(to) {
+  const transporter = await createTransport();
+  if (!transporter) {
+    throw Object.assign(new Error('SMTP no configurado — completa host, usuario y contraseña primero'), { status: 400 });
+  }
+  await transporter.sendMail({
+    from: await getFromAddress(),
+    to,
+    subject: 'VIGIIAP — Correo de prueba',
+    html: `<p>Este es un correo de prueba enviado desde el panel de administración de VIGIIAP.</p>
+           <p>Si lo recibiste, la configuración SMTP actual funciona correctamente.</p>
+           <p style="color:#5A6675;font-size:0.85rem">Enviado el ${new Date().toLocaleString('es-CO')}</p>`,
+  });
 }
 
 // ─── Paleta institucional (misma que el frontend — ver src/index.css) ─────────
@@ -474,6 +545,29 @@ export async function notifyErrorCritico({ adminEmail, mensaje, metodo, ruta, oc
         ])
         + bodyText('Revisa el detalle completo (stack trace) en el panel de administración.'),
       cta: { url: `${BASE_URL}/admin/errores`, label: 'Ver registro de errores' },
+    }),
+  });
+}
+
+/**
+ * Alerta a cada super_admin activo cuando alguien cambia un ajuste crítico
+ * (SMTP, modo mantenimiento, política de privacidad) — sin esto, ese cambio
+ * solo quedaba en la bitácora, visible únicamente para quien fuera a
+ * revisarla. No depende de emailNotifs — es una señal de seguridad, no una
+ * preferencia de negocio que se pueda apagar (mismo criterio que notifyErrorCritico).
+ */
+export async function notifyCambioConfigCritica({ email, cambios, adminEmail }) {
+  await send({
+    to: email,
+    subject: '[VIGI-IIAP] Se modificó un ajuste crítico de la plataforma',
+    html: baseTemplate({
+      eyebrow: 'Alerta de seguridad',
+      title: 'Cambio en un ajuste crítico',
+      accent: RED,
+      body: bodyText(`<strong>${escHtml(adminEmail)}</strong> acaba de modificar lo siguiente en el panel de administración:`)
+        + detailPanel(cambios.map((c) => detailRow('Ajuste modificado', escHtml(c))))
+        + bodyText('Si no reconoces este cambio, revísalo de inmediato desde el panel — solo el Super Administrador puede modificar estos ajustes.'),
+      cta: { url: `${BASE_URL}/admin/configuracion`, label: 'Ir a Configuración' },
     }),
   });
 }

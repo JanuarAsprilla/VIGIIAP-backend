@@ -23,6 +23,8 @@ vi.mock('../src/utils/mailer.js', () => ({
   notifyUsuarioActivacion: vi.fn().mockResolvedValue(undefined),
   notifyAdminNewRegistro: vi.fn().mockResolvedValue(undefined),
   notifyRolCambiado: vi.fn().mockResolvedValue(undefined),
+  notifyCambioConfigCritica: vi.fn().mockResolvedValue(undefined),
+  clearMailConfigCache: vi.fn(),
 }));
 
 vi.mock('../src/utils/auditLog.js', () => ({
@@ -31,7 +33,7 @@ vi.mock('../src/utils/auditLog.js', () => ({
 
 import { query } from '../src/config/database.js';
 import bcrypt from 'bcryptjs';
-import { notifyUsuarioCreado, notifyUsuarioActivacion } from '../src/utils/mailer.js';
+import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyCambioConfigCritica } from '../src/utils/mailer.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
 import {
   crearUsuario,
@@ -444,11 +446,37 @@ describe('admin.service → setConfiguracion()', () => {
       'admin@iiap.org.co'
     );
 
-    // Se llama una vez por cada clave
-    expect(query).toHaveBeenCalledTimes(2);
+    // 2 upserts + 1 SELECT de emails de super_admin (modoMantenimiento es
+    // una clave crítica — dispara la alerta, ver describe de más abajo)
+    expect(query).toHaveBeenCalledTimes(3);
     const firstSql = query.mock.calls[0][0];
     expect(firstSql).toMatch(/INSERT INTO configuracion/i);
     expect(firstSql).toMatch(/ON CONFLICT/i);
+  });
+
+  it('avisa a cada super_admin activo cuando se cambia una clave crítica (modoMantenimiento)', async () => {
+    query.mockImplementation((sql) => {
+      if (/SELECT email FROM usuarios WHERE rol = 'super_admin'/.test(sql)) {
+        return Promise.resolve({ rows: [{ email: 'super1@iiap.org.co' }, { email: 'super2@iiap.org.co' }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await setConfiguracion({ modoMantenimiento: 'true' }, 'admin-uuid', 'admin@iiap.org.co');
+
+    expect(notifyCambioConfigCritica).toHaveBeenCalledTimes(2);
+    expect(notifyCambioConfigCritica).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'super1@iiap.org.co', adminEmail: 'admin@iiap.org.co' }),
+    );
+    expect(notifyCambioConfigCritica).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'super2@iiap.org.co' }),
+    );
+  });
+
+  it('no avisa a nadie cuando solo cambian claves rutinarias (siteName)', async () => {
+    query.mockResolvedValue({ rows: [] });
+    await setConfiguracion({ siteName: 'VIGIIAP' }, 'admin-uuid', 'admin@iiap.org.co');
+    expect(notifyCambioConfigCritica).not.toHaveBeenCalled();
   });
 
   it('registra auditoría al actualizar configuración', async () => {
