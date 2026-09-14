@@ -183,6 +183,36 @@ describe('GET /api/admin/configuracion', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('siteName');
   });
+
+  it('admin_sig no recibe las claves exclusivas de super_admin en el GET', async () => {
+    adminService.getConfiguracion.mockResolvedValue({
+      siteName: 'VIGIIAP',
+      mail_host: 'smtp.gmail.com', mail_user: 'x@iiap.org.co', mail_pass: 'secreto',
+      modoMantenimiento: 'true', politicaPrivacidad: 'texto legal',
+      cors_extra_origins: 'https://otro.co', rate_limit_max: '200', admin_email_fallback: 'r@iiap.org.co',
+    });
+    const res = await request(app)
+      .get('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ siteName: 'VIGIIAP' });
+  });
+
+  it('super_admin sí recibe las claves exclusivas (salvo mail_pass en texto plano)', async () => {
+    adminService.getConfiguracion.mockResolvedValue({
+      siteName: 'VIGIIAP',
+      mail_host: 'smtp.gmail.com', mail_pass: 'secreto',
+      modoMantenimiento: 'true',
+    });
+    const res = await request(app)
+      .get('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.mail_host).toBe('smtp.gmail.com');
+    expect(res.body.modoMantenimiento).toBe('true');
+    expect(res.body.mail_pass).toBeUndefined();
+    expect(res.body.mail_pass_configurado).toBe(true);
+  });
 });
 
 describe('PUT /api/admin/configuracion', () => {

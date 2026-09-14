@@ -112,25 +112,39 @@ describe('admin.controller → reportes()', () => {
 describe('admin.controller → getConfiguracion()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna la configuración', async () => {
+  it('a super_admin le retorna la configuración completa', async () => {
     adminService.getConfiguracion.mockResolvedValue({ siteName: 'VIGIIAP' });
     const r = res();
-    await getConfiguracion({}, r, mockNext);
+    await getConfiguracion({ user: SUPERADMIN }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith({ siteName: 'VIGIIAP', mail_pass_configurado: false });
   });
 
   it('nunca devuelve mail_pass en texto plano — solo si hay algo guardado', async () => {
     adminService.getConfiguracion.mockResolvedValue({ siteName: 'VIGIIAP', mail_pass: 'secreto-real' });
     const r = res();
-    await getConfiguracion({}, r, mockNext);
+    await getConfiguracion({ user: SUPERADMIN }, r, mockNext);
     const body = r.json.mock.calls[0][0];
     expect(body.mail_pass).toBeUndefined();
     expect(body.mail_pass_configurado).toBe(true);
   });
 
+  it('a admin_sig le quita todas las claves exclusivas de super_admin, no solo mail_pass', async () => {
+    adminService.getConfiguracion.mockResolvedValue({
+      siteName: 'VIGIIAP',
+      mail_host: 'smtp.gmail.com', mail_port: '587', mail_secure: 'false', mail_user: 'x@iiap.org.co', mail_pass: 'secreto',
+      modoMantenimiento: 'true', mensajeMantenimiento: 'En mantenimiento',
+      politicaPrivacidad: 'texto legal',
+      cors_extra_origins: 'https://otro.co', rate_limit_max: '200', admin_email_fallback: 'r@iiap.org.co',
+    });
+    const r = res();
+    await getConfiguracion({ user: ADMIN }, r, mockNext);
+    const body = r.json.mock.calls[0][0];
+    expect(body).toEqual({ siteName: 'VIGIIAP' });
+  });
+
   it('llama next(err) si el servicio lanza', async () => {
     adminService.getConfiguracion.mockRejectedValue(new Error('db'));
-    await getConfiguracion({}, res(), mockNext);
+    await getConfiguracion({ user: SUPERADMIN }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

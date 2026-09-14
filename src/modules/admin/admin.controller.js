@@ -23,17 +23,29 @@ export async function reportes(req, res, next) {
 /** GET /api/admin/configuracion */
 export async function getConfiguracion(req, res, next) {
   try {
-    res.json(redactConfig(await adminService.getConfiguracion()));
+    res.json(redactConfig(await adminService.getConfiguracion(), req.user.rol));
   } catch (err) { next(err); }
 }
 
 /** mail_pass es un secreto — nunca viaja de vuelta al navegador, ni siquiera
  *  al propio super_admin que lo guardó. Se reemplaza por un booleano de
  *  "¿hay algo guardado?" para que la UI pueda mostrar "configurado" sin
- *  reexponer la contraseña real en cada GET. */
-function redactConfig(config) {
+ *  reexponer la contraseña real en cada GET.
+ *
+ *  Para admin_sig, además, se quitan por completo las claves de
+ *  SUPER_ADMIN_ONLY_KEYS — el frontend ya oculta esas secciones, pero antes
+ *  de este cambio la respuesta cruda del endpoint las seguía trayendo (SMTP,
+ *  CORS extra, rate limit, modo mantenimiento, política de privacidad), así
+ *  que cualquiera que mirara la petición directamente las veía igual. Un
+ *  admin_sig no puede escribir esas claves (ver setConfiguracion) y ahora
+ *  tampoco puede leerlas. */
+function redactConfig(config, viewerRol) {
   const { mail_pass, ...rest } = config;
-  return { ...rest, mail_pass_configurado: Boolean(mail_pass) };
+  const redacted = { ...rest, mail_pass_configurado: Boolean(mail_pass) };
+  if (viewerRol === 'super_admin') return redacted;
+  for (const key of SUPER_ADMIN_ONLY_KEYS) delete redacted[key];
+  delete redacted.mail_pass_configurado;
+  return redacted;
 }
 
 /** PUT /api/admin/configuracion */
