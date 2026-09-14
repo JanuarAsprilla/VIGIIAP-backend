@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.0.0...v1.1.0) (2026-09-14)
+
+
+### Features
+
+* CORS extra, tope de rate limit y correo de respaldo dinámicos ([#97](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/97)) ([54f0da6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/54f0da6dbb00190623a8b7aee7765c88ac618d42))
+* SMTP dinámico desde el panel + alerta de cambios críticos ([#96](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/96)) ([e938c90](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e938c901996ce6af5133fae68e58b99094fb8044))
+
+
+### Bug Fixes
+
+* CORS bloqueaba TODA petición real de navegador en producción ([#93](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/93)) ([c58ef71](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c58ef71c27dffdda6486f4acde1fca13f0153c6d))
+* no exponer al admin_sig las claves de configuración exclusivas de super_admin ([#101](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/101)) ([cdb29d7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/cdb29d7704501d9aad79eb9eccee350ba52ce083))
+* nombre real del visitante en vez de 'Visitante' fijo ([#95](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/95)) ([9484e45](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/9484e4525ccfe24d47585ede13e69c7cacd16c36))
+
 ## 1.0.0 (2026-09-10)
 
 
