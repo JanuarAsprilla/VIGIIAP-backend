@@ -73,6 +73,7 @@ CREATE TABLE geovisores (
   basemap_defecto       TEXT NOT NULL DEFAULT 'calles', -- id de la lista fija de basemaps gratuitos
   area_max_ha           NUMERIC,                        -- reemplaza REPORTE_AREA_MAX_HA fijo
   presets_area          JSONB DEFAULT '[]',             -- [{ "nombre": "Quibdó", "geometria": {...GeoJSON} }]
+  cita                  TEXT,                           -- ver § 6: cita bibliográfica completa del geovisor (ej. "Gómez, J., Montes, N.E. & Marín, E., compiladores. 2023. Escala 1:1 500 000."), distinta del subtítulo corto
   ia_habilitada         BOOLEAN NOT NULL DEFAULT false,
   visibilidad           TEXT NOT NULL DEFAULT 'publico', -- 'publico' | 'usuarios' | 'acreditados' -- MISMO enum que mapas.visibilidad
   thumbnail_url         TEXT,
@@ -125,3 +126,66 @@ este documento) es extraer esos valores a UN objeto `configGeovisor` inyectado a
 - Decisión final sobre `color_por_tema`: manual vs. derivado de SLD (ver § 2).
 - Endpoints REST concretos (`/api/geovisores`, `/api/admin/geovisores`, `/api/admin/conexiones-geoserver`) y sus schemas Zod — se definen cuando se implemente, no en este borrador.
 - Migración de datos: no hay geovisores existentes que migrar (hoy es un campo suelto en `mapas`), así que no se requiere backfill, solo la migración de esquema.
+
+## 6. Investigación real: cómo el SGC arma sus varios geovisores (2026-09-15)
+
+Pedido explícito del usuario: revisar el Geoportal del Servicio Geológico Colombiano
+(https://www2.sgc.gov.co/sgc/mapas/Paginas/geoportal.aspx) y comparar VARIOS de sus geovisores
+entre sí (no uno solo), para que la plantilla propia cubra todo lo que haga falta. Investigación
+hecha navegando el sitio real en vivo (Playwright), no memoria ni suposición.
+
+**Catálogo de descubrimiento** (antes de entrar a un geovisor): una sola página lista TODOS los
+recursos (visores, documentos, páginas) mezclados, con pestañas de filtro "Todo / Visores /
+Documentos / Páginas" + un buscador — no es solo geovisores, es un catálogo general de recursos
+geoespaciales del que los geovisores son un subconjunto filtrable. Agrupan por "Dirección técnica"
+(Geociencias Básicas, Recursos Minerales, Geoamenazas, Gestión de Información, Laboratorios) como
+categoría de primer nivel — coincide con lo que ya decidimos en § 0 (reutilizar `categorias`).
+
+**Hallazgo central, comparando "Mapa Geológico de Colombia 2023" vs. "Atlas Geológico 2020" (dos
+geovisores reales, URLs y capas totalmente distintas)**: corren literalmente **la misma plantilla**
+(Esri Web AppBuilder) — mismo layout exacto, mismos widgets exactos (Lista de capas, Galería de
+mapas base, Búsqueda, Leyenda), mismos controles de mapa (zoom, escala numérica, extensión
+predeterminada, mi ubicación, minimapa, coordenadas al mover el mouse, imprimir, tabla de
+atributos). Lo ÚNICO que cambia entre ambos es exactamente el tipo de dato que ya modela nuestra
+tabla `geovisores`: título, subtítulo/cita, capa(s)/servicio de datos, centro/escala inicial,
+créditos de atribución. **Esto confirma directamente el enfoque que ya elegimos** (una plantilla,
+configuración por fila) — el SGC, con muchos más geovisores que nosotros, resuelve el mismo
+problema de la misma manera. No hay widgets "a medida" por geovisor que hayamos encontrado — todo
+lo que varía es dato, no código.
+
+**Gaps concretos confirmados** (funcionalidad presente en TODOS los geovisores del SGC que el
+prototipo de producto6 todavía no tiene, útiles para la plantilla final independientemente de
+VIGIIAP):
+- **Imprimir/exportar el mapa** — botón de impresión, presente en ambos geovisores revisados.
+- **"Extensión predeterminada"** — volver al centro/zoom inicial con un clic (nosotros ya guardamos
+  `centro`/`zoom_inicial` en la config, solo falta el botón).
+- **Escala numérica** (ej. "1:2311162"), no solo la barra de distancia que ya tenemos.
+- **"Mi ubicación"** — geolocalización del navegador, centra el mapa ahí.
+- **Minimapa/vista general** (OverviewMap) — referencia de dónde está el área visible dentro del
+  contexto más amplio.
+- **Tabla de atributos** — ver los datos de la capa activa en formato tabla, no solo en el popup al
+  hacer clic.
+- **Cita bibliográfica completa en el encabezado** (no solo un subtítulo corto) — el SGC muestra la
+  referencia académica completa del dataset ("Gómez, J., Montes, N.E. & Marín, E., compiladores.
+  2023..."). Se agregó el campo `cita` a `geovisores` (§ 2) para esto — el IIAP, como institución de
+  investigación, probablemente también quiera citar sus fuentes de datos formalmente.
+
+**Recomendación**: el diseño de `geovisores`/`conexiones_geoserver` de § 1-2 no necesita
+reestructurarse — el único campo nuevo que agregó esta investigación fue `cita`. Los gaps de
+funcionalidad (impresión, extensión predeterminada, escala numérica, mi ubicación, minimapa, tabla
+de atributos) son trabajo de FRONTEND sobre la plantilla del geovisor (sea en producto6 o ya
+directamente en el módulo nativo de VIGIIAP, según se decida en § 7) — no cambian el modelo de
+datos, son capacidades que la plantilla debe tener disponibles para cualquier geovisor.
+
+## 7. Migración completa a VIGIIAP como módulo nativo (pedido 2026-09-15, en definición)
+
+El usuario indicó que el demo de producto6 ya fue aceptado y que este geovisor debe dejar de
+trabajarse como proyecto aparte — pasa a ser un módulo nativo de VIGIIAP-IIAP (backend y frontend),
+no un repositorio separado. Esto es una migración real de código (Express standalone → módulo
+dentro de `VIGIIAP-backend/src/modules/`; HTML/JS vanilla con Leaflet → componente React con
+`react-leaflet` dentro de `VIGIIAP/src/`), significativamente más grande que el diseño de datos de
+§ 1-6. Dado que VIGIIAP ya está en producción (sin branch protection en `main`, ver
+`feedback_git_workflow` — un push directo ahí despliega solo), esto se trabaja por fases en la rama
+aislada `feat/portal-geovisores-planificacion` (ya creada en ambos repos), nunca de un solo commit
+gigante. Fases y su orden se definen en la próxima ronda de trabajo — pendiente de plan explícito
+antes de escribir el primer PR de migración real.
