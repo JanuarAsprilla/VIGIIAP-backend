@@ -195,6 +195,35 @@ export async function remove(id) {
 }
 
 /**
+ * Workspaces disponibles en una conexión GeoServer, ANTES de que exista un geovisor que los
+ * referencie -- el admin_sig necesita ver qué hay publicado para elegir `workspaces_geoserver` al
+ * crear un geovisor nuevo, no solo cuando edita uno que ya existe. Reutiliza el mismo descubrimiento
+ * en vivo (WFS+WCS GetCapabilities) y la misma exclusión de seguridad que el catálogo de un
+ * geovisor ya creado, para que la lista de opciones nunca muestre un workspace que luego el
+ * catálogo real ocultaría de todas formas.
+ */
+export async function listarWorkspacesDeConexion(conexionId) {
+  const conexion = await obtenerConexionParaConector(conexionId);
+  const [vectoriales, raster] = await Promise.all([
+    geoserver.obtenerCapacidadesWfs(conexion),
+    geoserver.obtenerCapacidadesWcs(conexion),
+  ]);
+
+  const workspacesPorId = new Map();
+  for (const capa of [...vectoriales, ...raster]) {
+    const workspace = workspaceDeCapa(capa.id);
+    if (WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspace)) continue;
+    if (workspacesPorId.has(workspace)) {
+      workspacesPorId.get(workspace).totalCapas += 1;
+      continue;
+    }
+    const { nombre } = temaDesdeWorkspace(workspace);
+    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1 });
+  }
+  return [...workspacesPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+/**
  * Catálogo de capas de UN geovisor: descubre en vivo contra su conexión GeoServer, filtra por
  * `workspaces_geoserver` (vacío = todos) y por la exclusión de seguridad fija, agrupa por tema.
  * Espejo de catalogoCapas.ts de producto6, adaptado a "un geovisor entre varios" en vez de "la

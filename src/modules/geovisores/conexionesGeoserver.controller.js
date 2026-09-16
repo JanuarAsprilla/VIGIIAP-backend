@@ -1,5 +1,6 @@
 import { createConexionGeoserverSchema, updateConexionGeoserverSchema } from './geovisores.schema.js';
 import * as conexionService from './conexionesGeoserver.service.js';
+import { listarWorkspacesDeConexion } from './geovisores.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 export async function index(req, res, next) {
@@ -11,6 +12,13 @@ export async function index(req, res, next) {
 export async function show(req, res, next) {
   try {
     res.json(await conexionService.getById(req.params.id));
+  } catch (err) { next(err); }
+}
+
+/** Workspaces publicados en esta conexión -- para elegir `workspacesGeoserver` al crear/editar un geovisor. */
+export async function workspaces(req, res, next) {
+  try {
+    res.json(await listarWorkspacesDeConexion(req.params.id));
   } catch (err) { next(err); }
 }
 
