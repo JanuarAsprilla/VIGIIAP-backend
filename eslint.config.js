@@ -16,6 +16,8 @@ export default [
         URLSearchParams: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
       },
     },
     rules: {
