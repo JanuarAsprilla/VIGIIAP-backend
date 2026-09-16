@@ -185,7 +185,32 @@ no un repositorio separado. Esto es una migración real de código (Express stan
 dentro de `VIGIIAP-backend/src/modules/`; HTML/JS vanilla con Leaflet → componente React con
 `react-leaflet` dentro de `VIGIIAP/src/`), significativamente más grande que el diseño de datos de
 § 1-6. Dado que VIGIIAP ya está en producción (sin branch protection en `main`, ver
-`feedback_git_workflow` — un push directo ahí despliega solo), esto se trabaja por fases en la rama
-aislada `feat/portal-geovisores-planificacion` (ya creada en ambos repos), nunca de un solo commit
-gigante. Fases y su orden se definen en la próxima ronda de trabajo — pendiente de plan explícito
-antes de escribir el primer PR de migración real.
+`feedback_git_workflow` — un push directo ahí despliega solo), esto se trabaja por fases, cada una
+en su propia rama (nunca de un solo commit gigante), confirmadas por el usuario:
+
+1. **Backend** (conector GeoServer + catálogo + CRUD) — **hecho, PR #103** (`feat/geovisores-backend-fase1`, sobre esta misma rama). No incluye reportes PDF/XLSX ni el asistente de IA.
+2. Frontend (reemplazar el mockup estático de `VIGIIAP/src/pages/Geovisor.tsx` por la lógica real, con `react-leaflet`) — pendiente.
+3. Admin CRUD (panel de creación/edición de geovisores sin tocar código) — pendiente.
+4. Reportes (PDF/XLSX) + asistente de IA (Gemini) + gaps del § 6 (imprimir, extensión predeterminada, escala numérica, mi ubicación, minimapa, tabla de atributos) — pendiente.
+
+### Resumen del PR #103 (Fase 1)
+
+- `db/migrations/037_geovisores.sql`: tablas `conexiones_geoserver` + `geovisores` (RLS incluida).
+- `src/utils/geoserverEncryption.js`: cifrado AES-256-GCM de la contraseña de cada conexión (mismo
+  mecanismo que `totpEncryption.js`, clave propia `GEOSERVER_ENCRYPTION_KEY`).
+- `src/modules/geovisores/geoserver.connector.js`: WMS/WFS/WCS/leyenda, portado de
+  `producto6-reportes-vigia/src/connectors/geoserver.ts`, parametrizado por conexión (soporta N
+  servidores GeoServer, no uno fijo).
+- CRUD completo + catálogo en vivo agrupado por tema, con el mismo `visibilidad` que `mapas`.
+- 1130/1130 tests pasan. `lint` limpio.
+- Pendiente antes de probar contra GeoServer real: configurar `GEOSERVER_ENCRYPTION_KEY`, correr la
+  migración, y crear (vía API, no seed en la migración) la primera conexión + el primer geovisor.
+
+**Revisión de seguridad post-push (2 hallazgos reales, corregidos en el mismo PR)**: `getBySlug`
+tenía un bypass de autorización (`admin_sig`/`super_admin` veían un geovisor inactivo/restringido
+directo desde la ruta pública, decidido en JS después de traer la fila completa) — divergía del
+patrón seguro de `mapas.service.js` (filtro en el propio WHERE de la SQL, sin bypass alguno; la
+curaduría admin pasa por `getAll(?admin=true)` + PATCH por id). El proxy WMS también tenía un
+parser-differential: construía los parámetros reenviados desde `req.query` (ya interpretado por
+`qs`) en vez de la cadena cruda, dos parsers distintos sobre la misma entrada. Ambos corregidos;
+ver el comentario en el PR #103 para el detalle completo.
