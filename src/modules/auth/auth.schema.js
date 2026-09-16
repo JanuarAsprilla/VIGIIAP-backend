@@ -26,3 +26,10 @@ export const resetPasswordSchema = z.object({
   token: z.string(),
   password: strongPassword,
 });
+
+// Completar perfil tras un primer login OAuth (ver src/modules/oauth/) — sin
+// contraseña, la cuenta ya existe y está autenticada; solo falta institución.
+export const completarPerfilSchema = z.object({
+  nombre:      z.string().min(2, 'Nombre requerido').max(150).optional(),
+  institucion: z.string().min(2, 'Institución requerida').max(300),
+});
