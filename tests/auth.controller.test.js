@@ -18,6 +18,7 @@ vi.mock('../src/modules/auth/auth.service.js', () => ({
   resetPassword:          vi.fn(),
   issueTokenPair:         vi.fn(),
   getAdminEmails:         vi.fn().mockResolvedValue([]),
+  completarPerfil:        vi.fn(),
 }));
 vi.mock('../src/utils/tokenBlacklist.js', () => ({
   revokeToken:   vi.fn().mockResolvedValue(undefined),
@@ -57,7 +58,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import * as authService from '../src/modules/auth/auth.service.js';
 import { revokeToken } from '../src/utils/tokenBlacklist.js';
-import { logout, refresh, me, login } from '../src/modules/auth/auth.controller.js';
+import { logout, refresh, me, login, completarPerfil } from '../src/modules/auth/auth.controller.js';
 
 const mockNext = vi.fn();
 
@@ -94,6 +95,35 @@ describe('auth.controller → me()', () => {
   it('llama next(err) si getProfile lanza', async () => {
     authService.getProfile.mockRejectedValue(new Error('db'));
     await me({ user: { id: 'u1' } }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── completarPerfil() ────────────────────────────────────────────────────────
+
+describe('auth.controller → completarPerfil()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('valida el body y delega en authService.completarPerfil', async () => {
+    const updated = { id: 'u1', institucion: 'IIAP', perfilCompleto: true };
+    authService.completarPerfil.mockResolvedValue(updated);
+    const r = res();
+
+    await completarPerfil({ user: { id: 'u1' }, body: { institucion: 'IIAP' } }, r, mockNext);
+
+    expect(authService.completarPerfil).toHaveBeenCalledWith('u1', { institucion: 'IIAP' });
+    expect(r.json).toHaveBeenCalledWith(updated);
+  });
+
+  it('llama next(err) cuando el body no trae institución', async () => {
+    await completarPerfil({ user: { id: 'u1' }, body: {} }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(authService.completarPerfil).not.toHaveBeenCalled();
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    authService.completarPerfil.mockRejectedValue(new Error('db'));
+    await completarPerfil({ user: { id: 'u1' }, body: { institucion: 'IIAP' } }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });
@@ -250,6 +280,12 @@ vi.mock('../src/modules/auth/auth.schema.js', () => ({
   resetPasswordSchema: {
     parse: vi.fn((d) => d),
     pick:  vi.fn(() => ({ parse: vi.fn((d) => d) })),
+  },
+  completarPerfilSchema: {
+    parse: vi.fn((d) => {
+      if (!d?.institucion) throw new Error('Institución requerida');
+      return d;
+    }),
   },
 }));
 

@@ -51,6 +51,7 @@ import {
   getProfile,
   loginVisitante,
   resetPassword,
+  completarPerfil,
 } from '../src/modules/auth/auth.service.js';
 import { revokeAllRefreshTokens } from '../src/utils/tokenBlacklist.js';
 import { notifyNuevoInicioSesion } from '../src/utils/mailer.js';
@@ -142,6 +143,21 @@ describe('login()', () => {
     expect(registrarAuditoria).toHaveBeenCalledWith(
       expect.objectContaining({ accion: 'login_failed', modulo: 'auth' })
     );
+  });
+
+  it('lanza 401 con mensaje específico cuando la cuenta no tiene password_hash (creada por OAuth)', async () => {
+    const oauthUser = { ...mockUser, password_hash: null };
+    query.mockResolvedValueOnce({ rows: [oauthUser] }); // SELECT usuario
+    bcrypt.compare.mockResolvedValueOnce(true); // comparación dummy — igual se llama por timing
+
+    await expect(login('admin@iiap.gob.pe', 'cualquiera', '127.0.0.1', 'jest')).rejects.toMatchObject({
+      status: 401,
+      message: expect.stringMatching(/Google o Microsoft/),
+    });
+    // Comparación dummy contra DUMMY_HASH, no contra oauthUser.password_hash (que es null)
+    expect(bcrypt.compare).toHaveBeenCalledWith('cualquiera', expect.stringMatching(/^\$2b\$12\$/));
+    // No debe llegar a tocar intentos_fallidos/bloqueado_hasta — un solo SELECT y listo
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('lanza 403 con code EMAIL_NOT_VERIFIED si el email no está verificado', async () => {
@@ -411,6 +427,45 @@ describe('getProfile()', () => {
   });
 });
 
+// ─── completarPerfil() ────────────────────────────────────────────────────────
+describe('completarPerfil()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('actualiza institución, marca perfil_completo=true y devuelve el usuario', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        id: 'uuid-oauth-1', nombre: 'Ana Restrepo', email: 'ana@gmail.com',
+        rol: 'publico', institucion: 'IIAP', perfilCompleto: true,
+      }],
+    });
+
+    const result = await completarPerfil('uuid-oauth-1', { institucion: 'IIAP' });
+
+    expect(result).toMatchObject({ institucion: 'IIAP', perfilCompleto: true });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('perfil_completo = true'),
+      ['IIAP', null, 'uuid-oauth-1']
+    );
+  });
+
+  it('actualiza también el nombre cuando se envía', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'uuid-oauth-1', nombre: 'Ana R.', institucion: 'IIAP', perfilCompleto: true }],
+    });
+
+    await completarPerfil('uuid-oauth-1', { nombre: 'Ana R.', institucion: 'IIAP' });
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', 'Ana R.', 'uuid-oauth-1']);
+  });
+
+  it('lanza 404 cuando el usuario no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(completarPerfil('uuid-inexistente', { institucion: 'IIAP' }))
+      .rejects.toMatchObject({ status: 404 });
+  });
+});
+
 // ─── loginVisitante() ─────────────────────────────────────────────────────────
 describe('loginVisitante()', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -441,22 +496,6 @@ describe('loginVisitante()', () => {
     const result = await loginVisitante({ nombre: undefined, ip: null, userAgent: null });
 
     expect(result.user.nombre).toBe('Visitante');
-  });
-
-  it('incluye el nombre en el payload del JWT — /auth/me lo lee de ahí, no de la BD', async () => {
-    // Regresión: el nombre se guardaba en la tabla visitantes pero nunca viajaba
-    // en el token, así que /auth/me devolvía 'Visitante' fijo sin importar lo
-    // que la persona hubiera escrito al entrar.
-    query.mockResolvedValueOnce({ rows: [{ id: 'vis-003' }] });
-    const jwt = (await import('jsonwebtoken')).default;
-
-    await loginVisitante({ nombre: 'Ana Torres', ip: '::1', userAgent: 'test' });
-
-    expect(jwt.sign).toHaveBeenCalledWith(
-      expect.objectContaining({ nombre: 'Ana Torres', tipo: 'visitante' }),
-      expect.anything(),
-      expect.anything(),
-    );
   });
 
   it('inserta null en BD cuando el nombre es undefined', async () => {

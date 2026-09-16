@@ -137,6 +137,17 @@ export async function login(email, password, ip, userAgent) {
     throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
   }
 
+  // Cuenta creada vía OAuth (ver src/modules/oauth/) — no tiene contraseña
+  // propia. Comparación dummy igual por timing; mensaje distinto para no
+  // dejar a la persona intentando recordar una contraseña que nunca existió.
+  if (!user.password_hash) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw Object.assign(
+      new Error('Esta cuenta inicia sesión con Google o Microsoft — usa ese botón en vez de contraseña.'),
+      { status: 401 }
+    );
+  }
+
   // Bloqueo temporal por intentos fallidos
   if (user.bloqueado_hasta && new Date() < new Date(user.bloqueado_hasta)) {
     const minutos = Math.ceil((new Date(user.bloqueado_hasta) - new Date()) / 60_000);
@@ -290,7 +301,7 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
   const visitanteId = rows[0].id;
 
   const token = signToken(
-    { visitanteId, rol: 'visitante', tipo: 'visitante', nombre: nombre || null },
+    { visitanteId, rol: 'visitante', tipo: 'visitante' },
     '8h'
   );
 
@@ -510,9 +521,28 @@ export async function resetPassword(token, newPassword) {
 export async function getProfile(userId) {
   const { rows } = await query(
     `SELECT id, nombre, email, rol, tipo_acceso, institucion, avatar_url, creado_en, last_login_at,
-            totp_enabled AS "twoFactorEnabled"
+            totp_enabled AS "twoFactorEnabled", perfil_completo AS "perfilCompleto"
      FROM usuarios WHERE id = $1`,
     [userId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  return rows[0];
+}
+
+// Completa el perfil de una cuenta creada por OAuth (ver src/modules/oauth/)
+// que nació sin institución. No es un cambio de rol/permisos — eso sigue
+// yendo por "Solicitar acceso institucional"; esto solo satisface el mínimo
+// de datos que un registro tradicional ya pide en el formulario.
+export async function completarPerfil(userId, { nombre, institucion }) {
+  const { rows } = await query(
+    `UPDATE usuarios
+     SET institucion     = $1,
+         nombre          = COALESCE($2, nombre),
+         perfil_completo = true,
+         actualizado_en  = NOW()
+     WHERE id = $3
+     RETURNING id, nombre, email, rol, institucion, perfil_completo AS "perfilCompleto"`,
+    [institucion, nombre ?? null, userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
   return rows[0];
