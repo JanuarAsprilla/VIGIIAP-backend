@@ -6,7 +6,7 @@ vi.mock('../src/config/database.js', () => ({
 }));
 
 import { query } from '../src/config/database.js';
-import { getBySlug } from '../src/modules/geovisores/geovisores.service.js';
+import { getBySlug, create } from '../src/modules/geovisores/geovisores.service.js';
 
 const filaGeovisorPublico = {
   id: 'geovisor-uuid-1',
@@ -27,6 +27,7 @@ const filaGeovisorPublico = {
   presets_area: [],
   ia_habilitada: false,
   visibilidad: 'publico',
+  presentacion: { mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] },
   thumbnail_url: null,
   activo: true,
   orden: 0,
@@ -81,5 +82,55 @@ describe('getBySlug — filtrado de visibilidad', () => {
   it('lanza 404 si el slug no existe', async () => {
     vi.mocked(query).mockResolvedValueOnce({ rows: [] });
     await expect(getBySlug('no-existe', null)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('create — presentación (cómo se muestra la información, decisión del admin_sig)', () => {
+  it('guarda camposPopup/mostrarImagenes/mostrarMetricas configurados', async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [{
+        ...filaGeovisorPublico,
+        presentacion: {
+          mostrarMetricas: true,
+          mostrarImagenes: true,
+          campoImagenUrl: 'foto_url',
+          camposPopup: [{ campo: 'MGUCR_SIMBL', alias: 'Símbolo cronoestratigráfico' }],
+        },
+      }],
+    });
+
+    await create({
+      titulo: 'Geología del Chocó',
+      conexionGeoserverId: 'conexion-uuid-1',
+      centroLat: 5.55,
+      centroLng: -76.6,
+      presentacion: {
+        mostrarMetricas: true,
+        mostrarImagenes: true,
+        campoImagenUrl: 'foto_url',
+        camposPopup: [{ campo: 'MGUCR_SIMBL', alias: 'Símbolo cronoestratigráfico' }],
+      },
+    }, 'usuario-uuid-1');
+
+    const [sql, params] = vi.mocked(query).mock.calls[0];
+    expect(sql).toContain('presentacion');
+    const presentacionEnviada = JSON.parse(params.find((p) => typeof p === 'string' && p.includes('MGUCR_SIMBL')));
+    expect(presentacionEnviada.mostrarImagenes).toBe(true);
+    expect(presentacionEnviada.camposPopup).toEqual([{ campo: 'MGUCR_SIMBL', alias: 'Símbolo cronoestratigráfico' }]);
+  });
+
+  it('sin presentación explícita, usa el default seguro (métricas sí, imágenes no, sin campos configurados)', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisorPublico] });
+
+    await create({
+      titulo: 'Geología del Chocó',
+      conexionGeoserverId: 'conexion-uuid-1',
+      centroLat: 5.55,
+      centroLng: -76.6,
+    }, 'usuario-uuid-1');
+
+    const [, params] = vi.mocked(query).mock.calls[0];
+    const presentacionEnviada = JSON.parse(params.find((p) => typeof p === 'string' && p.includes('mostrarMetricas')));
+    expect(presentacionEnviada).toEqual({ mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] });
   });
 });

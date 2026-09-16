@@ -10,6 +10,27 @@ const presetAreaSchema = z.object({
   }),
 });
 
+// Qué atributo real de GeoServer mostrar en el popup/tarjeta de una capa y con qué nombre legible
+// -- sin esto, el popup muestra el atributo crudo tal cual viene (ej. "MGUCR_SIMBL"), que no dice
+// nada a un usuario no técnico. Hallazgo de la investigación del geoportal SGC: los campos de
+// atributo varían genuinamente por temática (ver docs/PORTAL_GEOVISORES_DISENO.md § 6).
+const campoPopupSchema = z.object({
+  campo: z.string().min(1).max(100),
+  alias: z.string().min(1).max(150),
+});
+
+// Cómo se presenta la información del geovisor -- decisión del admin_sig al crearlo, separada de
+// QUIÉN puede verlo (visibilidad). mostrarImagenes/campoImagenUrl solo aplican si las capas de
+// este geovisor traen un atributo con URL de foto (ej. inventarios de campo, manifestaciones
+// puntuales) -- camposPopup vacío = mostrar los atributos crudos tal cual vienen (comportamiento
+// de respaldo, nunca oculta datos por falta de configuración).
+const presentacionSchema = z.object({
+  mostrarMetricas: z.coerce.boolean().default(true),
+  mostrarImagenes: z.coerce.boolean().default(false),
+  campoImagenUrl: z.string().max(100).optional(),
+  camposPopup: z.array(campoPopupSchema).default([]),
+});
+
 const geovisorBase = z.object({
   // El slug se genera en el servidor a partir del título (slugify), mismo patrón que mapas.service.js
   // -- nunca lo provee el cliente.
@@ -29,6 +50,9 @@ const geovisorBase = z.object({
   presetsArea: z.array(presetAreaSchema).default([]),
   iaHabilitada: z.coerce.boolean().default(false),
   visibilidad: visibilidadEnum,
+  // z.object(...).default(x) usa x tal cual, sin volver a pasarlo por el schema -- por eso el
+  // default explícito repite los defaults internos en vez de confiar en un {} vacío.
+  presentacion: presentacionSchema.default({ mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] }),
   thumbnailUrl: z.string().url().optional(),
 });
 

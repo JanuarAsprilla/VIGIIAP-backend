@@ -45,6 +45,7 @@ function filaAGeovisor(fila) {
     presetsArea: fila.presets_area,
     iaHabilitada: fila.ia_habilitada,
     visibilidad: fila.visibilidad,
+    presentacion: fila.presentacion,
     thumbnailUrl: fila.thumbnail_url,
     activo: fila.activo,
     orden: fila.orden,
@@ -121,16 +122,18 @@ export async function create(data, userId) {
     `INSERT INTO geovisores (
        slug, titulo, subtitulo, descripcion, cita, categoria, conexion_geoserver_id,
        workspaces_geoserver, color_por_tema, centro_lat, centro_lng, zoom_inicial,
-       basemap_defecto, area_max_ha, presets_area, ia_habilitada, visibilidad,
+       basemap_defecto, area_max_ha, presets_area, ia_habilitada, visibilidad, presentacion,
        thumbnail_url, creado_por
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      RETURNING *`,
     [
       slug, data.titulo, data.subtitulo ?? null, data.descripcion ?? null, data.cita ?? null,
       data.categoria ?? null, data.conexionGeoserverId, data.workspacesGeoserver ?? [],
       JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
       data.basemapDefecto ?? 'calles', data.areaMaxHa ?? null, JSON.stringify(data.presetsArea ?? []),
-      data.iaHabilitada ?? false, data.visibilidad ?? 'publico', data.thumbnailUrl ?? null, userId,
+      data.iaHabilitada ?? false, data.visibilidad ?? 'publico',
+      JSON.stringify(data.presentacion ?? { mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] }),
+      data.thumbnailUrl ?? null, userId,
     ],
   );
   return filaAGeovisor(rows[0]);
@@ -145,7 +148,7 @@ const MAPA_CAMPOS = {
   basemapDefecto: 'basemap_defecto', areaMaxHa: 'area_max_ha', iaHabilitada: 'ia_habilitada',
   visibilidad: 'visibilidad', thumbnailUrl: 'thumbnail_url', centroLat: 'centro_lat', centroLng: 'centro_lng',
 };
-const MAPA_CAMPOS_JSON = { colorPorTema: 'color_por_tema', presetsArea: 'presets_area' };
+const MAPA_CAMPOS_JSON = { colorPorTema: 'color_por_tema', presetsArea: 'presets_area', presentacion: 'presentacion' };
 
 export async function update(id, data) {
   const campos = [];
