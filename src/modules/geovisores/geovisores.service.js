@@ -93,20 +93,26 @@ export async function getAll(reqQuery, user) {
   return { data: datos.rows.map(filaAGeovisor), meta: meta(Number(total.rows[0].count)) };
 }
 
+/**
+ * Sin bypass de admin a propósito -- mismo criterio que mapas.service.js: getBySlug es la vía
+ * PÚBLICA (también usada internamente por el catálogo/proxy WMS/leyenda, todos alcanzables sin
+ * autenticación), así que activo/visibilidad se filtran en la propia consulta SQL, nunca después
+ * de traer la fila completa a JS -- un filtro aplicado en la capa de datos no se puede olvidar de
+ * invocar desde un nuevo caller futuro; uno aplicado "después de leer" sí. La curaduría admin
+ * (ver/editar un geovisor inactivo o restringido) pasa por getAll(?admin=true) + PATCH por id,
+ * nunca por esta ruta pública -- por eso este método no necesita ni debe tener excepción alguna.
+ */
 export async function getBySlug(slug, user) {
-  const { rows } = await query('SELECT * FROM geovisores WHERE slug = $1', [slug]);
-  const fila = rows[0];
-  if (!fila) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
+  const permitida = visibilidadPermitida(user);
+  const filtroVisibilidad = permitida ? 'AND visibilidad = ANY($2)' : '';
+  const params = permitida ? [slug, permitida] : [slug];
 
-  const isAdminView = ['admin_sig', 'super_admin'].includes(user?.rol);
-  if (!isAdminView) {
-    if (!fila.activo) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
-    const permitida = visibilidadPermitida(user);
-    if (permitida && !permitida.includes(fila.visibilidad)) {
-      throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
-    }
-  }
-  return filaAGeovisor(fila);
+  const { rows } = await query(
+    `SELECT * FROM geovisores WHERE slug = $1 AND activo = true ${filtroVisibilidad}`,
+    params,
+  );
+  if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
+  return filaAGeovisor(rows[0]);
 }
 
 export async function create(data, userId) {

@@ -21,20 +21,34 @@ export async function catalogo(req, res, next) {
   } catch (err) { next(err); }
 }
 
-/** Proxy WMS GetMap -- `geometria` llega como JSON en el query string (mismo contrato que producto6). */
+/**
+ * Proxy WMS GetMap -- `geometria` llega como JSON en el query string (mismo contrato que
+ * producto6).
+ *
+ * A propósito se construye `params` desde la CADENA CRUDA de la query (`req.originalUrl`), nunca
+ * desde `req.query` -- Express parsea `req.query` con `qs`, que interpreta corchetes/repeticiones
+ * como objetos/arrays anidados; volver a serializar ESE objeto ya interpretado con
+ * `new URLSearchParams(req.query)` usa un SEGUNDO parser (distinto al de `qs`) para la misma
+ * entrada, y ambos pueden no coincidir en cómo interpretan una clave repetida o con corchetes --
+ * un parser-differential clásico que podría dejar pasar algo que la lista blanca
+ * (`PARAMS_WMS_PERMITIDOS`) no vio de la forma en que realmente se reenvía. Parseando la cadena
+ * cruda una sola vez con `URLSearchParams` (que aplana todo a pares string/string, sin anidar
+ * nada) se elimina la diferencia por completo -- un solo parser, una sola interpretación.
+ */
 export async function wms(req, res, next) {
   try {
+    const queryCruda = new URLSearchParams(req.originalUrl.split('?')[1] ?? '');
     let geometriaFiltro;
-    if (req.query.geometria) {
-      const parseada = JSON.parse(req.query.geometria);
+    const geometriaRaw = queryCruda.get('geometria');
+    if (geometriaRaw) {
+      const parseada = JSON.parse(geometriaRaw);
       if (!esGeometriaValida(parseada)) {
         return res.status(400).json({ error: 'Geometría de filtro inválida' });
       }
       geometriaFiltro = parseada;
     }
-    const params = new URLSearchParams(req.query);
-    params.delete('geometria');
-    const respuesta = await geovisorService.proxyWmsDeGeovisor(req.params.slug, params, geometriaFiltro, req.user);
+    queryCruda.delete('geometria');
+    const respuesta = await geovisorService.proxyWmsDeGeovisor(req.params.slug, queryCruda, geometriaFiltro, req.user);
     res.status(respuesta.status);
     res.set('Content-Type', respuesta.headers.get('content-type') ?? 'image/png');
     res.send(Buffer.from(await respuesta.arrayBuffer()));

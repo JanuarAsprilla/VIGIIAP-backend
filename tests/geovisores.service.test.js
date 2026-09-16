@@ -44,11 +44,22 @@ describe('getBySlug — filtrado de visibilidad', () => {
     expect(geovisor.slug).toBe('reportes-ambientales');
   });
 
-  it('un visitante sin sesión NO ve un geovisor restringido a "usuarios"', async () => {
-    vi.mocked(query).mockResolvedValueOnce({
-      rows: [{ ...filaGeovisorPublico, visibilidad: 'usuarios' }],
-    });
-    await expect(getBySlug('reportes-ambientales', null)).rejects.toMatchObject({ status: 404 });
+  it('filtra por visibilidad en la propia consulta SQL para un visitante sin sesión (no en JS después de leer)', async () => {
+    // El filtrado real de "usuarios"/"acreditados" lo aplica Postgres vía el WHERE -- un mock
+    // ingenuo no ejecuta ese WHERE, así que lo que se verifica aquí es que getBySlug le pide a la
+    // consulta el filtro correcto (['publico']), no que "adivine" el resultado después de leer.
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisorPublico] });
+    await getBySlug('reportes-ambientales', null);
+    const [, params] = vi.mocked(query).mock.calls[0];
+    expect(params[1]).toEqual(['publico']);
+  });
+
+  it('un investigador autenticado consulta sin restricción de visibilidad (permitida = null → sin filtro extra)', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisorPublico] });
+    await getBySlug('reportes-ambientales', { rol: 'investigador' });
+    const [sql, params] = vi.mocked(query).mock.calls[0];
+    expect(sql).not.toContain('visibilidad = ANY');
+    expect(params).toEqual(['reportes-ambientales']);
   });
 
   it('un investigador autenticado sí ve un geovisor restringido a "usuarios"', async () => {
@@ -59,13 +70,12 @@ describe('getBySlug — filtrado de visibilidad', () => {
     expect(geovisor.visibilidad).toBe('usuarios');
   });
 
-  it('un geovisor inactivo no aparece para el público (404), pero sí para admin_sig', async () => {
-    vi.mocked(query).mockResolvedValueOnce({ rows: [{ ...filaGeovisorPublico, activo: false }] });
+  it('un geovisor inactivo no aparece por esta vía para NADIE, ni siquiera admin_sig -- getBySlug es siempre la vía pública (también usada por catálogo/WMS/leyenda); la curaduría admin de inactivos pasa por getAll(?admin=true) + PATCH por id, nunca por aquí', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [] }); // el filtro "activo = true" ya vive en la SQL
     await expect(getBySlug('reportes-ambientales', { rol: 'publico' })).rejects.toMatchObject({ status: 404 });
 
-    vi.mocked(query).mockResolvedValueOnce({ rows: [{ ...filaGeovisorPublico, activo: false }] });
-    const geovisor = await getBySlug('reportes-ambientales', { rol: 'admin_sig' });
-    expect(geovisor.activo).toBe(false);
+    vi.mocked(query).mockResolvedValueOnce({ rows: [] });
+    await expect(getBySlug('reportes-ambientales', { rol: 'admin_sig' })).rejects.toMatchObject({ status: 404 });
   });
 
   it('lanza 404 si el slug no existe', async () => {
