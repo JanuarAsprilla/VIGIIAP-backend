@@ -202,6 +202,15 @@ en su propia rama (nunca de un solo commit gigante), confirmadas por el usuario:
   `producto6-reportes-vigia/src/connectors/geoserver.ts`, parametrizado por conexión (soporta N
   servidores GeoServer, no uno fijo).
 - CRUD completo + catálogo en vivo agrupado por tema, con el mismo `visibilidad` que `mapas`.
-- 1129/1129 tests pasan (1112 preexistentes + 17 nuevos). `tsc`/lint limpios.
+- 1130/1130 tests pasan. `lint` limpio.
 - Pendiente antes de probar contra GeoServer real: configurar `GEOSERVER_ENCRYPTION_KEY`, correr la
   migración, y crear (vía API, no seed en la migración) la primera conexión + el primer geovisor.
+
+**Revisión de seguridad post-push (2 hallazgos reales, corregidos en el mismo PR)**: `getBySlug`
+tenía un bypass de autorización (`admin_sig`/`super_admin` veían un geovisor inactivo/restringido
+directo desde la ruta pública, decidido en JS después de traer la fila completa) — divergía del
+patrón seguro de `mapas.service.js` (filtro en el propio WHERE de la SQL, sin bypass alguno; la
+curaduría admin pasa por `getAll(?admin=true)` + PATCH por id). El proxy WMS también tenía un
+parser-differential: construía los parámetros reenviados desde `req.query` (ya interpretado por
+`qs`) en vez de la cadena cruda, dos parsers distintos sobre la misma entrada. Ambos corregidos;
+ver el comentario en el PR #103 para el detalle completo.
