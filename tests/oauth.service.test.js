@@ -9,6 +9,21 @@ vi.mock('../src/utils/auditLog.js', () => ({
 vi.mock('../src/modules/auth/auth.service.js', () => ({
   issueTokenPair: vi.fn().mockResolvedValue({ accessToken: 'access-tok', refreshToken: 'refresh-tok' }),
 }));
+vi.mock('../src/utils/logger.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+// Redis "no disponible" por defecto (isReady: false) — la mayoría de tests de
+// handleCallback() no ejercitan PKCE en sí, así que fakeState() les da el
+// code_verifier directamente en el state (ruta de degradación sin Redis,
+// documentada en oauth.service.js). El describe "PKCE" de más abajo sí
+// simula Redis disponible para probar la ruta principal.
+const { mockRedisClient } = vi.hoisted(() => ({
+  mockRedisClient: { isReady: false, setEx: vi.fn(), get: vi.fn(), del: vi.fn() },
+}));
+vi.mock('../src/middlewares/cache.js', () => ({
+  getRedisClient: () => mockRedisClient,
+}));
 
 // vi.mock() se eleva (hoist) al inicio del módulo — cualquier valor que use su
 // factory debe crearse dentro de vi.hoisted() para no leerse antes de existir.
@@ -22,7 +37,7 @@ const { mockGoogleProvider } = vi.hoisted(() => ({
   },
 }));
 vi.mock('../src/modules/oauth/oauth.providers.js', () => ({
-  PROVIDERS: { google: mockGoogleProvider, microsoft: { id: 'microsoft', isConfigured: () => false }, apple: { id: 'apple', isConfigured: () => false } },
+  PROVIDERS: { google: mockGoogleProvider, microsoft: { id: 'microsoft', isConfigured: () => false } },
   getProvider: vi.fn((id) => {
     if (id === 'google') return mockGoogleProvider;
     throw Object.assign(new Error(`Proveedor OAuth desconocido: ${id}`), { status: 404 });
@@ -43,30 +58,31 @@ const REDIRECT_URI = 'https://api.vigiiap.iiap.gov.co/api/v1/auth/oauth/google/c
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.JWT_SECRET = 'test-secret-min-32-chars-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  mockRedisClient.isReady = false;
 });
 
 describe('listProviders()', () => {
   it('refleja isConfigured() de cada adaptador', () => {
-    expect(listProviders()).toEqual({ google: true, microsoft: false, apple: false });
+    expect(listProviders()).toEqual({ google: true, microsoft: false });
   });
 });
 
 describe('buildAuthorizationUrl()', () => {
-  it('devuelve la URL del proveedor con un state firmado', () => {
-    const url = buildAuthorizationUrl('google', REDIRECT_URI);
+  it('devuelve la URL del proveedor con un state firmado y un code_challenge PKCE', async () => {
+    const url = await buildAuthorizationUrl('google', REDIRECT_URI);
     expect(url).toContain('accounts.google.com');
-    expect(mockGoogleProvider.getAuthorizationUrl).toHaveBeenCalledWith(expect.any(String), REDIRECT_URI);
+    expect(mockGoogleProvider.getAuthorizationUrl).toHaveBeenCalledWith(
+      expect.any(String), REDIRECT_URI, expect.any(String),
+    );
   });
 
-  it('lanza 404 para un proveedor inexistente', () => {
-    expect(() => buildAuthorizationUrl('facebook', REDIRECT_URI)).toThrow(
-      expect.objectContaining({ status: 404 })
-    );
+  it('lanza 404 para un proveedor inexistente', async () => {
+    await expect(buildAuthorizationUrl('facebook', REDIRECT_URI)).rejects.toMatchObject({ status: 404 });
   });
 });
 
-function fakeState(provider = 'google') {
-  return jwt.sign({ provider, nonce: 'n' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+function fakeState(provider = 'google', extra = { cv: 'test-code-verifier' }) {
+  return jwt.sign({ provider, nonce: 'n', ...extra }, process.env.JWT_SECRET, { expiresIn: '10m' });
 }
 
 describe('handleCallback()', () => {
@@ -135,5 +151,65 @@ describe('handleCallback()', () => {
 
     await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI))
       .rejects.toMatchObject({ status: 403, code: 'ACCOUNT_INACTIVE' });
+  });
+
+  it('el code_verifier del state llega intacto a exchangeCodeForProfile', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'g-1', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null,
+    });
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: true }],
+    });
+
+    await handleCallback('google', 'code-abc', fakeState('google', { cv: 'el-verifier-correcto' }), REDIRECT_URI);
+
+    expect(mockGoogleProvider.exchangeCodeForProfile).toHaveBeenCalledWith('code-abc', REDIRECT_URI, 'el-verifier-correcto');
+  });
+});
+
+describe('PKCE — code_verifier vía Redis (ruta principal, sin degradar al state)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRedisClient.isReady = true;
+  });
+
+  it('buildAuthorizationUrl() guarda el code_verifier en Redis y NO lo incluye en el state', async () => {
+    mockRedisClient.setEx.mockResolvedValue('OK');
+
+    await buildAuthorizationUrl('google', REDIRECT_URI);
+
+    expect(mockRedisClient.setEx).toHaveBeenCalledWith(
+      expect.stringMatching(/^oauth:pkce:/), 600, expect.any(String),
+    );
+    const [state] = mockGoogleProvider.getAuthorizationUrl.mock.calls[0];
+    const statePayload = jwt.decode(state);
+    expect(statePayload.cv).toBeUndefined();
+    expect(statePayload.nonce).toBeTruthy();
+  });
+
+  it('handleCallback() recupera el code_verifier de Redis usando el nonce del state y lo borra tras usarlo (un solo uso)', async () => {
+    mockRedisClient.get.mockResolvedValue('verifier-desde-redis');
+    mockRedisClient.del.mockResolvedValue(1);
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'g-1', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null,
+    });
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: true }],
+    });
+
+    const state = jwt.sign({ provider: 'google', nonce: 'abc123' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    await handleCallback('google', 'code', state, REDIRECT_URI);
+
+    expect(mockRedisClient.get).toHaveBeenCalledWith('oauth:pkce:abc123');
+    expect(mockRedisClient.del).toHaveBeenCalledWith('oauth:pkce:abc123');
+    expect(mockGoogleProvider.exchangeCodeForProfile).toHaveBeenCalledWith('code', REDIRECT_URI, 'verifier-desde-redis');
+  });
+
+  it('rechaza el callback si el nonce ya fue usado (Redis no tiene el verifier y el state tampoco lo trae)', async () => {
+    mockRedisClient.get.mockResolvedValue(null);
+    const state = jwt.sign({ provider: 'google', nonce: 'ya-usado' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+
+    await expect(handleCallback('google', 'code', state, REDIRECT_URI)).rejects.toMatchObject({ status: 400 });
+    expect(mockGoogleProvider.exchangeCodeForProfile).not.toHaveBeenCalled();
   });
 });

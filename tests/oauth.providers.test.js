@@ -38,14 +38,16 @@ describe('googleProvider', () => {
     expect(PROVIDERS.google.isConfigured()).toBe(true);
   });
 
-  it('getAuthorizationUrl() arma la URL con client_id, redirect_uri y state', () => {
+  it('getAuthorizationUrl() arma la URL con client_id, redirect_uri, state y el challenge PKCE', () => {
     process.env.GOOGLE_CLIENT_ID = 'my-client-id';
-    const url = new URL(PROVIDERS.google.getAuthorizationUrl('the-state', REDIRECT_URI));
+    const url = new URL(PROVIDERS.google.getAuthorizationUrl('the-state', REDIRECT_URI, 'the-challenge'));
     expect(url.origin + url.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
     expect(url.searchParams.get('client_id')).toBe('my-client-id');
     expect(url.searchParams.get('redirect_uri')).toBe(REDIRECT_URI);
     expect(url.searchParams.get('state')).toBe('the-state');
     expect(url.searchParams.get('scope')).toContain('email');
+    expect(url.searchParams.get('code_challenge')).toBe('the-challenge');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
   });
 
   it('exchangeCodeForProfile() intercambia el code y normaliza el perfil de Google', async () => {
@@ -58,12 +60,14 @@ describe('googleProvider', () => {
         json: async () => ({ sub: 'g-1', email: 'ana@gmail.com', email_verified: true, name: 'Ana', picture: 'https://x/y.png' }),
       });
 
-    const profile = await PROVIDERS.google.exchangeCodeForProfile('the-code', REDIRECT_URI);
+    const profile = await PROVIDERS.google.exchangeCodeForProfile('the-code', REDIRECT_URI, 'the-verifier');
 
     expect(profile).toEqual({
       providerId: 'g-1', email: 'ana@gmail.com', emailVerified: true, nombre: 'Ana', avatarUrl: 'https://x/y.png',
     });
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://oauth2.googleapis.com/token', expect.objectContaining({ method: 'POST' }));
+    const tokenBody = fetchMock.mock.calls[0][1].body;
+    expect(tokenBody.get('code_verifier')).toBe('the-verifier');
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://www.googleapis.com/oauth2/v3/userinfo', expect.objectContaining({
       headers: { Authorization: 'Bearer gh-token' },
     }));
@@ -80,40 +84,39 @@ describe('microsoftProvider', () => {
   it('usa el tenant "common" por defecto', () => {
     delete process.env.MICROSOFT_TENANT_ID;
     process.env.MICROSOFT_CLIENT_ID = 'ms-id';
-    const url = new URL(PROVIDERS.microsoft.getAuthorizationUrl('state', REDIRECT_URI));
+    const url = new URL(PROVIDERS.microsoft.getAuthorizationUrl('state', REDIRECT_URI, 'challenge'));
     expect(url.pathname).toContain('/common/oauth2/v2.0/authorize');
+    expect(url.searchParams.get('code_challenge')).toBe('challenge');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
   });
 
   it('respeta MICROSOFT_TENANT_ID cuando está definido', () => {
     process.env.MICROSOFT_TENANT_ID = 'iiap-tenant';
     process.env.MICROSOFT_CLIENT_ID = 'ms-id';
-    const url = new URL(PROVIDERS.microsoft.getAuthorizationUrl('state', REDIRECT_URI));
+    const url = new URL(PROVIDERS.microsoft.getAuthorizationUrl('state', REDIRECT_URI, 'challenge'));
     expect(url.pathname).toContain('/iiap-tenant/oauth2/v2.0/authorize');
   });
 
-  it('exchangeCodeForProfile() usa mail o userPrincipalName como email', async () => {
+  it('exchangeCodeForProfile() usa mail o userPrincipalName como email, y envía el code_verifier', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'id';
     process.env.MICROSOFT_CLIENT_SECRET = 'secret';
-    vi.spyOn(global, 'fetch')
+    const fetchMock = vi.spyOn(global, 'fetch')
       .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token' }) })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: 'm-1', mail: null, userPrincipalName: 'ana@empresa.com', displayName: 'Ana' }),
       });
 
-    const profile = await PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI);
+    const profile = await PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'ms-verifier');
 
     expect(profile).toMatchObject({ providerId: 'm-1', email: 'ana@empresa.com', emailVerified: true, nombre: 'Ana' });
+    const tokenBody = fetchMock.mock.calls[0][1].body;
+    expect(tokenBody.get('code_verifier')).toBe('ms-verifier');
   });
 });
 
-describe('appleProvider', () => {
-  it('isConfigured() siempre es false — pendiente de cuenta Apple Developer', () => {
-    expect(PROVIDERS.apple.isConfigured()).toBe(false);
-  });
-
-  it('getAuthorizationUrl() y exchangeCodeForProfile() lanzan 501', () => {
-    expect(() => PROVIDERS.apple.getAuthorizationUrl()).toThrow(expect.objectContaining({ status: 501 }));
-    return expect(PROVIDERS.apple.exchangeCodeForProfile()).rejects.toMatchObject({ status: 501 });
+describe('PROVIDERS', () => {
+  it('solo registra google y microsoft — Apple no está disponible (requiere Apple Developer Program de pago)', () => {
+    expect(Object.keys(PROVIDERS).sort()).toEqual(['google', 'microsoft']);
   });
 });
