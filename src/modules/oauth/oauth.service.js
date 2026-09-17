@@ -4,17 +4,19 @@ import { query } from '../../config/database.js';
 import { getProvider, PROVIDERS } from './oauth.providers.js';
 import { issueTokenPair } from '../auth/auth.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { getRedisClient } from '../../middlewares/cache.js';
+import logger from '../../utils/logger.js';
 
 // El "state" del flujo OAuth viaja como JWT de vida corta en vez de guardarse
-// en BD/Redis — no hay estado de sesión previo al callback (el navegador va y
+// en BD — no hay estado de sesión previo al callback (el navegador va y
 // vuelve del proveedor externo), así que firmar el proveedor+nonce y
 // verificarlo al volver es suficiente para CSRF sin infraestructura extra.
-function signState(providerId) {
-  return jwt.sign(
-    { provider: providerId, nonce: crypto.randomBytes(16).toString('hex') },
-    process.env.JWT_SECRET,
-    { expiresIn: '10m' },
-  );
+function signState(providerId, nonce, codeVerifierFallback) {
+  const payload = { provider: providerId, nonce };
+  // Solo viaja en el propio state si Redis no está disponible (ver
+  // storeCodeVerifier) — degradado pero funcional, igual que cache.js.
+  if (codeVerifierFallback) payload.cv = codeVerifierFallback;
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '10m' });
 }
 
 function verifyState(rawState, expectedProvider) {
@@ -27,6 +29,48 @@ function verifyState(rawState, expectedProvider) {
   if (payload.provider !== expectedProvider) {
     throw Object.assign(new Error('El enlace de inicio de sesión no corresponde a este proveedor.'), { status: 400 });
   }
+  return payload;
+}
+
+// ─── PKCE (RFC 7636) ─────────────────────────────────────────────────────
+// Capa extra sobre el client_secret que ya usa este flujo (cliente
+// confidencial) — protege también si el `code` queda expuesto en un canal
+// intermedio (proxy, CDN, historial del navegador) antes de que este backend
+// lo canjee. El code_verifier se guarda server-side en Redis, atado al mismo
+// nonce que ya viaja en el state — nunca pasa por el navegador. Si Redis no
+// está configurado, cae al mismo state JWT (degradado, no roto).
+const PKCE_TTL_SECONDS = 600; // igual a la vida del state JWT
+
+function generatePkce() {
+  const codeVerifier = crypto.randomBytes(32).toString('base64url');
+  const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+  return { codeVerifier, codeChallenge };
+}
+
+async function storeCodeVerifier(nonce, codeVerifier) {
+  const client = getRedisClient();
+  if (!client?.isReady) return false;
+  try {
+    await client.setEx(`oauth:pkce:${nonce}`, PKCE_TTL_SECONDS, codeVerifier);
+    return true;
+  } catch (err) {
+    logger.warn(`[oauth] No se pudo guardar code_verifier en Redis: ${err.message}`);
+    return false;
+  }
+}
+
+async function consumeCodeVerifier(nonce) {
+  const client = getRedisClient();
+  if (!client?.isReady) return null;
+  try {
+    const key = `oauth:pkce:${nonce}`;
+    const verifier = await client.get(key);
+    if (verifier) await client.del(key); // un solo uso
+    return verifier;
+  } catch (err) {
+    logger.warn(`[oauth] No se pudo leer code_verifier de Redis: ${err.message}`);
+    return null;
+  }
 }
 
 export function listProviders() {
@@ -35,12 +79,16 @@ export function listProviders() {
   );
 }
 
-export function buildAuthorizationUrl(providerId, redirectUri) {
+export async function buildAuthorizationUrl(providerId, redirectUri) {
   const provider = getProvider(providerId);
   if (!provider.isConfigured()) {
     throw Object.assign(new Error(`El inicio de sesión con ${provider.name} todavía no está disponible.`), { status: 501 });
   }
-  return provider.getAuthorizationUrl(signState(providerId), redirectUri);
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const { codeVerifier, codeChallenge } = generatePkce();
+  const storedInRedis = await storeCodeVerifier(nonce, codeVerifier);
+  const state = signState(providerId, nonce, storedInRedis ? undefined : codeVerifier);
+  return provider.getAuthorizationUrl(state, redirectUri, codeChallenge);
 }
 
 // Busca por (oauth_provider, oauth_id) primero — coincide con quien ya inició
@@ -85,10 +133,14 @@ async function findOrCreateUser(providerId, profile) {
 }
 
 export async function handleCallback(providerId, code, rawState, redirectUri, { ip, userAgent } = {}) {
-  verifyState(rawState, providerId);
+  const statePayload = verifyState(rawState, providerId);
+  const codeVerifier = statePayload.cv ?? await consumeCodeVerifier(statePayload.nonce);
+  if (!codeVerifier) {
+    throw Object.assign(new Error('El enlace de inicio de sesión expiró o ya fue usado. Intenta de nuevo.'), { status: 400 });
+  }
 
   const provider = getProvider(providerId);
-  const profile = await provider.exchangeCodeForProfile(code, redirectUri);
+  const profile = await provider.exchangeCodeForProfile(code, redirectUri, codeVerifier);
 
   if (!profile.email) {
     throw Object.assign(new Error(`${provider.name} no compartió un correo electrónico. No es posible continuar.`), { status: 400 });

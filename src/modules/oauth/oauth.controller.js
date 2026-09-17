@@ -20,9 +20,9 @@ export function listProviders(req, res) {
 }
 
 /** GET /api/v1/auth/oauth/:provider/start — redirige a la pantalla de consentimiento del proveedor */
-export function redirectToProvider(req, res, next) {
+export async function redirectToProvider(req, res, next) {
   try {
-    const url = oauthService.buildAuthorizationUrl(req.params.provider, redirectUriFor(req, req.params.provider));
+    const url = await oauthService.buildAuthorizationUrl(req.params.provider, redirectUriFor(req, req.params.provider));
     res.redirect(url);
   } catch (err) { next(err); }
 }

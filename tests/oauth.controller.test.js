@@ -45,10 +45,10 @@ describe('oauth.controller → listProviders()', () => {
 });
 
 describe('oauth.controller → redirectToProvider()', () => {
-  it('redirige a la URL de autorización con el redirect_uri derivado del propio host', () => {
-    oauthService.buildAuthorizationUrl.mockReturnValue('https://accounts.google.com/authorize?mock=1');
+  it('redirige a la URL de autorización con el redirect_uri derivado del propio host', async () => {
+    oauthService.buildAuthorizationUrl.mockResolvedValue('https://accounts.google.com/authorize?mock=1');
     const r = res();
-    redirectToProvider(req({ params: { provider: 'google' } }), r, mockNext);
+    await redirectToProvider(req({ params: { provider: 'google' } }), r, mockNext);
 
     expect(oauthService.buildAuthorizationUrl).toHaveBeenCalledWith(
       'google',
@@ -57,11 +57,11 @@ describe('oauth.controller → redirectToProvider()', () => {
     expect(r.redirect).toHaveBeenCalledWith('https://accounts.google.com/authorize?mock=1');
   });
 
-  it('llama next(err) si el proveedor no está configurado', () => {
-    oauthService.buildAuthorizationUrl.mockImplementation(() => {
-      throw Object.assign(new Error('no configurado'), { status: 501 });
-    });
-    redirectToProvider(req({ params: { provider: 'apple' } }), res(), mockNext);
+  it('llama next(err) si el proveedor no está configurado', async () => {
+    oauthService.buildAuthorizationUrl.mockRejectedValue(
+      Object.assign(new Error('no configurado'), { status: 501 }),
+    );
+    await redirectToProvider(req({ params: { provider: 'apple' } }), res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ status: 501 }));
   });
 });

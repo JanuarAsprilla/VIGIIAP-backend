@@ -17,7 +17,7 @@ const googleProvider = {
     return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
   },
 
-  getAuthorizationUrl(state, redirectUri) {
+  getAuthorizationUrl(state, redirectUri, codeChallenge) {
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID);
     url.searchParams.set('redirect_uri', redirectUri);
@@ -25,10 +25,16 @@ const googleProvider = {
     url.searchParams.set('scope', 'openid email profile');
     url.searchParams.set('state', state);
     url.searchParams.set('prompt', 'select_account');
+    // PKCE (RFC 7636) — capa extra aunque este sea un cliente confidencial
+    // (ya usa client_secret): protege igual si el código de autorización
+    // queda expuesto en un log intermedio (proxy, CDN, historial del
+    // navegador) antes de que este backend lo canjee.
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
     return url.toString();
   },
 
-  async exchangeCodeForProfile(code, redirectUri) {
+  async exchangeCodeForProfile(code, redirectUri, codeVerifier) {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -38,6 +44,7 @@ const googleProvider = {
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         redirect_uri:  redirectUri,
         grant_type:    'authorization_code',
+        code_verifier: codeVerifier,
       }),
     });
     if (!tokenRes.ok) {
@@ -75,7 +82,7 @@ const microsoftProvider = {
     return Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
   },
 
-  getAuthorizationUrl(state, redirectUri) {
+  getAuthorizationUrl(state, redirectUri, codeChallenge) {
     const tenant = process.env.MICROSOFT_TENANT_ID || 'common';
     const url = new URL(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`);
     url.searchParams.set('client_id', process.env.MICROSOFT_CLIENT_ID);
@@ -83,10 +90,12 @@ const microsoftProvider = {
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', 'openid email profile User.Read');
     url.searchParams.set('state', state);
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
     return url.toString();
   },
 
-  async exchangeCodeForProfile(code, redirectUri) {
+  async exchangeCodeForProfile(code, redirectUri, codeVerifier) {
     const tenant = process.env.MICROSOFT_TENANT_ID || 'common';
     const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
       method: 'POST',
@@ -97,6 +106,7 @@ const microsoftProvider = {
         client_secret: process.env.MICROSOFT_CLIENT_SECRET,
         redirect_uri:  redirectUri,
         grant_type:    'authorization_code',
+        code_verifier: codeVerifier,
       }),
     });
     if (!tokenRes.ok) {
