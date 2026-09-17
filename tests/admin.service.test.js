@@ -42,6 +42,7 @@ import {
   getConfiguracion,
   setConfiguracion,
   listarUsuarios,
+  listarAdministradores,
 } from '../src/modules/admin/admin.service.js';
 
 // ─── Fixture ──────────────────────────────────────────────────────────────────
@@ -90,6 +91,55 @@ describe('admin.service → listarUsuarios()', () => {
     await listarUsuarios({ q: 'Investigador' });
     const params = query.mock.calls[0][1];
     expect(params.some((p) => typeof p === 'string' && p.includes('Investigador'))).toBe(true);
+  });
+
+  it('excluye admin_sig y super_admin — tienen su propia vista dedicada', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await listarUsuarios({});
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/rol NOT IN \('super_admin', 'admin_sig'\)/);
+  });
+
+  it('ignora rol=admin_sig como filtro — no es un rol asignable desde este listado', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await listarUsuarios({ rol: 'admin_sig' });
+    const params = query.mock.calls[0][1];
+    expect(params).not.toContain('admin_sig');
+  });
+});
+
+// ─── listarAdministradores() ──────────────────────────────────────────────────
+describe('admin.service → listarAdministradores()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna solo admin_sig, con sus permisos por módulo embebidos', async () => {
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'a1', nombre: 'Admin Uno', email: 'a1@iiap.org.co', activo: true, permisos: [{ modulo: 'mapas', puede_ver: true, puede_editar: true }] }],
+      })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+
+    const result = await listarAdministradores({});
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].permisos).toEqual([{ modulo: 'mapas', puede_ver: true, puede_editar: true }]);
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/rol = 'admin_sig'/);
+  });
+
+  it('filtra por activo', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await listarAdministradores({ activo: 'false' });
+    const params = query.mock.calls[0][1];
+    expect(params).toContain(false);
   });
 });
 
@@ -191,7 +241,7 @@ describe('admin.service → crearUsuario()', () => {
     });
   });
 
-  it('lanza 403 si un admin_sig intenta crear otro usuario con rol admin_sig', async () => {
+  it('lanza 400 con rol admin_sig — crearUsuario nunca crea administradores, ni siquiera para super_admin', async () => {
     await expect(
       crearUsuario({
         nombre: 'Escalado',
@@ -201,30 +251,21 @@ describe('admin.service → crearUsuario()', () => {
         adminRol: 'admin_sig',
         adminEmail: 'admin@iiap.org.co',
       })
-    ).rejects.toMatchObject({ status: 403 });
-
-    // No debe llegar a tocar la BD
+    ).rejects.toMatchObject({ status: 400 });
     expect(query).not.toHaveBeenCalled();
-  });
 
-  it('permite a un super_admin crear un usuario con rol admin_sig', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [] })                                       // EXISTS check
-      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'admin_sig' }] });           // INSERT RETURNING
-
-    bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
-
-    const result = await crearUsuario({
-      nombre: 'Nuevo Admin',
-      email: 'nuevoadmin@iiap.org.co',
-      rol: 'admin_sig',
-      adminId: 'super-uuid',
-      adminRol: 'super_admin',
-      adminEmail: 'super@iiap.org.co',
-    });
-
-    expect(result.rol).toBe('admin_sig');
-    expect(query).toHaveBeenCalledTimes(2);
+    await expect(
+      crearUsuario({
+        nombre: 'Nuevo Admin',
+        email: 'nuevoadmin@iiap.org.co',
+        rol: 'admin_sig',
+        adminId: 'super-uuid',
+        adminRol: 'super_admin',
+        adminEmail: 'super@iiap.org.co',
+      })
+    ).rejects.toMatchObject({ status: 400 });
+    // Crear administradores va exclusivamente por crearAdminSig() (POST /admin/super/crear-admin)
+    expect(query).not.toHaveBeenCalled();
   });
 });
 

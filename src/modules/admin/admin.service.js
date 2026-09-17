@@ -24,15 +24,25 @@ function generateTempPassword(length = 12) {
   return Array.from(randomBytes, (byte) => chars[byte % chars.length]).join('');
 }
 
-const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
+// Roles asignables desde el flujo genérico de "Usuarios". admin_sig queda
+// fuera a propósito: crear/gestionar administradores tiene su propio flujo
+// dedicado (ver crearAdminSig, listarAdministradores, GestionAdmins.tsx) para
+// que solo exista un camino claro por tipo de cuenta.
+const ROLES = ['investigador', 'tecnico', 'institucional', 'publico'];
+// Roles que promocionan/degradan una cuenta ya existente (actualizarUsuario) —
+// aquí sí se permite admin_sig: promover un usuario verificado a administrador
+// es una transición legítima, distinta de "crear una cuenta admin desde cero".
+const ROLES_ACTUALIZABLES = [...ROLES, 'admin_sig'];
 
-/** Lista todos los usuarios con filtros */
+/** Lista usuarios finales (nunca administradores) con filtros.
+ *  Para administradores usar listarAdministradores(). */
 export async function listarUsuarios(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rol, activo, q } = reqQuery;
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
-  // super_admin nunca visible para admin_sig — siempre excluido de la lista
-  const conditions = ["rol != 'super_admin'"];
+  // admin_sig y super_admin nunca aparecen en la lista de usuarios finales —
+  // tienen su propia vista dedicada (Gestión de Administradores).
+  const conditions = ["rol NOT IN ('super_admin', 'admin_sig')"];
   const params = [];
 
   if (rol && ROLES.includes(rol)) {
@@ -67,15 +77,11 @@ export async function listarUsuarios(reqQuery) {
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
 }
 
-/** Crea un usuario desde el panel de admin */
-export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso, adminId, adminRol, adminEmail }) {
+/** Crea un usuario desde el panel de admin. Nunca crea cuentas admin_sig —
+ *  esas se crean exclusivamente vía crearAdminSig() (POST /admin/super/crear-admin). */
+export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso, adminId, adminEmail }) {
   if (!ROLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
-  }
-  // Solo el super_admin puede crear cuentas admin_sig — evita auto-escalación
-  // de admin_sig creando otros admin_sig vía POST /api/admin/usuarios
-  if (rol === 'admin_sig' && adminRol !== 'super_admin') {
-    throw Object.assign(new Error('Solo el Super Administrador puede asignar el rol de administrador'), { status: 403 });
   }
 
   const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
@@ -114,7 +120,7 @@ export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso
 
 /** Activa o desactiva un usuario, opcionalmente cambia su rol */
 export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, adminEmail }) {
-  if (rol && !ROLES.includes(rol)) {
+  if (rol && !ROLES_ACTUALIZABLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
   }
   // Nadie puede modificar su propia cuenta desde el panel de administración
@@ -396,6 +402,47 @@ export async function getSuperStats() {
     WHERE rol != 'super_admin'
   `);
   return rows[0];
+}
+
+/** Lista administradores SIG (rol=admin_sig) con sus permisos por módulo —
+ *  vista dedicada del super_admin, separada por completo de listarUsuarios(). */
+export async function listarAdministradores(reqQuery) {
+  const { limit, offset, meta } = paginate(reqQuery);
+  const { activo, q } = reqQuery;
+  const conditions = ["rol = 'admin_sig'"];
+  const params = [];
+
+  if (activo !== undefined) {
+    params.push(activo === 'true');
+    conditions.push(`activo = $${params.length}`);
+  }
+  if (q) {
+    if (q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
+    const qEsc = q.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${qEsc}%`);
+    conditions.push(`(nombre ILIKE $${params.length} OR email ILIKE $${params.length})`);
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
+  params.push(limit, offset);
+
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT u.id, u.nombre, u.email, u.institucion, u.activo, u.email_verified, u.creado_en,
+              COALESCE(
+                (SELECT json_agg(json_build_object('modulo', p.modulo, 'puede_ver', p.puede_ver, 'puede_editar', p.puede_editar))
+                 FROM admin_permisos_modulo p WHERE p.usuario_id = u.id),
+                '[]'
+              ) AS permisos
+       FROM usuarios u ${where}
+       ORDER BY u.creado_en DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    ),
+    query(`SELECT COUNT(*) FROM usuarios ${where}`, params.slice(0, -2)),
+  ]);
+
+  return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
 }
 
 /** Crea un nuevo admin_sig — solo puede llamar super_admin */

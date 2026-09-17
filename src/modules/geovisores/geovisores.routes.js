@@ -3,6 +3,7 @@ import {
   index, show, catalogo, wms, leyenda, consulta, store, update, patchActivo, destroy,
 } from './geovisores.controller.js';
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
+import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { cacheMiddleware } from '../../middlewares/cache.js';
 
@@ -18,9 +19,9 @@ router.get('/:slug/capas/:capaId/leyenda', optionalAuthenticate, leyenda);
 router.get('/:slug/capas/:capaId/consulta', optionalAuthenticate, consulta);
 
 // ─── CRUD de geovisores (curaduría de contenido: admin_sig, super_admin siempre pasa) ───────────
-router.post('/', authenticate, authorize('admin_sig'), csrfProtection, store);
-router.patch('/:id', authenticate, authorize('admin_sig'), csrfProtection, update);
-router.patch('/:id/activo', authenticate, authorize('admin_sig'), csrfProtection, patchActivo);
-router.delete('/:id', authenticate, authorize('admin_sig'), csrfProtection, destroy);
+router.post('/', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, store);
+router.patch('/:id', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, update);
+router.patch('/:id/activo', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, patchActivo);
+router.delete('/:id', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, destroy);
 
 export default router;

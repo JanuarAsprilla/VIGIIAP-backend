@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { query } from '../../config/database.js';
 import { notifyUsuarioActivacion, notifyRolCambiado, sendTestEmail } from '../../utils/mailer.js';
 import * as adminService from './admin.service.js';
+import { MODULOS, setPermisosAdmin } from './modulos.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
@@ -146,7 +147,7 @@ export async function crearUsuario(req, res, next) {
     const crearUsuarioSchema = z.object({
       nombre:      z.string().trim().min(2).max(150),
       email:       z.string().email('Email inválido').toLowerCase(),
-      rol:         z.enum(['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico']),
+      rol:         z.enum(['investigador', 'tecnico', 'institucional', 'publico']),
       institucion: z.string().trim().max(200).optional(),
       tipoAcceso:  z.enum(['institucional', 'externo']).optional(),
     });
@@ -224,6 +225,30 @@ export async function errorLog(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/** GET /api/admin/administradores — exclusivo super_admin */
+export async function listarAdministradores(req, res, next) {
+  try {
+    res.json(await adminService.listarAdministradores(req.query));
+  } catch (err) { next(err); }
+}
+
+const permisosSchema = z.object({
+  permisos: z.array(z.object({
+    modulo:       z.enum(MODULOS.map((m) => m.clave)),
+    puede_ver:    z.boolean(),
+    puede_editar: z.boolean().optional().default(false),
+  })).max(MODULOS.length),
+});
+
+/** PUT /api/admin/administradores/:id/permisos — exclusivo super_admin */
+export async function setPermisosAdminController(req, res, next) {
+  try {
+    const { permisos } = permisosSchema.parse(req.body);
+    const result = await setPermisosAdmin(req.params.id, permisos, { superAdminId: req.user.id });
+    res.json({ data: result });
+  } catch (err) { next(err); }
 }
 
 /** GET /api/admin/super/stats — exclusivo super_admin */

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { index, show, store, update, destroy, patchActivo } from './documentos.controller.js';
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
+import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
@@ -17,6 +18,7 @@ router.post(
   '/',
   authenticate,
   authorize('admin_sig', 'investigador'),
+  requireModulo('documentos', 'editar'), // no-op para investigador — solo aplica a admin_sig
   csrfProtection,
   uploadRateLimiter,
   uploadSingle('archivo', 'documentos', 20, 'document'),
@@ -26,12 +28,13 @@ router.put(
   '/:id',
   authenticate,
   authorize('admin_sig'),
+  requireModulo('documentos', 'editar'),
   csrfProtection,
   uploadRateLimiter,
   uploadSingle('archivo', 'documentos', 20, 'document'),
   update,
 );
-router.patch('/:id/activo', authenticate, authorize('admin_sig'), csrfProtection, patchActivo);
-router.delete('/:id', authenticate, authorize('admin_sig'), csrfProtection, destroy);
+router.patch('/:id/activo', authenticate, authorize('admin_sig'), requireModulo('documentos', 'editar'), csrfProtection, patchActivo);
+router.delete('/:id', authenticate, authorize('admin_sig'), requireModulo('documentos', 'editar'), csrfProtection, destroy);
 
 export default router;
