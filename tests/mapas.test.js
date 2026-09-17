@@ -12,12 +12,15 @@ vi.mock('../src/modules/mapas/mapas.service.js', () => ({
   remove:    vi.fn(),
 }));
 
+// query() aquí solo lo consume requireModulo (mapas.service.js está mockeado
+// arriba) — por defecto el admin_sig de prueba tiene el módulo habilitado.
 vi.mock('../src/config/database.js', () => ({
-  query: vi.fn(),
+  query: vi.fn().mockResolvedValue({ rows: [{ puede_ver: true, puede_editar: true }] }),
   getClient: vi.fn(),
 }));
 
 import * as mapaService from '../src/modules/mapas/mapas.service.js';
+import { query } from '../src/config/database.js';
 
 // Tokens de prueba
 const adminToken = jwt.sign({ id: 'uuid-admin', email: 'admin@iiap.gob.pe', rol: 'admin_sig' }, process.env.JWT_SECRET);
@@ -92,6 +95,18 @@ describe('POST /api/mapas', () => {
       .send({ titulo: 'Mapa Amazónico', categoria: 'Biodiversidad' });
 
     expect(res.status).toBe(500);
+  });
+
+  it('retorna 403 si el admin_sig no tiene el módulo de mapas habilitado', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // sin fila en admin_permisos_modulo
+
+    const res = await request(app)
+      .post('/api/mapas')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ titulo: 'Mapa Amazónico', categoria: 'Biodiversidad' });
+
+    expect(res.status).toBe(403);
+    expect(mapaService.create).not.toHaveBeenCalled();
   });
 });
 

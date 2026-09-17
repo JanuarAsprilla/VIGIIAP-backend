@@ -400,7 +400,10 @@ describe('getProfile()', () => {
       twoFactorEnabled: true,
       creado_en: new Date().toISOString(),
     };
-    query.mockResolvedValueOnce({ rows: [profileRow] });
+    query
+      .mockResolvedValueOnce({ rows: [profileRow] })
+      // rol admin_sig → getProfile también carga sus permisos por módulo (ver modulos.service.js)
+      .mockResolvedValueOnce({ rows: [] });
 
     const result = await getProfile('uuid-001');
 
@@ -410,6 +413,7 @@ describe('getProfile()', () => {
       avatar_url: 'https://files.test.local/avatars/admin.jpg',
       twoFactorEnabled: true,
     });
+    expect(result.modulos).toHaveLength(11); // catálogo completo, todos en false por defecto
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE id = $1'),
       ['uuid-001']

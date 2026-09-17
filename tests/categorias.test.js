@@ -9,8 +9,10 @@ vi.mock('../src/modules/categorias/categorias.service.js', () => ({
   remove:          vi.fn(),
 }));
 
+// query() aquí solo lo consume requireModulo (categorias.service.js está
+// mockeado arriba) — por defecto el admin_sig de prueba tiene el módulo habilitado.
 vi.mock('../src/config/database.js', () => ({
-  query:     vi.fn().mockResolvedValue({ rows: [] }),
+  query:     vi.fn().mockResolvedValue({ rows: [{ puede_ver: true, puede_editar: true }] }),
   getClient: vi.fn(),
 }));
 

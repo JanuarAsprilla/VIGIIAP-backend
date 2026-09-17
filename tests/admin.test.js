@@ -13,12 +13,20 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   setConfiguracion: vi.fn(),
 }));
 
+// query() aquí sirve dos dueños: requireModulo (permisos por módulo) y el
+// controller de /stats (conteos reales). Se distingue por SQL para no alterar
+// el comportamiento existente de /stats.
 vi.mock('../src/config/database.js', () => ({
-  query: vi.fn().mockResolvedValue({ rows: [{ count: '42' }] }),
+  query: vi.fn((sql) =>
+    /admin_permisos_modulo/.test(sql)
+      ? Promise.resolve({ rows: [{ puede_ver: true, puede_editar: true }] })
+      : Promise.resolve({ rows: [{ count: '42' }] })
+  ),
   getClient: vi.fn(),
 }));
 
 import * as adminService from '../src/modules/admin/admin.service.js';
+import { query } from '../src/config/database.js';
 
 const adminToken = jwt.sign(
   { id: 'uuid-admin', email: 'admin@iiap.org.co', rol: 'admin_sig' },
@@ -72,7 +80,7 @@ describe('GET /api/admin/usuarios', () => {
 
   it('admin lista usuarios paginados', async () => {
     adminService.listarUsuarios.mockResolvedValue({
-      data: [{ id: 'u1', nombre: 'Admin', rol: 'admin_sig' }],
+      data: [{ id: 'u1', nombre: 'Investigador', rol: 'investigador' }],
       meta: { total: 1 },
     });
     const res = await request(app)
@@ -80,6 +88,15 @@ describe('GET /api/admin/usuarios', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('retorna 403 si el admin_sig no tiene el módulo de usuarios habilitado', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // sin fila en admin_permisos_modulo
+    const res = await request(app)
+      .get('/api/admin/usuarios')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(403);
+    expect(adminService.listarUsuarios).not.toHaveBeenCalled();
   });
 });
 

@@ -6,6 +6,7 @@ import { registrarAuditoria } from '../../utils/auditLog.js';
 import { notifyNuevoInicioSesion } from '../../utils/mailer.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
 import logger from '../../utils/logger.js';
+import { permisosDeAdmin } from '../admin/modulos.service.js';
 
 const SALT_ROUNDS = 12;
 
@@ -526,7 +527,15 @@ export async function getProfile(userId) {
     [userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
-  return rows[0];
+  const usuario = rows[0];
+
+  // Módulos habilitados — solo aplica a admin_sig, para que el sidebar filtre
+  // por función real en vez de por rol atómico. super_admin y roles no-admin
+  // no tienen restricción, así que no cargan este dato.
+  if (usuario.rol === 'admin_sig') {
+    usuario.modulos = await permisosDeAdmin(userId);
+  }
+  return usuario;
 }
 
 // Completa el perfil de una cuenta creada por OAuth (ver src/modules/oauth/)

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { index, show, store, update, patchActivo, destroy } from './mapas.controller.js';
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
+import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadFields } from '../../middlewares/upload.js';
 import { geoValidatorMiddleware } from '../../middlewares/geoValidator.js';
@@ -18,9 +19,9 @@ const mapaUpload = uploadFields([
 router.get('/', cacheMiddleware(120), optionalAuthenticate, index);
 router.get('/:slug', cacheMiddleware(300), optionalAuthenticate, show);
 // csrfProtection ANTES de mapaUpload: rechaza la petición forjada antes de parsear el multipart.
-router.post('/', authenticate, authorize('admin_sig'), csrfProtection, uploadRateLimiter, geoValidatorMiddleware, mapaUpload, store);
-router.patch('/:id', authenticate, authorize('admin_sig'), csrfProtection, uploadRateLimiter, geoValidatorMiddleware, mapaUpload, update);
-router.patch('/:id/activo', authenticate, authorize('admin_sig'), csrfProtection, patchActivo);
-router.delete('/:id', authenticate, authorize('admin_sig'), csrfProtection, destroy);
+router.post('/', authenticate, authorize('admin_sig'), requireModulo('mapas', 'editar'), csrfProtection, uploadRateLimiter, geoValidatorMiddleware, mapaUpload, store);
+router.patch('/:id', authenticate, authorize('admin_sig'), requireModulo('mapas', 'editar'), csrfProtection, uploadRateLimiter, geoValidatorMiddleware, mapaUpload, update);
+router.patch('/:id/activo', authenticate, authorize('admin_sig'), requireModulo('mapas', 'editar'), csrfProtection, patchActivo);
+router.delete('/:id', authenticate, authorize('admin_sig'), requireModulo('mapas', 'editar'), csrfProtection, destroy);
 
 export default router;
