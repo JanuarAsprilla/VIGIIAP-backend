@@ -43,6 +43,7 @@ describe('setupTotp()', () => {
     expect(typeof result.secret).toBe('string');
     expect(result.otpauthUrl).toMatch(/otpauth:\/\/totp/);
     expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1][0]).toContain('totp_secret_creado_en = NOW()');
   });
 
   it('lanza 409 si 2FA ya está activado', async () => {
@@ -125,6 +126,49 @@ describe('enableTotp()', () => {
     const updateCall = query.mock.calls[1];
     expect(updateCall[0]).toContain('totp_enabled = true');
     expect(updateCall[1][0]).toHaveLength(8);
+  });
+
+  it('activa 2FA con un secret generado hace menos de 10 minutos', async () => {
+    const { secretB32, code } = generateValidTotp();
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    query
+      .mockResolvedValueOnce({
+        rows: [{ totp_secret: secretB32, totp_enabled: false, totp_secret_creado_en: fiveMinutesAgo }],
+      })
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE
+
+    const result = await enableTotp('user-1', code);
+    expect(result.backupCodes).toHaveLength(8);
+  });
+
+  it('lanza 410 TOTP_SETUP_EXPIRED y limpia el secret si pasaron más de 10 minutos desde el setup', async () => {
+    const { secretB32, code } = generateValidTotp();
+    const elevenMinutesAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    query
+      .mockResolvedValueOnce({
+        rows: [{ totp_secret: secretB32, totp_enabled: false, totp_secret_creado_en: elevenMinutesAgo }],
+      })
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE que limpia el secret vencido
+
+    await expect(enableTotp('user-1', code)).rejects.toMatchObject({
+      status: 410,
+      code: 'TOTP_SETUP_EXPIRED',
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    const cleanupCall = query.mock.calls[1];
+    expect(cleanupCall[0]).toContain('totp_secret = NULL');
+  });
+
+  it('no expira secrets guardados antes de esta migración (totp_secret_creado_en null)', async () => {
+    const { secretB32, code } = generateValidTotp();
+    query
+      .mockResolvedValueOnce({
+        rows: [{ totp_secret: secretB32, totp_enabled: false, totp_secret_creado_en: null }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await enableTotp('user-1', code);
+    expect(result.backupCodes).toHaveLength(8);
   });
 });
 

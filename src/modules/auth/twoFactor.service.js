@@ -10,6 +10,14 @@ import { encryptTotpSecret, decryptTotpSecret, isTotpEncryptionEnabled } from '.
 
 const APP_NAME = 'VIGIIAP';
 
+// El secret TOTP queda escrito en BD apenas se genera el QR, antes de que la
+// persona lo confirme con un código — si deja esa pantalla abierta (o la
+// sesión queda olvidada en un equipo compartido) sin nunca completar la
+// activación, ese secret sin confirmar no debe seguir siendo válido
+// indefinidamente. Pasado este plazo, enableTotp() lo rechaza y hay que
+// pedir un QR nuevo desde /auth/2fa/setup.
+const SETUP_EXPIRY_MINUTES = 10;
+
 /** Genera un secret TOTP y lo guarda temporalmente (sin activar). */
 export async function setupTotp(userId, email) {
   const { rows } = await query(
@@ -28,20 +36,35 @@ export async function setupTotp(userId, email) {
 
   // Cifrar el secret antes de almacenar — si BD es comprometida, el secret no es usable sin la clave AES
   const storedSecret = isTotpEncryptionEnabled() ? encryptTotpSecret(secretB32) : secretB32;
-  await query('UPDATE usuarios SET totp_secret = $1 WHERE id = $2', [storedSecret, userId]);
+  await query(
+    'UPDATE usuarios SET totp_secret = $1, totp_secret_creado_en = NOW() WHERE id = $2',
+    [storedSecret, userId]
+  );
   return { secret: secretB32, otpauthUrl };
 }
 
 /** Verifica el código TOTP, activa 2FA y devuelve backup codes. */
 export async function enableTotp(userId, code) {
   const { rows } = await query(
-    'SELECT totp_secret, totp_enabled FROM usuarios WHERE id = $1', [userId]
+    'SELECT totp_secret, totp_enabled, totp_secret_creado_en FROM usuarios WHERE id = $1', [userId]
   );
   if (!rows[0]?.totp_secret) {
     throw Object.assign(new Error('Inicia el setup de 2FA primero'), { status: 400 });
   }
   if (rows[0].totp_enabled) {
     throw Object.assign(new Error('2FA ya está activado'), { status: 409 });
+  }
+  if (isSetupExpired(rows[0].totp_secret_creado_en)) {
+    // Limpia el secret vencido — no debe seguir siendo válido para nadie que
+    // haya visto ese QR después de que la persona lo abandonó.
+    await query(
+      'UPDATE usuarios SET totp_secret = NULL, totp_secret_creado_en = NULL WHERE id = $1',
+      [userId]
+    );
+    throw Object.assign(
+      new Error(`El código QR expiró (más de ${SETUP_EXPIRY_MINUTES} minutos). Genera uno nuevo.`),
+      { status: 410, code: 'TOTP_SETUP_EXPIRED' }
+    );
   }
   const plainSecret = decryptTotpSecret(rows[0].totp_secret);
   if (!checkTotp(code, plainSecret)) {
@@ -52,11 +75,18 @@ export async function enableTotp(userId, code) {
   const hashedCodes = await Promise.all(rawCodes.map((c) => bcrypt.hash(c, 10)));
 
   await query(
-    'UPDATE usuarios SET totp_enabled = true, totp_backup_codes = $1 WHERE id = $2',
+    'UPDATE usuarios SET totp_enabled = true, totp_backup_codes = $1, totp_secret_creado_en = NULL WHERE id = $2',
     [hashedCodes, userId]
   );
 
   return { backupCodes: rawCodes };
+}
+
+/** true si el secret pendiente de confirmar ya superó SETUP_EXPIRY_MINUTES. */
+function isSetupExpired(secretCreadoEn) {
+  if (!secretCreadoEn) return false; // secrets de antes de esta migración no expiran retroactivamente
+  const ageMs = Date.now() - new Date(secretCreadoEn).getTime();
+  return ageMs > SETUP_EXPIRY_MINUTES * 60 * 1000;
 }
 
 /**
