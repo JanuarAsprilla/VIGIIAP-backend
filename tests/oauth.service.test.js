@@ -37,7 +37,7 @@ const { mockGoogleProvider } = vi.hoisted(() => ({
   },
 }));
 vi.mock('../src/modules/oauth/oauth.providers.js', () => ({
-  PROVIDERS: { google: mockGoogleProvider, microsoft: { id: 'microsoft', isConfigured: () => false }, apple: { id: 'apple', isConfigured: () => false } },
+  PROVIDERS: { google: mockGoogleProvider, microsoft: { id: 'microsoft', isConfigured: () => false } },
   getProvider: vi.fn((id) => {
     if (id === 'google') return mockGoogleProvider;
     throw Object.assign(new Error(`Proveedor OAuth desconocido: ${id}`), { status: 404 });
@@ -63,7 +63,7 @@ beforeEach(() => {
 
 describe('listProviders()', () => {
   it('refleja isConfigured() de cada adaptador', () => {
-    expect(listProviders()).toEqual({ google: true, microsoft: false, apple: false });
+    expect(listProviders()).toEqual({ google: true, microsoft: false });
   });
 });
 

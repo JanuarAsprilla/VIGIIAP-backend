@@ -115,13 +115,8 @@ describe('microsoftProvider', () => {
   });
 });
 
-describe('appleProvider', () => {
-  it('isConfigured() siempre es false — pendiente de cuenta Apple Developer', () => {
-    expect(PROVIDERS.apple.isConfigured()).toBe(false);
-  });
-
-  it('getAuthorizationUrl() y exchangeCodeForProfile() lanzan 501', () => {
-    expect(() => PROVIDERS.apple.getAuthorizationUrl()).toThrow(expect.objectContaining({ status: 501 }));
-    return expect(PROVIDERS.apple.exchangeCodeForProfile()).rejects.toMatchObject({ status: 501 });
+describe('PROVIDERS', () => {
+  it('solo registra google y microsoft — Apple no está disponible (requiere Apple Developer Program de pago)', () => {
+    expect(Object.keys(PROVIDERS).sort()).toEqual(['google', 'microsoft']);
   });
 });

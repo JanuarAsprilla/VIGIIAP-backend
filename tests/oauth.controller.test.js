@@ -37,10 +37,10 @@ beforeEach(() => {
 
 describe('oauth.controller → listProviders()', () => {
   it('devuelve el resultado de oauthService.listProviders() tal cual', () => {
-    oauthService.listProviders.mockReturnValue({ google: true, microsoft: false, apple: false });
+    oauthService.listProviders.mockReturnValue({ google: true, microsoft: false });
     const r = res();
     listProviders(req(), r);
-    expect(r.json).toHaveBeenCalledWith({ google: true, microsoft: false, apple: false });
+    expect(r.json).toHaveBeenCalledWith({ google: true, microsoft: false });
   });
 });
 
@@ -61,7 +61,7 @@ describe('oauth.controller → redirectToProvider()', () => {
     oauthService.buildAuthorizationUrl.mockRejectedValue(
       Object.assign(new Error('no configurado'), { status: 501 }),
     );
-    await redirectToProvider(req({ params: { provider: 'apple' } }), res(), mockNext);
+    await redirectToProvider(req({ params: { provider: 'microsoft' } }), res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ status: 501 }));
   });
 });

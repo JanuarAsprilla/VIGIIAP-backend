@@ -2,8 +2,8 @@
  * Adaptadores de proveedor OAuth — cada uno implementa la misma forma
  * (isConfigured/getAuthorizationUrl/exchangeCodeForProfile) para que
  * oauth.service.js y oauth.controller.js nunca conozcan las particularidades
- * de Google/Microsoft/Apple. Agregar un proveedor nuevo es solo escribir un
- * adaptador más y registrarlo en PROVIDERS — el resto del módulo no cambia.
+ * de cada proveedor. Agregar uno nuevo es solo escribir un adaptador más y
+ * registrarlo en PROVIDERS — el resto del módulo no cambia.
  */
 import logger from '../../utils/logger.js';
 
@@ -138,29 +138,16 @@ const microsoftProvider = {
   },
 };
 
-// Apple exige Apple Developer Program (de pago) + un client secret firmado
-// con JWT (ES256, llave privada .p8) que se regenera cada ~6 meses — bastante
-// más trabajo de configuración que Google/Microsoft. Se deja el contrato
-// implementado como "no configurado" para que aparezca en /oauth/providers
-// igual que los otros, listo para activarse el día que haya cuenta de Apple.
-const appleProvider = {
-  id: 'apple',
-  name: 'Apple',
-  isConfigured() {
-    return false;
-  },
-  getAuthorizationUrl() {
-    throw Object.assign(new Error('Apple Sign In no está configurado todavía'), { status: 501 });
-  },
-  async exchangeCodeForProfile() {
-    throw Object.assign(new Error('Apple Sign In no está configurado todavía'), { status: 501 });
-  },
-};
+// Apple Sign In queda fuera por ahora — exige Apple Developer Program (de
+// pago, 99 USD/año) + un client secret firmado con JWT (ES256, llave privada
+// .p8) que se regenera cada ~6 meses. Si el instituto decide activarlo más
+// adelante, agregar un adaptador nuevo aquí con la misma forma
+// (isConfigured/getAuthorizationUrl/exchangeCodeForProfile) y registrarlo en
+// PROVIDERS — ni oauth.service.js ni oauth.controller.js necesitan cambios.
 
 export const PROVIDERS = {
   google:    googleProvider,
   microsoft: microsoftProvider,
-  apple:     appleProvider,
 };
 
 export function getProvider(id) {
