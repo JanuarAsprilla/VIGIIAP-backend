@@ -578,3 +578,50 @@ export async function getErrorLog(reqQuery) {
 
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
 }
+
+// ── Tendencias del dashboard ────────────────────────────────────────────────
+// Deltas semana-vs-semana-anterior + serie de 7 días por KPI, derivadas de
+// audit_log (mismo enfoque que getReporte, sin tabla ni agregación nueva).
+const KPI_ACCION = {
+  usuarios:    'registro',
+  solicitudes: 'create_solicitud',
+  documentos:  'publish_documento',
+  mapas:       'publish_mapa',
+};
+
+export async function getDashboardTendencias() {
+  const desde = new Date();
+  desde.setDate(desde.getDate() - 14);
+  desde.setHours(0, 0, 0, 0);
+
+  const { rows } = await query(
+    `SELECT accion, creado_en FROM audit_log WHERE creado_en >= $1 AND accion = ANY($2::text[])`,
+    [desde, Object.values(KPI_ACCION)]
+  );
+
+  const hoy = new Date();
+  // 14 días locales, del más viejo al más nuevo (índice 13 = hoy).
+  const dias14 = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(hoy);
+    d.setDate(hoy.getDate() - (13 - i));
+    return fmtLocalDate(d);
+  });
+
+  const tendencias = {};
+  for (const [kpi, accion] of Object.entries(KPI_ACCION)) {
+    const porDia = new Map(dias14.map((d) => [d, 0]));
+    rows.filter((r) => r.accion === accion).forEach((r) => {
+      const dia = fmtLocalDate(new Date(r.creado_en));
+      if (porDia.has(dia)) porDia.set(dia, porDia.get(dia) + 1);
+    });
+    const serie = dias14.map((d) => porDia.get(d));
+    const semanaActual   = serie.slice(7).reduce((a, b) => a + b, 0);
+    const semanaAnterior = serie.slice(0, 7).reduce((a, b) => a + b, 0);
+    // Sin datos en la semana anterior: 0% si tampoco hay esta semana, 100% si arrancó de cero.
+    const deltaPct = semanaAnterior === 0
+      ? (semanaActual > 0 ? 100 : 0)
+      : Math.round(((semanaActual - semanaAnterior) / semanaAnterior) * 100);
+    tendencias[kpi] = { serie7: serie.slice(7), semanaActual, semanaAnterior, deltaPct };
+  }
+  return tendencias;
+}
