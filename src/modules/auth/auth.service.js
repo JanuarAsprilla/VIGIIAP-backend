@@ -328,7 +328,9 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
 }
 
 // ─── Registro ─────────────────────────────────────────────────────────────────
-// Map perfil solicitado → rol inicial en BD
+// Normaliza el perfil declarado en el formulario — 'publico' es el valor por
+// defecto para cualquier entrada no reconocida, nunca se asigna directo como
+// rol (ver register()).
 function perfilToRol(perfil) {
   if (perfil === 'investigador') return 'investigador';
   if (perfil === 'tecnico') return 'tecnico';
@@ -344,7 +346,13 @@ export async function register(data, { ip, userAgent } = {}) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
   }
 
-  const rolInicial = perfilToRol(perfil);
+  // La cuenta siempre nace 'publico' — igual que el registro por OAuth
+  // (ver oauth.service.js#findOrCreateUser). Un rol elevado pedido aquí queda
+  // como solicitud pendiente (rol_solicitado), nunca se asigna directo: antes
+  // este flujo sí lo asignaba de una vez, sin aval de ningún admin, a
+  // diferencia de Google/Microsoft que ya pasaban por completarPerfil().
+  const rolSolicitadoInicial = perfilToRol(perfil);
+  const rolSolicitado = rolSolicitadoInicial !== 'publico' ? rolSolicitadoInicial : null;
   const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
   const verificationToken = generateSecureToken();
   const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
@@ -360,17 +368,17 @@ export async function register(data, { ip, userAgent } = {}) {
 
   const { rows } = await query(
     `INSERT INTO usuarios
-       (nombre, email, password_hash, institucion, motivo_acceso, rol, tipo_acceso, activo,
+       (nombre, email, password_hash, institucion, motivo_acceso, rol, rol_solicitado, tipo_acceso, activo,
         email_verified, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10)
-     RETURNING id, nombre, email, rol`,
+     VALUES ($1, $2, $3, $4, $5, 'publico', $6, $7, $8, false, $9, $10)
+     RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
     [
       nombre,
       email.toLowerCase(),
       password_hash,
       institucion ?? null,
       motivo ?? null,
-      rolInicial,
+      rolSolicitado,
       tipoAcceso ?? 'externo',
       activoInicial,
       hashToken(verificationToken), // almacenar hash — no el token original
@@ -382,7 +390,9 @@ export async function register(data, { ip, userAgent } = {}) {
     accion: 'registro',
     modulo: 'auth',
     entidadId: rows[0].id,
-    descripcion: `Registro exitoso — ${rows[0].email} (perfil: ${rolInicial})`,
+    descripcion: rolSolicitado
+      ? `Registro exitoso — ${rows[0].email} (solicita rol: ${rolSolicitado}, pendiente de aprobación)`
+      : `Registro exitoso — ${rows[0].email}`,
     usuarioId: rows[0].id,
     usuarioEmail: rows[0].email,
     ip,
