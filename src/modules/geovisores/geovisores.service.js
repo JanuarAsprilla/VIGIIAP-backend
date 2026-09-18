@@ -27,15 +27,25 @@ function temaDesdeWorkspace(workspace) {
 }
 
 /**
- * Misma regla de acceso que obtenerCatalogoDeGeovisor (workspaces_geoserver + exclusión fija),
- * pero aplicada a un capaId puntual -- los proxies WMS/leyenda/consulta reciben el capaId directo
- * del cliente, así que sin esta validación un geovisor podría exponer CUALQUIER capa de su
- * conexión GeoServer (incluida la de comunidades étnicas) con solo conocer o adivinar su id,
- * saltándose por completo la curaduría que el catálogo sí aplica.
+ * Misma regla de acceso que obtenerCatalogoDeGeovisor (capas_seleccionadas o, en su defecto,
+ * workspaces_geoserver + exclusión fija), pero aplicada a un capaId puntual -- los proxies
+ * WMS/leyenda/consulta reciben el capaId directo del cliente, así que sin esta validación un
+ * geovisor podría exponer CUALQUIER capa de su conexión GeoServer (incluida la de comunidades
+ * étnicas) con solo conocer o adivinar su id, saltándose por completo la curaduría que el
+ * catálogo sí aplica.
+ *
+ * Orden de reglas (la exclusión de seguridad SIEMPRE va primero, capasSeleccionadas no la
+ * puede saltar):
+ *   1. Workspace en WORKSPACES_SIEMPRE_EXCLUIDOS → nunca, pase lo que pase.
+ *   2. capasSeleccionadas no vacío → allow-list exacta por capa, sin importar el workspace
+ *      (esto es lo que permite mezclar capas de temas distintos en un mismo geovisor).
+ *   3. Si no, comportamiento legado: workspacesGeoserver vacío = toda la conexión; si no,
+ *      cualquier capa de esos workspaces.
  */
 function capaPermitidaEnGeovisor(geovisor, capaId) {
   const workspace = workspaceDeCapa(capaId);
   if (WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspace)) return false;
+  if (geovisor.capasSeleccionadas.length > 0) return geovisor.capasSeleccionadas.includes(capaId);
   if (geovisor.workspacesGeoserver.length === 0) return true;
   return geovisor.workspacesGeoserver.includes(workspace);
 }
@@ -60,13 +70,13 @@ function filaAGeovisor(fila) {
     categoria: fila.categoria,
     conexionGeoserverId: fila.conexion_geoserver_id,
     workspacesGeoserver: fila.workspaces_geoserver,
+    capasSeleccionadas: fila.capas_seleccionadas,
     colorPorTema: fila.color_por_tema,
     centro: { lat: fila.centro_lat, lng: fila.centro_lng },
     zoomInicial: fila.zoom_inicial,
     basemapDefecto: fila.basemap_defecto,
     areaMaxHa: fila.area_max_ha,
     presetsArea: fila.presets_area,
-    iaHabilitada: fila.ia_habilitada,
     visibilidad: fila.visibilidad,
     thumbnailUrl: fila.thumbnail_url,
     activo: fila.activo,
@@ -143,17 +153,17 @@ export async function create(data, userId) {
   const { rows } = await query(
     `INSERT INTO geovisores (
        slug, titulo, subtitulo, descripcion, cita, categoria, conexion_geoserver_id,
-       workspaces_geoserver, color_por_tema, centro_lat, centro_lng, zoom_inicial,
-       basemap_defecto, area_max_ha, presets_area, ia_habilitada, visibilidad,
+       workspaces_geoserver, capas_seleccionadas, color_por_tema, centro_lat, centro_lng, zoom_inicial,
+       basemap_defecto, area_max_ha, presets_area, visibilidad,
        thumbnail_url, creado_por
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      RETURNING *`,
     [
       slug, data.titulo, data.subtitulo ?? null, data.descripcion ?? null, data.cita ?? null,
       data.categoria ?? null, data.conexionGeoserverId, data.workspacesGeoserver ?? [],
-      JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
+      data.capasSeleccionadas ?? [], JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
       data.basemapDefecto ?? 'calles', data.areaMaxHa ?? null, JSON.stringify(data.presetsArea ?? []),
-      data.iaHabilitada ?? false, data.visibilidad ?? 'publico', data.thumbnailUrl ?? null, userId,
+      data.visibilidad ?? 'publico', data.thumbnailUrl ?? null, userId,
     ],
   );
   return filaAGeovisor(rows[0]);
@@ -164,8 +174,9 @@ export async function create(data, userId) {
 const MAPA_CAMPOS = {
   titulo: 'titulo', subtitulo: 'subtitulo', descripcion: 'descripcion', cita: 'cita',
   categoria: 'categoria', conexionGeoserverId: 'conexion_geoserver_id',
-  workspacesGeoserver: 'workspaces_geoserver', zoomInicial: 'zoom_inicial',
-  basemapDefecto: 'basemap_defecto', areaMaxHa: 'area_max_ha', iaHabilitada: 'ia_habilitada',
+  workspacesGeoserver: 'workspaces_geoserver', capasSeleccionadas: 'capas_seleccionadas',
+  zoomInicial: 'zoom_inicial',
+  basemapDefecto: 'basemap_defecto', areaMaxHa: 'area_max_ha',
   visibilidad: 'visibilidad', thumbnailUrl: 'thumbnail_url', centroLat: 'centro_lat', centroLng: 'centro_lng',
 };
 const MAPA_CAMPOS_JSON = { colorPorTema: 'color_por_tema', presetsArea: 'presets_area' };
@@ -215,8 +226,9 @@ export async function remove(id) {
 }
 
 /**
- * Catálogo de capas de UN geovisor: descubre en vivo contra su conexión GeoServer, filtra por
- * `workspaces_geoserver` (vacío = todos) y por la exclusión de seguridad fija, agrupa por tema.
+ * Catálogo de capas de UN geovisor: descubre en vivo contra su conexión GeoServer y filtra con
+ * la misma regla que capaPermitidaEnGeovisor (capas_seleccionadas, o en su defecto
+ * workspaces_geoserver, más la exclusión de seguridad fija), agrupa por tema.
  * Espejo de catalogoCapas.ts de producto6, adaptado a "un geovisor entre varios" en vez de "la
  * única instalación".
  */
@@ -229,10 +241,8 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
     geoserver.obtenerCapacidadesWcs(conexion),
   ]);
 
-  const soloEsteGeovisor = geovisor.workspacesGeoserver.length > 0;
   const capas = [...vectoriales, ...raster]
-    .filter((capa) => !WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspaceDeCapa(capa.id)))
-    .filter((capa) => !soloEsteGeovisor || geovisor.workspacesGeoserver.includes(workspaceDeCapa(capa.id)))
+    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id))
     .map((capa) => ({ ...capa, tema: temaDesdeWorkspace(workspaceDeCapa(capa.id)).id }));
 
   const temasPorId = new Map();

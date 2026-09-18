@@ -20,6 +20,12 @@ const geovisorBase = z.object({
   categoria: z.string().min(2).optional(),
   conexionGeoserverId: z.string().uuid(),
   workspacesGeoserver: z.array(z.string()).default([]),
+  // Capas individuales elegidas del catálogo en vivo (ids "workspace:layername"),
+  // pueden venir de distintos workspaces/temas dentro de la misma conexión.
+  // Vacío = comportamiento legado (todas las capas de workspacesGeoserver, o de
+  // toda la conexión si workspacesGeoserver también está vacío) — ver
+  // obtenerCatalogoDeGeovisor() y capaPermitidaEnGeovisor() en geovisores.service.js.
+  capasSeleccionadas: z.array(z.string()).default([]),
   colorPorTema: z.record(z.string(), z.string()).default({}),
   centroLat: z.coerce.number().min(-90).max(90),
   centroLng: z.coerce.number().min(-180).max(180),
@@ -27,7 +33,6 @@ const geovisorBase = z.object({
   basemapDefecto: z.string().min(1).default('calles'),
   areaMaxHa: z.coerce.number().positive().optional(),
   presetsArea: z.array(presetAreaSchema).default([]),
-  iaHabilitada: z.coerce.boolean().default(false),
   visibilidad: visibilidadEnum,
   thumbnailUrl: z.string().url().optional(),
 });
