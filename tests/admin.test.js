@@ -11,6 +11,9 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   getAuditLog:      vi.fn(),
   getConfiguracion: vi.fn(),
   setConfiguracion: vi.fn(),
+  getDashboardTendencias: vi.fn().mockResolvedValue({
+    usuarios: { serie7: [0,0,0,0,0,0,0], semanaActual: 0, semanaAnterior: 0, deltaPct: 0 },
+  }),
 }));
 
 // query() aquí sirve dos dueños: requireModulo (permisos por módulo) y el
@@ -63,7 +66,32 @@ describe('GET /api/admin/stats', () => {
     expect(res.body).toHaveProperty('usuarios');
     expect(res.body).toHaveProperty('solicitudesPendientes');
     expect(res.body).toHaveProperty('documentos');
+    expect(res.body).toHaveProperty('mapasPublicados');
     expect(res.body).toHaveProperty('visitantesUltimos30d');
+  });
+});
+
+// ─── /api/admin/dashboard/tendencias ─────────────────────────────────────────
+describe('GET /api/admin/dashboard/tendencias', () => {
+  it('retorna 401 sin token', async () => {
+    const res = await request(app).get('/api/admin/dashboard/tendencias');
+    expect(res.status).toBe(401);
+  });
+
+  it('retorna 403 con rol publico', async () => {
+    const res = await request(app)
+      .get('/api/admin/dashboard/tendencias')
+      .set('Authorization', `Bearer ${pubToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('admin obtiene las tendencias del servicio', async () => {
+    const res = await request(app)
+      .get('/api/admin/dashboard/tendencias')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('usuarios');
+    expect(adminService.getDashboardTendencias).toHaveBeenCalled();
   });
 });
 
