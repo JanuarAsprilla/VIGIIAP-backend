@@ -448,7 +448,7 @@ describe('completarPerfil()', () => {
     expect(result).toMatchObject({ institucion: 'IIAP', perfilCompleto: true });
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('perfil_completo = true'),
-      ['IIAP', null, 'uuid-oauth-1']
+      ['IIAP', null, null, null, 'uuid-oauth-1']
     );
   });
 
@@ -459,7 +459,7 @@ describe('completarPerfil()', () => {
 
     await completarPerfil('uuid-oauth-1', { nombre: 'Ana R.', institucion: 'IIAP' });
 
-    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', 'Ana R.', 'uuid-oauth-1']);
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', 'Ana R.', null, null, 'uuid-oauth-1']);
   });
 
   it('lanza 404 cuando el usuario no existe', async () => {
@@ -467,6 +467,37 @@ describe('completarPerfil()', () => {
 
     await expect(completarPerfil('uuid-inexistente', { institucion: 'IIAP' }))
       .rejects.toMatchObject({ status: 404 });
+  });
+
+  it('con perfilSolicitado, guarda rol_solicitado y motivo_acceso — sin tocar "rol" directamente', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        id: 'uuid-oauth-1', nombre: 'Ana Restrepo', email: 'ana@gmail.com',
+        rol: 'publico', institucion: 'IIAP', perfilCompleto: true, rolSolicitado: 'investigador',
+      }],
+    });
+
+    const result = await completarPerfil('uuid-oauth-1', {
+      institucion: 'IIAP', perfilSolicitado: 'investigador', motivo: 'Necesito datos de biodiversidad',
+    });
+
+    expect(result.rolSolicitado).toBe('investigador');
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('rol_solicitado  = COALESCE($3, rol_solicitado)'),
+      ['IIAP', null, 'investigador', 'Necesito datos de biodiversidad', 'uuid-oauth-1']
+    );
+    // No debe tocar la columna "rol" — la solicitud queda pendiente de aprobación admin
+    expect(query.mock.calls[0][0]).not.toMatch(/\bSET[\s\S]*?\brol\s*=/);
+  });
+
+  it('sin perfilSolicitado, rol_solicitado no cambia (COALESCE mantiene el valor existente)', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'uuid-oauth-1', institucion: 'IIAP', perfilCompleto: true, rolSolicitado: null }],
+    });
+
+    await completarPerfil('uuid-oauth-1', { institucion: 'IIAP' });
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', null, null, null, 'uuid-oauth-1']);
   });
 });
 

@@ -31,6 +31,7 @@ vi.mock('../src/utils/mailer.js', () => ({
   notifyAdminNewRegistro:     vi.fn(),
   notifyAdminUsuarioVerificado: vi.fn(),
   notifyRecuperarPassword:    vi.fn(),
+  notifyAdminSolicitudRolOAuth: vi.fn(),
 }));
 vi.mock('../src/modules/admin/admin.service.js', () => ({
   getAdminEmails:   vi.fn().mockResolvedValue([]),
@@ -125,6 +126,55 @@ describe('auth.controller → completarPerfil()', () => {
     authService.completarPerfil.mockRejectedValue(new Error('db'));
     await completarPerfil({ user: { id: 'u1' }, body: { institucion: 'IIAP' } }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('sin perfilSolicitado, no notifica a ningún admin', async () => {
+    authService.completarPerfil.mockResolvedValue({ id: 'u1', institucion: 'IIAP', perfilCompleto: true });
+    const r = res();
+
+    await completarPerfil({ user: { id: 'u1' }, body: { institucion: 'IIAP' } }, r, mockNext);
+
+    expect(r.json).toHaveBeenCalled();
+    expect(adminService.getAdminEmails).not.toHaveBeenCalled();
+    expect(mailer.notifyAdminSolicitudRolOAuth).not.toHaveBeenCalled();
+  });
+
+  it('con perfilSolicitado, notifica a todos los admins registrados', async () => {
+    authService.completarPerfil.mockResolvedValue({
+      id: 'u1', nombre: 'Ana', email: 'ana@gmail.com', institucion: 'IIAP', perfilCompleto: true, rolSolicitado: 'investigador',
+    });
+    adminService.getAdminEmails.mockResolvedValueOnce(['admin1@iiap.co', 'admin2@iiap.co']);
+    mailer.notifyAdminSolicitudRolOAuth.mockResolvedValue(undefined);
+
+    const r = res();
+    await completarPerfil({
+      user: { id: 'u1' },
+      body: { institucion: 'IIAP', perfilSolicitado: 'investigador', motivo: 'Investigación de biodiversidad' },
+    }, r, mockNext);
+
+    await vi.waitFor(() => {
+      expect(mailer.notifyAdminSolicitudRolOAuth).toHaveBeenCalledTimes(2);
+    });
+    expect(mailer.notifyAdminSolicitudRolOAuth).toHaveBeenCalledWith(expect.objectContaining({
+      adminEmail: 'admin1@iiap.co', rolSolicitado: 'investigador',
+    }));
+  });
+
+  it('no notifica a los admins cuando emailNotifs está deshabilitado', async () => {
+    authService.completarPerfil.mockResolvedValue({
+      id: 'u1', nombre: 'Ana', email: 'ana@gmail.com', institucion: 'IIAP', perfilCompleto: true, rolSolicitado: 'investigador',
+    });
+    notificacionHabilitada.mockResolvedValueOnce(false);
+
+    const r = res();
+    await completarPerfil({
+      user: { id: 'u1' },
+      body: { institucion: 'IIAP', perfilSolicitado: 'investigador' },
+    }, r, mockNext);
+
+    await vi.waitFor(() => expect(r.json).toHaveBeenCalled());
+    expect(adminService.getAdminEmails).not.toHaveBeenCalled();
+    expect(mailer.notifyAdminSolicitudRolOAuth).not.toHaveBeenCalled();
   });
 });
 
