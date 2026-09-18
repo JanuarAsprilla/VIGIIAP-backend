@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getPapelera, restaurar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
-  stats, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
+  stats, dashboardTendencias, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
   getConfiguracion, setConfiguracion, probarCorreo, notificaciones, reportes,
   superStats, crearAdmin, listarAdministradores, setPermisosAdminController,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
@@ -21,7 +21,8 @@ const router = Router();
 // ver admin/modulos.service.js#tienePermisoModulo.
 router.use(authenticate, authorize('admin_sig'), csrfProtection, adminRateLimiter);
 
-router.get('/stats',            stats);
+router.get('/stats',              stats);
+router.get('/dashboard/tendencias', dashboardTendencias);
 router.get('/notificaciones',   notificaciones);
 router.get('/reportes',         requireModulo('reportes', 'ver'), reportes);
 router.get('/usuarios',         requireModulo('usuarios', 'ver'), listarUsuarios);

@@ -110,10 +110,11 @@ export async function stats(req, res, next) {
     if (_statsCache && Date.now() - _statsCacheAt < 30_000) {
       return res.json(_statsCache);
     }
-    const [usuarios, solicitudes, documentos, visitantes] = await Promise.all([
+    const [usuarios, solicitudes, documentos, mapas, visitantes] = await Promise.all([
       query("SELECT COUNT(*) FROM usuarios WHERE activo = true AND rol != 'super_admin'"),
       query("SELECT COUNT(*) FROM solicitudes WHERE estado IN ('pendiente','en_revision')"),
       query('SELECT COUNT(*) FROM documentos WHERE activo = true'),
+      query('SELECT COUNT(*) FROM mapas WHERE activo = true AND deleted_at IS NULL'),
       query("SELECT COUNT(*) FROM visitantes WHERE creado_en >= NOW() - INTERVAL '30 days'"),
     ]);
 
@@ -121,6 +122,7 @@ export async function stats(req, res, next) {
       usuarios:              Number(usuarios.rows[0].count),
       solicitudesPendientes: Number(solicitudes.rows[0].count),
       documentos:            Number(documentos.rows[0].count),
+      mapasPublicados:       Number(mapas.rows[0].count),
       visitantesUltimos30d:  Number(visitantes.rows[0].count),
     };
     _statsCache = result;
@@ -129,6 +131,13 @@ export async function stats(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/** GET /api/admin/dashboard/tendencias — deltas semana-vs-anterior + serie de 7 días por KPI */
+export async function dashboardTendencias(req, res, next) {
+  try {
+    res.json(await adminService.getDashboardTendencias());
+  } catch (err) { next(err); }
 }
 
 /** GET /api/admin/usuarios */

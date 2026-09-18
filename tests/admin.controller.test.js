@@ -16,6 +16,7 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   getSuperStats:      vi.fn(),
   crearAdminSig:      vi.fn(),
   getReporte:         vi.fn(),
+  getDashboardTendencias: vi.fn(),
   listarAdministradores: vi.fn(),
 }));
 
@@ -64,6 +65,7 @@ import { revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import { setPermisosAdmin } from '../src/modules/admin/modulos.service.js';
 import {
   notificaciones, getConfiguracion, setConfiguracion, probarCorreo, stats, resetStatsCache,
+  dashboardTendencias,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, errorLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
   descargasStats, scanLog, batchUsuarios, reportes,
@@ -899,6 +901,26 @@ describe('admin.controller → batchUsuarios()', () => {
   it('llama next(err) si query de targets lanza', async () => {
     query.mockRejectedValueOnce(new Error('db'));
     await batchUsuarios({ body: { ids: [TARGET_1], accion: 'activar' }, user: ADMIN }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── dashboardTendencias() ────────────────────────────────────────────────────
+
+describe('admin.controller → dashboardTendencias()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('responde con el resultado del servicio', async () => {
+    const tendencias = { usuarios: { serie7: [0,0,0,0,0,0,1], semanaActual: 1, semanaAnterior: 0, deltaPct: 100 } };
+    adminService.getDashboardTendencias.mockResolvedValue(tendencias);
+    const r = res();
+    await dashboardTendencias({}, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith(tendencias);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    adminService.getDashboardTendencias.mockRejectedValue(new Error('db'));
+    await dashboardTendencias({}, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });
