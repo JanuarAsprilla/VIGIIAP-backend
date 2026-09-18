@@ -49,6 +49,29 @@ export async function create(req, res, next) {
   } catch (err) { next(err); }
 }
 
+export async function rename(req, res, next) {
+  try {
+    const nombreActual = decodeURIComponent(req.params.nombre);
+    const parseResult = nombreSchema.safeParse(req.body?.nuevoNombre?.trim());
+    if (!parseResult.success) {
+      return res.status(400).json({ error: parseResult.error.errors[0].message });
+    }
+    const nuevoNombre = parseResult.data;
+    const result = await categoriasService.rename(nombreActual, nuevoNombre);
+    invalidateCache('cache:/api/categorias*').catch(() => {});
+    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
+    invalidateCache('cache:/api/mapas*').catch(() => {});
+    invalidateCache('cache:/api/documentos*').catch(() => {});
+    invalidateCache('cache:/api/geovisores*').catch(() => {});
+    registrarAuditoria({
+      accion: 'rename_categoria', modulo: 'categorias', entidadId: nuevoNombre,
+      descripcion: `Categoría renombrada: ${nombreActual} → ${nuevoNombre}`,
+      usuarioId: req.user?.id, usuarioEmail: req.user?.email, ip: req.ip,
+    });
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
 export async function destroy(req, res, next) {
   try {
     const nombre = decodeURIComponent(req.params.nombre);

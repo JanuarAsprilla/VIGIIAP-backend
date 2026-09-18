@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { index, create, upsertThumbnail, destroy } from './categorias.controller.js';
+import { index, create, rename, upsertThumbnail, destroy } from './categorias.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
@@ -25,6 +25,9 @@ router.post(
   uploadSingle('thumbnail', 'categorias/thumbnails', 5),
   upsertThumbnail,
 );
+
+// PATCH /api/categorias/:nombre     — solo admin (renombrar)
+router.patch('/:nombre', authenticate, authorize('admin_sig'), requireModulo('categorias', 'editar'), csrfProtection, rename);
 
 // DELETE /api/categorias/:nombre    — solo admin
 router.delete('/:nombre', authenticate, authorize('admin_sig'), requireModulo('categorias', 'editar'), csrfProtection, destroy);
