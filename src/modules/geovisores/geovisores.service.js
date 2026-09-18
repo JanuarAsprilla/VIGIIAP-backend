@@ -248,6 +248,40 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
   return [...temasPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
+/**
+ * Workspaces (temas) publicados por una conexión GeoServer, con conteo de capas -- para el
+ * selector del constructor de geovisores ANTES de que exista un geovisor guardado (a diferencia
+ * de obtenerCatalogoDeGeovisor, que ya filtra por workspaces_geoserver de un geovisor existente,
+ * aquí se listan TODOS los disponibles en la conexión para elegir cuáles usar).
+ */
+export async function listarWorkspacesDeConexion(conexionId) {
+  const conexion = await obtenerConexionParaConector(conexionId);
+
+  const [vectoriales, raster] = await Promise.all([
+    geoserver.obtenerCapacidadesWfs(conexion),
+    geoserver.obtenerCapacidadesWcs(conexion),
+  ]);
+
+  const capas = [...vectoriales, ...raster]
+    .filter((capa) => !WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspaceDeCapa(capa.id)));
+
+  // `id` es el workspace CRUDO de GeoServer (ej. "t_20_hidrologia"), el mismo valor que
+  // geovisor.workspacesGeoserver guarda y que capaPermitidaEnGeovisor compara -- no el id de tema
+  // "bonito" (sin el prefijo t_NN_) que solo sirve para agrupar visualmente en el catálogo público.
+  // `capas` viaja completo (no solo el conteo) porque el constructor visual de geovisores necesita
+  // los ids reales para pintarlas en la vista previa en vivo -- un WMS GetMap exige nombres de capa
+  // explícitos, GeoServer no tiene comodín "todo el workspace".
+  const workspacesPorId = new Map();
+  for (const capa of capas) {
+    const workspace = workspaceDeCapa(capa.id);
+    const existente = workspacesPorId.get(workspace);
+    if (existente) { existente.capas.push(capa); existente.totalCapas += 1; continue; }
+    const { nombre } = temaDesdeWorkspace(workspace);
+    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1, capas: [capa] });
+  }
+  return [...workspacesPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
 /** Proxy WMS GetMap de un geovisor -- resuelve su conexión, valida la(s) capa(s) pedidas y delega al conector. */
 export async function proxyWmsDeGeovisor(slug, queryParams, geometriaFiltro, user) {
   const geovisor = await getBySlug(slug, user);
