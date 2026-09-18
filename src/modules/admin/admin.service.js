@@ -65,7 +65,8 @@ export async function listarUsuarios(reqQuery) {
   const [data, count] = await Promise.all([
     query(
       `SELECT id, nombre, email, rol, institucion, tipo_acceso, activo,
-              email_verified, motivo_acceso, creado_en, actualizado_en
+              email_verified, motivo_acceso, creado_en, actualizado_en,
+              rol_solicitado AS "rolSolicitado"
        FROM usuarios ${where}
        ORDER BY creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -146,7 +147,13 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, ad
   const updates = [];
   const params = [];
 
-  if (rol !== undefined) { params.push(rol); updates.push(`rol = $${params.length}`); }
+  // Cambiar el rol resuelve cualquier solicitud pendiente (rol_solicitado) —
+  // sea que el admin la haya aprobado tal cual o asignado un rol distinto,
+  // ya no debe seguir apareciendo como "pendiente" en el panel.
+  if (rol !== undefined) {
+    params.push(rol); updates.push(`rol = $${params.length}`);
+    updates.push('rol_solicitado = NULL');
+  }
   if (activo !== undefined) { params.push(activo); updates.push(`activo = $${params.length}`); }
   updates.push('actualizado_en = NOW()');
 

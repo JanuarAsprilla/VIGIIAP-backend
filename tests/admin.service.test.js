@@ -112,6 +112,16 @@ describe('admin.service → listarUsuarios()', () => {
     const params = query.mock.calls[0][1];
     expect(params).not.toContain('admin_sig');
   });
+
+  it('incluye rol_solicitado — para que el admin vea solicitudes de rol pendientes de cuentas OAuth', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [USR] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+
+    await listarUsuarios({});
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/rol_solicitado AS "rolSolicitado"/);
+  });
 });
 
 // ─── listarAdministradores() ──────────────────────────────────────────────────
@@ -286,6 +296,18 @@ describe('admin.service → actualizarUsuario()', () => {
     });
 
     expect(result.rol).toBe('tecnico');
+  });
+
+  it('al cambiar el rol, limpia rol_solicitado — resuelve cualquier solicitud pendiente de la cuenta', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'publico' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await actualizarUsuario({ id: 'usr-uuid-1', rol: 'investigador', ...ADMIN_CTX });
+
+    const updateSql = query.mock.calls[1][0];
+    expect(updateSql).toMatch(/rol_solicitado = NULL/);
   });
 
   it('actualiza activo a false y llama a notifyUsuarioActivacion', async () => {

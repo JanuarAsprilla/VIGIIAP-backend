@@ -6,6 +6,7 @@ import {
   notifyAdminNewRegistro,
   notifyAdminUsuarioVerificado,
   notifyRecuperarPassword,
+  notifyAdminSolicitudRolOAuth,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
@@ -288,6 +289,25 @@ export async function completarPerfil(req, res, next) {
     const data = completarPerfilSchema.parse(req.body);
     const user = await authService.completarPerfil(req.user.id, data);
     res.json(user);
+
+    // Notificar a los admins de la solicitud de rol — fuera del response,
+    // igual que register(). Solo dispara si de verdad pidió un rol elevado.
+    if (data.perfilSolicitado) {
+      notificacionHabilitada('emailNotifs').then(async (habilitado) => {
+        if (!habilitado) return;
+        const adminEmails = await getAdminEmails();
+        adminEmails.forEach((adminEmail) =>
+          notifyAdminSolicitudRolOAuth({
+            adminEmail,
+            nombre:        user.nombre,
+            email:         user.email,
+            institucion:   data.institucion,
+            rolSolicitado: data.perfilSolicitado,
+            motivo:        data.motivo,
+          }).catch((err) => logger.error(`[auth] Error email admin solicitud de rol:`, err.message))
+        );
+      }).catch((err) => logger.error(`[auth] Error obteniendo emails admin (completarPerfil):`, err.message));
+    }
   } catch (err) {
     next(err);
   }
