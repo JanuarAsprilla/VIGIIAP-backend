@@ -84,7 +84,7 @@ export async function destroy(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
-    invalidateCache('/api/documentos*').catch(() => {});
+    invalidateCache('cache:/api/documentos*').catch(() => {});
     res.status(204).end();
   } catch (err) { next(err); }
 }

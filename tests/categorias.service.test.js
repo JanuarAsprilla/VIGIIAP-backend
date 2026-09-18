@@ -13,9 +13,9 @@ vi.mock('../src/config/r2.js', () => ({
   isPublicUrl: vi.fn(),
 }));
 
-import { query } from '../src/config/database.js';
+import { query, getClient } from '../src/config/database.js';
 import { deleteFile } from '../src/config/r2.js';
-import { getAll, upsert, remove } from '../src/modules/categorias/categorias.service.js';
+import { getAll, upsert, remove, rename } from '../src/modules/categorias/categorias.service.js';
 
 const CAT = { nombre: 'Biodiversidad', thumbnail_url: 'https://files.test.local/cat.jpg', actualizado_en: new Date() };
 
@@ -54,6 +54,67 @@ describe('categorias.service → upsert()', () => {
     const params = query.mock.calls[0][1];
     expect(params[1]).toBeNull();
     expect(result).toBeDefined();
+  });
+});
+
+describe('categorias.service → rename()', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  function mockClient(queryImpl) {
+    const client = { query: vi.fn(queryImpl), release: vi.fn() };
+    getClient.mockResolvedValueOnce(client);
+    return client;
+  }
+
+  it('renombra la categoría y propaga a mapas y documentos en una transacción', async () => {
+    const client = mockClient((sql) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return Promise.resolve({});
+      if (sql.startsWith('UPDATE categorias')) return Promise.resolve({ rows: [{ nombre: 'Hidrología2' }] });
+      return Promise.resolve({ rows: [] });
+    });
+
+    const result = await rename('Hidrologia', 'Hidrología2');
+
+    expect(result.nombre).toBe('Hidrología2');
+    expect(client.query).toHaveBeenCalledWith('BEGIN');
+    expect(client.query).toHaveBeenCalledWith('UPDATE mapas SET categoria = $2 WHERE categoria = $1', ['Hidrologia', 'Hidrología2']);
+    expect(client.query).toHaveBeenCalledWith('UPDATE documentos SET tipo = $2 WHERE tipo = $1', ['Hidrologia', 'Hidrología2']);
+    expect(client.query).toHaveBeenCalledWith('COMMIT');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('lanza 404 y hace rollback si la categoría no existe', async () => {
+    const client = mockClient((sql) => {
+      if (sql.startsWith('UPDATE categorias')) return Promise.resolve({ rows: [] });
+      return Promise.resolve({});
+    });
+
+    await expect(rename('NoExiste', 'Nuevo')).rejects.toMatchObject({ status: 404 });
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('lanza 409 si el nuevo nombre ya existe (colisión de PK)', async () => {
+    const client = mockClient((sql) => {
+      if (sql === 'BEGIN') return Promise.resolve({});
+      if (sql.startsWith('UPDATE categorias')) return Promise.reject(Object.assign(new Error('duplicate key'), { code: '23505' }));
+      return Promise.resolve({});
+    });
+
+    await expect(rename('Hidrologia', 'Biodiversidad')).rejects.toMatchObject({ status: 409 });
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('libera el cliente incluso si una query intermedia falla', async () => {
+    const client = mockClient((sql) => {
+      if (sql === 'BEGIN') return Promise.resolve({});
+      if (sql.startsWith('UPDATE categorias')) return Promise.resolve({ rows: [{ nombre: 'Nuevo' }] });
+      if (sql.startsWith('UPDATE mapas')) return Promise.reject(new Error('db down'));
+      return Promise.resolve({});
+    });
+
+    await expect(rename('Vieja', 'Nuevo')).rejects.toThrow('db down');
+    expect(client.release).toHaveBeenCalledOnce();
   });
 });
 
