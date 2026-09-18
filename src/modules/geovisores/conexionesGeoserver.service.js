@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { encryptGeoserverPassword, decryptGeoserverPassword } from '../../utils/geoserverEncryption.js';
+import * as geoserver from './geoserver.connector.js';
 
 // Nunca se selecciona password_cifrado en las lecturas de listado/detalle expuestas por la API —
 // solo internamente (obtenerConexionParaConector) para armar la conexión real hacia GeoServer.
@@ -88,4 +89,24 @@ export async function obtenerConexionParaConector(id) {
     passwordDescifrada: decryptGeoserverPassword(fila.password_cifrado),
     timeoutMs: fila.timeout_ms,
   };
+}
+
+/**
+ * Proxy WMS GetMap directo por conexión — para la vista previa en vivo del
+ * constructor de geovisores, ANTES de que exista un geovisor guardado (sin
+ * slug todavía no hay a qué atar proxyWmsDeGeovisor). Sin restricción de
+ * capas: quien llega aquí ya tiene permiso de módulo 'geovisores' editar
+ * (ver requireModulo en conexionesGeoserver.routes.js), así que puede
+ * previsualizar cualquier capa de cualquier workspace de la conexión —
+ * la restricción por workspace solo aplica al geovisor ya publicado.
+ */
+export async function proxyWmsDeConexion(id, queryParams, geometriaFiltro) {
+  const conexion = await obtenerConexionParaConector(id);
+  return geoserver.proxyWms(conexion, queryParams, geometriaFiltro);
+}
+
+/** Proxy WMS GetLegendGraphic directo por conexión — mismo uso que proxyWmsDeConexion. */
+export async function proxyLeyendaDeConexion(id, capaId) {
+  const conexion = await obtenerConexionParaConector(id);
+  return geoserver.proxyLeyenda(conexion, capaId);
 }
