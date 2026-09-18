@@ -268,13 +268,16 @@ export async function listarWorkspacesDeConexion(conexionId) {
   // `id` es el workspace CRUDO de GeoServer (ej. "t_20_hidrologia"), el mismo valor que
   // geovisor.workspacesGeoserver guarda y que capaPermitidaEnGeovisor compara -- no el id de tema
   // "bonito" (sin el prefijo t_NN_) que solo sirve para agrupar visualmente en el catálogo público.
+  // `capas` viaja completo (no solo el conteo) porque el constructor visual de geovisores necesita
+  // los ids reales para pintarlas en la vista previa en vivo -- un WMS GetMap exige nombres de capa
+  // explícitos, GeoServer no tiene comodín "todo el workspace".
   const workspacesPorId = new Map();
   for (const capa of capas) {
     const workspace = workspaceDeCapa(capa.id);
     const existente = workspacesPorId.get(workspace);
-    if (existente) { existente.totalCapas += 1; continue; }
+    if (existente) { existente.capas.push(capa); existente.totalCapas += 1; continue; }
     const { nombre } = temaDesdeWorkspace(workspace);
-    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1 });
+    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1, capas: [capa] });
   }
   return [...workspacesPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
 }

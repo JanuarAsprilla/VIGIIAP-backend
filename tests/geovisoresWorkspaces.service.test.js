@@ -30,22 +30,20 @@ beforeEach(() => {
 });
 
 describe('listarWorkspacesDeConexion()', () => {
-  it('agrupa capas vectoriales y raster por workspace crudo, con conteo', async () => {
-    geoserver.obtenerCapacidadesWfs.mockResolvedValue([
-      { id: 't_20_hidrologia:cuencas', nombre: 'Cuencas', tipo: 'vectorial' },
-      { id: 't_20_hidrologia:rios', nombre: 'Ríos', tipo: 'vectorial' },
-    ]);
-    geoserver.obtenerCapacidadesWcs.mockResolvedValue([
-      { id: 't_15_geologia:relieve', nombre: 'Relieve', tipo: 'raster' },
-    ]);
+  it('agrupa capas vectoriales y raster por workspace crudo, con conteo y el detalle de cada capa', async () => {
+    const cuencas = { id: 't_20_hidrologia:cuencas', nombre: 'Cuencas', tipo: 'vectorial' };
+    const rios = { id: 't_20_hidrologia:rios', nombre: 'Ríos', tipo: 'vectorial' };
+    const relieve = { id: 't_15_geologia:relieve', nombre: 'Relieve', tipo: 'raster' };
+    geoserver.obtenerCapacidadesWfs.mockResolvedValue([cuencas, rios]);
+    geoserver.obtenerCapacidadesWcs.mockResolvedValue([relieve]);
 
     const result = await listarWorkspacesDeConexion('conexion-uuid-1');
 
     expect(obtenerConexionParaConector).toHaveBeenCalledWith('conexion-uuid-1');
     expect(result).toEqual(
       expect.arrayContaining([
-        { id: 't_20_hidrologia', nombre: 'Hidrologia', totalCapas: 2 },
-        { id: 't_15_geologia', nombre: 'Geologia', totalCapas: 1 },
+        { id: 't_20_hidrologia', nombre: 'Hidrologia', totalCapas: 2, capas: [cuencas, rios] },
+        { id: 't_15_geologia', nombre: 'Geologia', totalCapas: 1, capas: [relieve] },
       ]),
     );
     expect(result).toHaveLength(2);
