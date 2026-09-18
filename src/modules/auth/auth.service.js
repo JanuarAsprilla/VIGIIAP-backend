@@ -539,19 +539,24 @@ export async function getProfile(userId) {
 }
 
 // Completa el perfil de una cuenta creada por OAuth (ver src/modules/oauth/)
-// que nació sin institución. No es un cambio de rol/permisos — eso sigue
-// yendo por "Solicitar acceso institucional"; esto solo satisface el mínimo
-// de datos que un registro tradicional ya pide en el formulario.
-export async function completarPerfil(userId, { nombre, institucion }) {
+// que nació sin institución, y opcionalmente registra una solicitud de rol
+// elevado (perfilSolicitado). Esa solicitud NUNCA se autoconcede — solo
+// queda en rol_solicitado, pendiente de que un admin la apruebe cambiando
+// "rol" a mano desde el panel de Usuarios (mismo mecanismo que ya usa el
+// registro tradicional vía "Solicitar acceso institucional").
+export async function completarPerfil(userId, { nombre, institucion, perfilSolicitado, motivo }) {
   const { rows } = await query(
     `UPDATE usuarios
      SET institucion     = $1,
          nombre          = COALESCE($2, nombre),
          perfil_completo = true,
+         rol_solicitado  = COALESCE($3, rol_solicitado),
+         motivo_acceso   = COALESCE($4, motivo_acceso),
          actualizado_en  = NOW()
-     WHERE id = $3
-     RETURNING id, nombre, email, rol, institucion, perfil_completo AS "perfilCompleto"`,
-    [institucion, nombre ?? null, userId]
+     WHERE id = $5
+     RETURNING id, nombre, email, rol, institucion, perfil_completo AS "perfilCompleto",
+               rol_solicitado AS "rolSolicitado"`,
+    [institucion, nombre ?? null, perfilSolicitado ?? null, motivo ?? null, userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
   return rows[0];
