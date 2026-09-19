@@ -5,7 +5,7 @@ import { invalidateCache } from '../../middlewares/cache.js';
 
 export async function index(req, res, next) {
   try {
-    res.json(await categoriasService.getAll());
+    res.json(await categoriasService.getAll(req.query, req.user));
   } catch (err) { next(err); }
 }
 

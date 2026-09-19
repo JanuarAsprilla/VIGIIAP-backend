@@ -2,6 +2,13 @@ import { query, getClient } from '../../config/database.js';
 import { deleteFile, extractKey } from '../../config/r2.js';
 import logger from '../../utils/logger.js';
 
+/** Mismo criterio que documentos/mapas/geovisores.service.js -- visitante/publico solo ven contenido público. */
+function visibilidadPermitida(user) {
+  if (!user || user.rol === 'visitante' || user.rol === 'publico') return ['publico'];
+  if (['admin_sig', 'super_admin', 'investigador', 'tecnico', 'institucional'].includes(user.rol)) return null;
+  return ['publico', 'usuarios'];
+}
+
 /**
  * Devuelve todas las categorías con su thumbnail_url y el conteo real de
  * documentos/mapas/geovisores que la usan -- calculado en una sola consulta
@@ -9,21 +16,45 @@ import logger from '../../utils/logger.js';
  * límite de página (eso subcontaba en cuanto un módulo pasaba de esa página).
  * documentos no tiene columna `categoria` propia -- `tipo` cumple ese rol
  * (ver documentos.service.js, que ya expone `tipo AS categoria`).
+ *
+ * Este endpoint es público y con cache compartido (ver categorias.routes.js),
+ * así que el conteo SOLO cuenta lo que un visitante anónimo ya podría ver
+ * navegando /documentos, /mapas, /geovisores -- sin esto, la cantidad de
+ * borradores/contenido restringido por categoría quedaría expuesta a
+ * cualquiera. admin=true de un admin_sig/super_admin autenticado sí ve el
+ * conteo completo (activo o no, cualquier visibilidad) para la gestión real.
  */
-export async function getAll() {
+export async function getAll(reqQuery = {}, user = null) {
+  const isAdminView = reqQuery.admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
+  const permitida = isAdminView ? null : visibilidadPermitida(user);
+
+  const params = [];
+  let visParam = '';
+  if (permitida) {
+    params.push(permitida);
+    visParam = `$${params.length}`;
+  }
+
+  const gate = (alias) => {
+    let cond = `${alias}.deleted_at IS NULL`;
+    if (!isAdminView) cond += ` AND ${alias}.activo = true`;
+    if (visParam) cond += ` AND ${alias}.visibilidad = ANY(${visParam})`;
+    return cond;
+  };
+
   const { rows } = await query(
     `SELECT c.nombre, c.thumbnail_url, c.actualizado_en,
             COUNT(DISTINCT d.id) AS docs_count,
             COUNT(DISTINCT m.id) AS mapas_count,
             COUNT(DISTINCT g.id) AS geovisores_count
      FROM categorias c
-     LEFT JOIN documentos d ON d.tipo = c.nombre AND d.deleted_at IS NULL
-     LEFT JOIN mapas m ON m.categoria = c.nombre AND m.deleted_at IS NULL
-     LEFT JOIN geovisores g ON g.categoria = c.nombre AND g.deleted_at IS NULL
+     LEFT JOIN documentos d ON d.tipo = c.nombre AND ${gate('d')}
+     LEFT JOIN mapas m ON m.categoria = c.nombre AND ${gate('m')}
+     LEFT JOIN geovisores g ON g.categoria = c.nombre AND ${gate('g')}
      WHERE c.deleted_at IS NULL
      GROUP BY c.nombre, c.thumbnail_url, c.actualizado_en
      ORDER BY c.nombre`,
-    [],
+    params,
   );
   return rows.map((r) => ({
     nombre: r.nombre,
