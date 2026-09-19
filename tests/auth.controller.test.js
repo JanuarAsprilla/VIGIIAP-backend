@@ -392,6 +392,26 @@ describe('auth.controller → register()', () => {
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 
+  it('pasa rolSolicitado al email del admin cuando el registro pidió un rol elevado', async () => {
+    authService.register.mockResolvedValue({
+      id: 'u1', nombre: 'Juan', email: 'j@j.co', verificationToken: 'tok', rolSolicitado: 'investigador',
+    });
+    adminService.getAdminEmails.mockResolvedValueOnce(['admin1@iiap.co']);
+    mailer.notifyVerificacionEmail.mockResolvedValueOnce(undefined);
+    mailer.notifyAdminNewRegistro.mockResolvedValueOnce(undefined);
+
+    const r = res();
+    await register({
+      body: { nombre: 'Juan', email: 'j@j.co', password: 'Pass1234!', institucion: 'IIAP' },
+    }, r, mockNext);
+
+    await vi.waitFor(() => {
+      expect(mailer.notifyAdminNewRegistro).toHaveBeenCalledWith(
+        expect.objectContaining({ rolSolicitado: 'investigador' })
+      );
+    });
+  });
+
   it('notifica a los admins registrados y absorbe errores de envío de email', async () => {
     authService.register.mockResolvedValue({
       id: 'u1', nombre: 'Juan', email: 'j@j.co', verificationToken: 'tok',
