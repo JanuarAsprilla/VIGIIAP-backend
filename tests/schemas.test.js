@@ -7,6 +7,7 @@ import {
 import {
   createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema,
 } from '../src/modules/documentos/documentos.schema.js';
+import { createGeovisorSchema } from '../src/modules/geovisores/geovisores.schema.js';
 
 const baseRegister = {
   nombre: 'Juan Pérez', email: 'juan@iiap.gob.co',
@@ -184,5 +185,42 @@ describe('updateDocumentoSchema — al menos un campo', () => {
 describe('toggleDocumentoSchema — coerción booleana', () => {
   it('coerciona 1 a true', () => {
     expect(toggleDocumentoSchema.parse({ activo: 1 }).activo).toBe(true);
+  });
+});
+
+const baseGeovisor = {
+  titulo: 'Geología del Chocó',
+  conexionGeoserverId: '11111111-1111-1111-1111-111111111111',
+  centroLat: 5.55,
+  centroLng: -76.6,
+};
+
+describe('createGeovisorSchema — presentacion (cómo se muestra la info, no solo quién la ve)', () => {
+  it('sin presentacion explícita, aplica el default seguro completo (no un objeto vacío)', () => {
+    // z.object(...).default(x) usa x tal cual sin re-parsearlo -- este test existe justo para
+    // que un futuro cambio a {} "vacío" (que rompería esto en silencio) falle aquí, no en producción.
+    const { presentacion } = createGeovisorSchema.parse(baseGeovisor);
+    expect(presentacion).toEqual({ mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] });
+  });
+
+  it('acepta camposPopup con campo+alias por capa (hallazgo SGC: los atributos varían por temática)', () => {
+    const { presentacion } = createGeovisorSchema.parse({
+      ...baseGeovisor,
+      presentacion: {
+        mostrarImagenes: true,
+        campoImagenUrl: 'foto_url',
+        camposPopup: [{ campo: 'MGUCR_SIMBL', alias: 'Símbolo cronoestratigráfico' }],
+      },
+    });
+    expect(presentacion.mostrarMetricas).toBe(true); // default interno preservado aunque el resto se explicite
+    expect(presentacion.mostrarImagenes).toBe(true);
+    expect(presentacion.camposPopup).toEqual([{ campo: 'MGUCR_SIMBL', alias: 'Símbolo cronoestratigráfico' }]);
+  });
+
+  it('rechaza un campoPopup sin alias (el punto es que nunca se muestre el atributo crudo sin explicar)', () => {
+    expect(() => createGeovisorSchema.parse({
+      ...baseGeovisor,
+      presentacion: { camposPopup: [{ campo: 'MGUCR_SIMBL' }] },
+    })).toThrow();
   });
 });
