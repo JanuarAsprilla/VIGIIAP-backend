@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.3.0...v1.4.0) (2026-09-19)
+
+
+### Features
+
+* notificaciones persistentes en BD (Fase 1 del plan de módulos) ([#126](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/126)) ([684ce00](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/684ce00f48f06d2998878667d1ea85e5bb4ff8ed))
+
 ## [1.3.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.2.1...v1.3.0) (2026-09-19)
 
 
