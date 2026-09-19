@@ -18,9 +18,10 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
 }));
 
 import { query } from '../src/config/database.js';
+import { encryptGeoserverPassword } from '../src/utils/geoserverEncryption.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
 import {
-  getAll, getById, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
+  getAll, getById, create, update, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
 } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 
 const FILA = {
@@ -47,6 +48,46 @@ describe('conexionesGeoserver.service → getAll() / getById()', () => {
   });
 });
 
+describe('conexionesGeoserver.service → create()', () => {
+  it('conexión propia: cifra la contraseña y guarda las credenciales', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'propio' }] });
+    await create({ nombre: 'GeoServer IIAP', url: 'https://geo.iiap.org.co', tipo: 'propio', usuarioLectura: 'lector', password: 'secreto', timeoutMs: 20000 });
+    const [, params] = query.mock.calls[0];
+    expect(params).toEqual(['GeoServer IIAP', 'https://geo.iiap.org.co', 'propio', 'lector', 'enc:secreto', 20000]);
+    expect(encryptGeoserverPassword).toHaveBeenCalledWith('secreto');
+  });
+
+  it('conexión externa sin credenciales: guarda usuario/contraseña como NULL, sin llamar a encryptGeoserverPassword', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo', usuario_lectura: null, password_cifrado: null }] });
+    await create({ nombre: 'WMS Externo', url: 'https://wms.otrainstitucion.gov.co', tipo: 'externo', timeoutMs: 20000 });
+    const [, params] = query.mock.calls[0];
+    expect(params).toEqual(['WMS Externo', 'https://wms.otrainstitucion.gov.co', 'externo', null, null, 20000]);
+    expect(encryptGeoserverPassword).not.toHaveBeenCalled();
+  });
+
+  it('sin tipo explícito, por defecto es "propio"', async () => {
+    query.mockResolvedValueOnce({ rows: [FILA] });
+    await create({ nombre: 'X', url: 'https://x.test', usuarioLectura: 'u', password: 'p', timeoutMs: 20000 });
+    const [, params] = query.mock.calls[0];
+    expect(params[2]).toBe('propio');
+  });
+});
+
+describe('conexionesGeoserver.service → update()', () => {
+  it('actualiza el tipo cuando se envía', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo' }] });
+    await update('conexion-uuid-1', { tipo: 'externo' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/tipo = \$1/);
+    expect(params[0]).toBe('externo');
+  });
+
+  it('lanza 404 si la conexión no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(update('no-existe', { nombre: 'X' })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
 describe('conexionesGeoserver.service → obtenerConexionParaConector()', () => {
   it('descifra la contraseña y mapea a camelCase para el conector', async () => {
     query.mockResolvedValueOnce({ rows: [FILA] });
@@ -54,6 +95,13 @@ describe('conexionesGeoserver.service → obtenerConexionParaConector()', () => 
     expect(result).toMatchObject({
       id: 'conexion-uuid-1', usuarioLectura: 'lector', passwordDescifrada: 'secreto', timeoutMs: 20000,
     });
+  });
+
+  it('conexión externa sin credenciales: passwordDescifrada es null, sin llamar a decryptGeoserverPassword', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo', usuario_lectura: null, password_cifrado: null }] });
+    const result = await obtenerConexionParaConector('conexion-uuid-1');
+    expect(result.passwordDescifrada).toBeNull();
+    expect(result.usuarioLectura).toBeNull();
   });
 
   it('lanza 404 si la conexión no existe', async () => {

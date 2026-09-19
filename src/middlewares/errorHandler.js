@@ -28,6 +28,15 @@ export function errorHandler(err, _req, res, _next) {
     });
   }
 
+  // Violación de restricción CHECK de Postgres (23514) — p.ej. una conexión
+  // GeoServer "propia" sin usuario/contraseña (migración 047). Reforzada en
+  // BD porque un UPDATE parcial no siempre pasa por la validación de creación.
+  if (err.code === '23514') {
+    if (err.constraint === 'conexiones_geoserver_credenciales_check') {
+      return res.status(422).json({ error: 'Usuario y contraseña son obligatorios para una conexión propia' });
+    }
+  }
+
   const status = err.status || err.statusCode || 500;
 
   if (status >= 500) {

@@ -127,4 +127,43 @@ describe('Conexiones GeoServer routes — auth guards via supertest', () => {
       .set('Authorization', `Bearer ${superToken}`);
     expect(res.status).toBe(200);
   });
+
+  it('POST /api/admin/conexiones-geoserver → admin_sig no puede crear (solo super_admin)', async () => {
+    const res = await request(app)
+      .post('/api/admin/conexiones-geoserver')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ nombre: 'X', url: 'https://x.test', tipo: 'externo' });
+    expect(res.status).toBe(403);
+    expect(conexionService.create).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/admin/conexiones-geoserver → tipo "externo" sin credenciales se acepta (super_admin)', async () => {
+    conexionService.create.mockResolvedValue({ id: 'nueva', nombre: 'WMS Externo', tipo: 'externo' });
+    const res = await request(app)
+      .post('/api/admin/conexiones-geoserver')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ nombre: 'WMS Externo', url: 'https://wms.otrainstitucion.gov.co', tipo: 'externo' });
+    expect(res.status).toBe(201);
+    const [dataEnviada] = conexionService.create.mock.calls[0];
+    expect(dataEnviada.tipo).toBe('externo');
+    expect(dataEnviada.usuarioLectura).toBeUndefined();
+    expect(dataEnviada.password).toBeUndefined();
+  });
+
+  it('POST /api/admin/conexiones-geoserver → tipo "propio" sin credenciales se rechaza con 422', async () => {
+    const res = await request(app)
+      .post('/api/admin/conexiones-geoserver')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ nombre: 'GeoServer IIAP', url: 'https://geo.iiap.org.co', tipo: 'propio' });
+    expect(res.status).toBe(422);
+    expect(conexionService.create).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/admin/conexiones-geoserver → sin tipo explícito, exige credenciales (default "propio")', async () => {
+    const res = await request(app)
+      .post('/api/admin/conexiones-geoserver')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ nombre: 'GeoServer IIAP', url: 'https://geo.iiap.org.co' });
+    expect(res.status).toBe(422);
+  });
 });

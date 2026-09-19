@@ -72,17 +72,24 @@ export const toggleGeovisorSchema = z.object({
   activo: z.coerce.boolean(),
 });
 
+// tipo 'propio' (GeoServer institucional) exige credenciales; 'externo' (WMS/WFS
+// de terceros) no las requiere -- misma invariante reforzada en BD (migración 047).
 export const createConexionGeoserverSchema = z.object({
   nombre: z.string().min(2).max(150),
   url: z.string().url(),
-  usuarioLectura: z.string().min(1).max(100),
-  password: z.string().min(1).max(500),
+  tipo: z.enum(['propio', 'externo']).default('propio'),
+  usuarioLectura: z.string().min(1).max(100).optional(),
+  password: z.string().min(1).max(500).optional(),
   timeoutMs: z.coerce.number().int().positive().max(120_000).default(20_000),
-});
+}).refine(
+  (d) => d.tipo === 'externo' || (!!d.usuarioLectura && !!d.password),
+  { message: 'Usuario y contraseña son obligatorios para una conexión propia', path: ['usuarioLectura'] },
+);
 
 export const updateConexionGeoserverSchema = z.object({
   nombre: z.string().min(2).max(150).optional(),
   url: z.string().url().optional(),
+  tipo: z.enum(['propio', 'externo']).optional(),
   usuarioLectura: z.string().min(1).max(100).optional(),
   password: z.string().min(1).max(500).optional(), // solo si se está rotando la contraseña
   timeoutMs: z.coerce.number().int().positive().max(120_000).optional(),
