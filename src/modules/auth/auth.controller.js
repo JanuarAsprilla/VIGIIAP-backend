@@ -10,6 +10,7 @@ import {
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
+import { notificarAdmins } from '../notificaciones/notificaciones.service.js';
 import { revokeToken } from '../../utils/tokenBlacklist.js';
 import {
   COOKIE_NAME, authCookieOptions, clearCookieOptions,
@@ -184,7 +185,15 @@ export async function verifyEmail(req, res, next) {
       notifyRegistroRecibido({ email: result.email, nombre: result.nombre })
         .catch((err) => logger.error(`[auth] Error email registro recibido a ${result.email}:`, err.message));
 
-      // 2. Notificar a todos los admins con botón de activación directa — condicionado a emailNotifs
+      // 2. Notificación en el panel para todos los admins — independiente del correo,
+      // así que no se apaga con emailNotifs (esa preferencia es solo del canal de correo).
+      notificarAdmins({
+        tipo: 'nuevo_usuario',
+        mensaje: `${result.nombre} verificó su correo y espera activación`,
+        link: '/admin/usuarios',
+      }).catch((err) => logger.error(`[auth] Error creando notificación de usuario verificado:`, err.message));
+
+      // 3. Notificar a todos los admins con botón de activación directa — condicionado a emailNotifs
       notificacionHabilitada('emailNotifs').then(async (habilitado) => {
         if (!habilitado) return;
         const adminEmails = await getAdminEmails();

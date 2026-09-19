@@ -7,13 +7,6 @@ import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
 
-/** GET /api/admin/notificaciones */
-export async function notificaciones(req, res, next) {
-  try {
-    res.json(await adminService.getNotificaciones());
-  } catch (err) { next(err); }
-}
-
 /** GET /api/admin/reportes?periodo=dia|semana|mes|anio|custom&desde=&hasta= */
 export async function reportes(req, res, next) {
   try {

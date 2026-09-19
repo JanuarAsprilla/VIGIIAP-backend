@@ -4,6 +4,7 @@ import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespue
 import { getAdminEmails } from '../admin/admin.service.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { notificarAdmins, crearNotificacion } from '../notificaciones/notificaciones.service.js';
 import { query } from '../../config/database.js';
 import logger from '../../utils/logger.js';
 
@@ -58,6 +59,13 @@ export async function store(req, res, next) {
           );
         })
         .catch(err => logger.error('[solicitudes] getAdminEmails error:', err.message));
+
+      // Notificación en el panel para todos los admins — independiente del correo.
+      notificarAdmins({
+        tipo: 'nueva_solicitud',
+        mensaje: `${solicitante.nombre} envió una nueva solicitud de tipo "${data.tipo}"`,
+        link: '/admin/solicitudes',
+      }).catch(err => logger.error('[solicitudes] Error creando notificación de nueva solicitud:', err.message));
     }
 
     registrarAuditoria({
@@ -88,6 +96,16 @@ export async function updateEstado(req, res, next) {
         estado,
         nota,
       }).catch(err => logger.error('[solicitudes] Email estado error:', err.message));
+
+      // Notificación en el panel para quien la envió — la persona que ve esto
+      // no es admin necesariamente, es justo el caso que antes no existía:
+      // el panel de notificaciones solo mostraba eventos relevantes para admins.
+      crearNotificacion({
+        destinatarioId: solicitud.usuario_id,
+        tipo: 'solicitud_actualizada',
+        mensaje: `Tu solicitud de tipo "${solicitud.tipo}" cambió a "${estado}"`,
+        link: '/solicitudes',
+      }).catch(err => logger.error('[solicitudes] Error creando notificación de estado:', err.message));
     }
 
     registrarAuditoria({
