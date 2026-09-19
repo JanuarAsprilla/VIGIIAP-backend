@@ -2,13 +2,39 @@ import { query, getClient } from '../../config/database.js';
 import { deleteFile, extractKey } from '../../config/r2.js';
 import logger from '../../utils/logger.js';
 
-/** Devuelve todas las categorías con su thumbnail_url. */
+/**
+ * Devuelve todas las categorías con su thumbnail_url y el conteo real de
+ * documentos/mapas/geovisores que la usan -- calculado en una sola consulta
+ * (3 LEFT JOIN + COUNT DISTINCT), no traído a JS desde listados separados con
+ * límite de página (eso subcontaba en cuanto un módulo pasaba de esa página).
+ * documentos no tiene columna `categoria` propia -- `tipo` cumple ese rol
+ * (ver documentos.service.js, que ya expone `tipo AS categoria`).
+ */
 export async function getAll() {
   const { rows } = await query(
-    'SELECT nombre, thumbnail_url, actualizado_en FROM categorias WHERE deleted_at IS NULL ORDER BY nombre',
+    `SELECT c.nombre, c.thumbnail_url, c.actualizado_en,
+            COUNT(DISTINCT d.id) AS docs_count,
+            COUNT(DISTINCT m.id) AS mapas_count,
+            COUNT(DISTINCT g.id) AS geovisores_count
+     FROM categorias c
+     LEFT JOIN documentos d ON d.tipo = c.nombre AND d.deleted_at IS NULL
+     LEFT JOIN mapas m ON m.categoria = c.nombre AND m.deleted_at IS NULL
+     LEFT JOIN geovisores g ON g.categoria = c.nombre AND g.deleted_at IS NULL
+     WHERE c.deleted_at IS NULL
+     GROUP BY c.nombre, c.thumbnail_url, c.actualizado_en
+     ORDER BY c.nombre`,
     [],
   );
-  return rows;
+  return rows.map((r) => ({
+    nombre: r.nombre,
+    thumbnail_url: r.thumbnail_url,
+    actualizado_en: r.actualizado_en,
+    conteo: {
+      docs: Number(r.docs_count),
+      mapas: Number(r.mapas_count),
+      geovisores: Number(r.geovisores_count),
+    },
+  }));
 }
 
 /** Crea la categoría si no existe, actualiza thumbnail_url si se provee. */

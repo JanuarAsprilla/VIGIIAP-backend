@@ -17,17 +17,30 @@ import { query, getClient } from '../src/config/database.js';
 import { deleteFile } from '../src/config/r2.js';
 import { getAll, upsert, remove, rename } from '../src/modules/categorias/categorias.service.js';
 
-const CAT = { nombre: 'Biodiversidad', thumbnail_url: 'https://files.test.local/cat.jpg', actualizado_en: new Date() };
+const CAT = {
+  nombre: 'Biodiversidad', thumbnail_url: 'https://files.test.local/cat.jpg', actualizado_en: new Date(),
+  docs_count: '3', mapas_count: '0', geovisores_count: '1',
+};
 
 describe('categorias.service → getAll()', () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it('retorna lista de categorías', async () => {
+  it('retorna lista de categorías con el conteo por módulo convertido a número', async () => {
     query.mockResolvedValueOnce({ rows: [CAT] });
     const result = await getAll();
     expect(result).toHaveLength(1);
     expect(result[0].nombre).toBe('Biodiversidad');
+    expect(result[0].conteo).toEqual({ docs: 3, mapas: 0, geovisores: 1 });
     expect(query).toHaveBeenCalledOnce();
+  });
+
+  it('la consulta cuenta documentos por tipo (documentos no tiene columna categoria propia)', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await getAll();
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/LEFT JOIN documentos d ON d\.tipo = c\.nombre/);
+    expect(sql).toMatch(/LEFT JOIN mapas m ON m\.categoria = c\.nombre/);
+    expect(sql).toMatch(/LEFT JOIN geovisores g ON g\.categoria = c\.nombre/);
   });
 
   it('retorna lista vacía cuando no hay categorías', async () => {
