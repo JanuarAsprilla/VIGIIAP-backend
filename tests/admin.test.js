@@ -367,6 +367,33 @@ describe('PUT /api/admin/configuracion — politicaPrivacidad', () => {
   });
 });
 
+// ─── PUT /api/admin/configuracion — terminosUso (solo super_admin) ────────────
+describe('PUT /api/admin/configuracion — terminosUso', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('super_admin guarda terminosUso — retorna 200', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ terminosUso: 'Términos actualizados.' });
+    expect(res.status).toBe(200);
+    expect(adminService.setConfiguracion).toHaveBeenCalledWith(
+      { terminosUso: 'Términos actualizados.' }, expect.anything(), expect.anything(),
+    );
+  });
+
+  it('admin_sig recibe 403 al intentar modificar terminosUso — no se guarda', async () => {
+    adminService.setConfiguracion.mockResolvedValue();
+    const res = await request(app)
+      .put('/api/admin/configuracion')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ terminosUso: 'Intento no autorizado.' });
+    expect(res.status).toBe(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+});
+
 // ─── PUT /api/admin/configuracion — modoMantenimiento (solo super_admin) ──────
 describe('PUT /api/admin/configuracion — modoMantenimiento', () => {
   beforeEach(() => vi.clearAllMocks());

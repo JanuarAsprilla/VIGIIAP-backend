@@ -34,9 +34,11 @@ export const CONFIG_SCHEMA = {
   publicoCanSolicitar:   { type: 'boolean' },
   investigadorCanUpload: { type: 'boolean' },
   requireApproval:       { type: 'boolean' },
-  // Política de privacidad (Ley 1581 de 2012) — expuesta públicamente en
-  // GET /api/v1/public/configuracion.
+  // Política de privacidad (Ley 1581 de 2012) y Términos de uso — expuestas
+  // públicamente en GET /api/v1/public/configuracion. Campos separados
+  // porque son contenido legal distinto, aunque comparten el mismo patrón.
   politicaPrivacidad:    { type: 'string', maxLength: 20000 },
+  terminosUso:           { type: 'string', maxLength: 20000 },
   // Operativos — aditivos a sus env vars correspondientes (ver
   // src/config/dynamicConfig.js), nunca los reemplazan. Antes requerían
   // redeploy: agregar un dominio a CORS, ajustar el tope de peticiones, o
@@ -53,7 +55,7 @@ export const CONFIG_SCHEMA = {
 // del super_admin. También disparan la alerta por correo a todos los
 // super_admin activos (ver notifyCambioConfigCritica en admin.service.js).
 export const SUPER_ADMIN_ONLY_KEYS = new Set([
-  'politicaPrivacidad',
+  'politicaPrivacidad', 'terminosUso',
   'modoMantenimiento', 'mensajeMantenimiento',
   'mail_host', 'mail_port', 'mail_secure', 'mail_user', 'mail_pass',
   'cors_extra_origins', 'rate_limit_max', 'admin_email_fallback',
@@ -63,6 +65,7 @@ export const SUPER_ADMIN_ONLY_KEYS = new Set([
 // su valor, solo que cambió.
 export const CONFIG_LABELS = {
   politicaPrivacidad:    'Política de privacidad',
+  terminosUso:           'Términos de uso',
   modoMantenimiento:     'Modo mantenimiento',
   mensajeMantenimiento:  'Mensaje de mantenimiento',
   mail_host:             'Servidor SMTP (host)',

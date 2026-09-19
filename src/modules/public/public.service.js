@@ -11,7 +11,7 @@ import { query } from '../../config/database.js';
 // Whitelist de claves seguras para exponer públicamente. Cualquier clave
 // nueva en CONFIG_SCHEMA (src/modules/admin/admin.controller.js) permanece
 // privada por defecto — hay que agregarla aquí explícitamente.
-const PUBLIC_CONFIG_KEYS = ['politicaPrivacidad', 'siteName', 'siteDesc'];
+const PUBLIC_CONFIG_KEYS = ['politicaPrivacidad', 'terminosUso', 'siteName', 'siteDesc'];
 
 /** Lee únicamente las claves de configuración whitelisteadas como públicas. */
 export async function getConfiguracionPublica() {
@@ -23,6 +23,7 @@ export async function getConfiguracionPublica() {
 
   return {
     politicaPrivacidad: found.politicaPrivacidad ?? null,
+    terminosUso:        found.terminosUso ?? null,
     siteName:           found.siteName ?? null,
     siteDesc:           found.siteDesc ?? null,
   };
