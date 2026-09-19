@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { index, create, rename, upsertThumbnail, destroy } from './categorias.controller.js';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadSingle } from '../../middlewares/upload.js';
@@ -8,8 +8,12 @@ import { cacheMiddleware } from '../../middlewares/cache.js';
 
 const router = Router();
 
-// GET  /api/categorias              — público
-router.get('/', cacheMiddleware(600), index);
+// GET  /api/categorias              — público (el conteo por módulo respeta
+// visibilidad/activo salvo ?admin=true de un admin_sig/super_admin autenticado
+// -- ver getAll() en categorias.service.js. cacheMiddleware ya omite el cache
+// para cualquier request autenticado, así que el panel admin nunca sirve una
+// respuesta cacheada pensada para un visitante anónimo, ni al revés.)
+router.get('/', cacheMiddleware(600), optionalAuthenticate, index);
 
 // POST /api/categorias              — solo admin (crear categoría)
 router.post('/', authenticate, authorize('admin_sig'), requireModulo('categorias', 'editar'), csrfProtection, create);
