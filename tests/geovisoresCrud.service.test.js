@@ -19,11 +19,16 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
 vi.mock('../src/utils/slugify.js', () => ({
   slugify: (s) => s.toLowerCase().replace(/\s+/g, '-'),
 }));
+vi.mock('../src/config/r2.js', () => ({
+  deleteFile: vi.fn().mockResolvedValue(undefined),
+  extractKey: vi.fn((url) => url ? url.split('/').pop() : null),
+}));
 
 import { query } from '../src/config/database.js';
 import { obtenerConexionParaConector } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
-import { create, update, remove, obtenerCatalogoDeGeovisor } from '../src/modules/geovisores/geovisores.service.js';
+import { deleteFile } from '../src/config/r2.js';
+import { create, update, remove, updateThumbnail, obtenerCatalogoDeGeovisor } from '../src/modules/geovisores/geovisores.service.js';
 
 const conexion = { id: 'conexion-uuid-1', url: 'https://geoserver.test.local/geoserver' };
 
@@ -123,6 +128,41 @@ describe('remove() — soft delete, no DELETE físico', () => {
     query.mockResolvedValueOnce({ rowCount: 0 });
 
     await expect(remove('geovisor-inexistente')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('updateThumbnail() — reemplaza la miniatura y borra la anterior de R2 (mismo patrón que categorias.service.js)', () => {
+  beforeEach(() => { vi.mocked(deleteFile).mockClear().mockResolvedValue(undefined); });
+
+  it('actualiza thumbnail_url y borra la anterior de R2 si cambió', async () => {
+    const OLD_URL = 'https://files.test.local/old.jpg';
+    const NEW_URL = 'https://files.test.local/new.jpg';
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: OLD_URL }] })              // SELECT anterior
+      .mockResolvedValueOnce({ rows: [filaGeovisor({ thumbnail_url: NEW_URL })] }); // UPDATE (vía update())
+
+    const result = await updateThumbnail('geovisor-uuid-1', NEW_URL);
+
+    expect(deleteFile).toHaveBeenCalledOnce();
+    expect(result.thumbnailUrl ?? result.thumbnail_url).toBe(NEW_URL);
+  });
+
+  it('no borra R2 si no había thumbnail anterior', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: null }] })
+      .mockResolvedValueOnce({ rows: [filaGeovisor({ thumbnail_url: 'https://files.test.local/new.jpg' })] });
+
+    await updateThumbnail('geovisor-uuid-1', 'https://files.test.local/new.jpg');
+
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('lanza 404 si el geovisor no existe o fue eliminado', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(updateThumbnail('geovisor-inexistente', 'https://files.test.local/x.jpg')).rejects.toMatchObject({ status: 404 });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(deleteFile).not.toHaveBeenCalled();
   });
 });
 

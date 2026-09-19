@@ -123,6 +123,24 @@ export async function update(req, res, next) {
   } catch (err) { next(err); }
 }
 
+/** POST /api/v1/geovisores/:id/thumbnail -- multipart, ver uploadSingle en geovisores.routes.js. */
+export async function uploadThumbnail(req, res, next) {
+  try {
+    const thumbnailUrl = req.body.thumbnail_url ?? null;
+    const geovisor = await geovisorService.updateThumbnail(req.params.id, thumbnailUrl);
+    registrarAuditoria({
+      accion: 'update_geovisor_thumbnail',
+      modulo: 'geovisores',
+      entidadId: geovisor.id,
+      descripcion: `Miniatura actualizada para geovisor: ${geovisor.titulo}`,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+    });
+    res.json(geovisor);
+  } catch (err) { next(err); }
+}
+
 export async function patchActivo(req, res, next) {
   try {
     const { activo } = toggleGeovisorSchema.parse(req.body);
