@@ -1,8 +1,10 @@
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
+import { deleteFile, extractKey } from '../../config/r2.js';
 import { obtenerConexionParaConector } from './conexionesGeoserver.service.js';
 import * as geoserver from './geoserver.connector.js';
+import logger from '../../utils/logger.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -212,6 +214,25 @@ export async function update(id, data) {
   );
   if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
   return filaAGeovisor(rows[0]);
+}
+
+/** Reemplaza la miniatura y borra la anterior de R2 -- mismo patrón que categorias.service.js. */
+export async function updateThumbnail(id, newUrl) {
+  const { rows: prev } = await query(
+    'SELECT thumbnail_url FROM geovisores WHERE id = $1 AND deleted_at IS NULL',
+    [id],
+  );
+  if (!prev[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
+  const oldUrl = prev[0].thumbnail_url;
+
+  const result = await update(id, { thumbnailUrl: newUrl });
+
+  if (oldUrl && oldUrl !== newUrl) {
+    const key = extractKey(oldUrl);
+    if (key) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
+  }
+
+  return result;
 }
 
 export async function toggleActivo(id, activo) {
