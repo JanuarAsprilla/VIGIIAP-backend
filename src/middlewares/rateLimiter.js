@@ -22,12 +22,19 @@ function normalizeIp(req) {
 // el limiter (y su store de conteos en memoria), perdiendo el conteo en
 // curso. max sí acepta una función async re-evaluada en cada petición, así
 // que solo ese valor se hizo editable desde el panel del super_admin.
+//
+// El bucket anónimo se comparte por IP — en una institución donde muchas
+// personas salen a internet por la misma IP pública (NAT de oficina/campus),
+// un límite bajo se agota con la carga normal de la SPA (varias peticiones
+// en paralelo por persona, multiplicadas por todo el personal detrás de esa
+// IP). 100/15min agotaba el cupo con solo unas pocas cargas de página; el
+// fallback estático (si no hay valor guardado en `configuracion`) sube a 300.
 export const rateLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: async (req) => {
     if (req.user) return 500;
     const dynamic = await getRateLimitMax();
-    return dynamic ?? (Number(process.env.RATE_LIMIT_MAX) || 100);
+    return dynamic ?? (Number(process.env.RATE_LIMIT_MAX) || 300);
   },
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
   standardHeaders: true,
@@ -35,10 +42,15 @@ export const rateLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' },
 });
 
-/** Rate limiter más estricto para endpoints de autenticación. */
+/**
+ * Rate limiter más estricto para endpoints de autenticación. Es defensa por
+ * IP contra fuerza bruta distribuida entre cuentas — el freno específico por
+ * cuenta objetivo vive en loginAccountRateLimiter, así que este no necesita
+ * ser tan bajo como para golpear a una IP compartida por personal legítimo.
+ */
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 30,
   keyGenerator: normalizeIp,
   standardHeaders: true,
   legacyHeaders: false,
