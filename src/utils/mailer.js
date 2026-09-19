@@ -269,7 +269,7 @@ function bodyText(html) {
 // ─── Emails específicos ───────────────────────────────────────────────────────
 
 /** Notifica al admin cuando un nuevo usuario se registra */
-export async function notifyAdminNewRegistro({ adminEmail, nombre, email, institucion, motivo }) {
+export async function notifyAdminNewRegistro({ adminEmail, nombre, email, institucion, motivo, rolSolicitado }) {
   await send({
     to: adminEmail,
     subject: `[VIGI-IIAP] Nuevo registro: ${sanitizeSMTP(nombre)}`,
@@ -281,8 +281,30 @@ export async function notifyAdminNewRegistro({ adminEmail, nombre, email, instit
         detailRow('Correo', escHtml(email)),
         detailRow('Institución', escHtml(institucion) || 'No especificada'),
         detailRow('Motivo', escHtml(motivo) || 'No especificado'),
+        // La cuenta nace 'publico' — esto es una solicitud pendiente, no el rol ya asignado.
+        ...(rolSolicitado ? [detailRow('Rol solicitado', `<strong>${escHtml(rolSolicitado)}</strong> (pendiente de aprobación)`)] : []),
       ]),
       cta: { url: `${BASE_URL}/admin/usuarios`, label: 'Gestionar en el panel' },
+    }),
+  });
+}
+
+/** Notifica al admin cuando una cuenta ya existente (creada por OAuth) pide un rol elevado */
+export async function notifyAdminSolicitudRolOAuth({ adminEmail, nombre, email, institucion, rolSolicitado, motivo }) {
+  await send({
+    to: adminEmail,
+    subject: `[VIGI-IIAP] Solicitud de rol: ${sanitizeSMTP(nombre)}`,
+    html: baseTemplate({
+      eyebrow: 'Solicitud de rol',
+      title: 'Un usuario existente solicita un rol elevado',
+      body: bodyText('Su cuenta ya está activa (inició sesión con Google/Microsoft) — esta solicitud solo pide más permisos, no crea una cuenta nueva:') + detailPanel([
+        detailRow('Nombre', escHtml(nombre)),
+        detailRow('Correo', escHtml(email)),
+        detailRow('Institución', escHtml(institucion) || 'No especificada'),
+        detailRow('Rol solicitado', `<strong>${escHtml(rolSolicitado)}</strong>`),
+        detailRow('Motivo', escHtml(motivo) || 'No especificado'),
+      ]),
+      cta: { url: `${BASE_URL}/admin/usuarios`, label: 'Revisar en el panel' },
     }),
   });
 }

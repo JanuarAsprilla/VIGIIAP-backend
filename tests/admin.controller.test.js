@@ -16,11 +16,21 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   getSuperStats:      vi.fn(),
   crearAdminSig:      vi.fn(),
   getReporte:         vi.fn(),
+  getDashboardTendencias: vi.fn(),
+  listarAdministradores: vi.fn(),
 }));
 
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn().mockResolvedValue({ rows: [{ count: '5' }] }),
   getClient: vi.fn(),
+}));
+
+vi.mock('../src/modules/admin/modulos.service.js', () => ({
+  MODULOS: [
+    { clave: 'usuarios', nombre: 'Usuarios' },
+    { clave: 'mapas', nombre: 'Mapas' },
+  ],
+  setPermisosAdmin: vi.fn(),
 }));
 
 vi.mock('../src/utils/dataCustody.js', () => ({
@@ -52,11 +62,14 @@ import { getCadenaCustodia, getDescargasRecurso } from '../src/utils/dataCustody
 import { registrarAuditoria } from '../src/utils/auditLog.js';
 import { notifyUsuarioActivacion, notifyRolCambiado, sendTestEmail } from '../src/utils/mailer.js';
 import { revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
+import { setPermisosAdmin } from '../src/modules/admin/modulos.service.js';
 import {
   notificaciones, getConfiguracion, setConfiguracion, probarCorreo, stats, resetStatsCache,
+  dashboardTendencias,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, errorLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
   descargasStats, scanLog, batchUsuarios, reportes,
+  listarAdministradores, setPermisosAdminController,
 } from '../src/modules/admin/admin.controller.js';
 
 const mockNext = vi.fn();
@@ -514,6 +527,63 @@ describe('admin.controller → crearAdmin()', () => {
   });
 });
 
+// ── listarAdministradores() ───────────────────────────────────────────────
+
+describe('admin.controller → listarAdministradores()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna el resultado del servicio', async () => {
+    adminService.listarAdministradores.mockResolvedValue({ data: [], meta: { total: 0 } });
+    const r = res();
+    await listarAdministradores({ query: {} }, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith({ data: [], meta: { total: 0 } });
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    adminService.listarAdministradores.mockRejectedValue(new Error('db'));
+    await listarAdministradores({ query: {} }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── setPermisosAdminController() ──────────────────────────────────────────
+
+describe('admin.controller → setPermisosAdminController()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 422 si el body no valida (Zod)', async () => {
+    await setPermisosAdminController(
+      { params: { id: 'a1' }, body: { permisos: [{ modulo: 'inventado', puede_ver: true }] }, user: SUPERADMIN },
+      res(), mockNext,
+    );
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('llama a setPermisosAdmin con el id y los permisos, retorna el resultado', async () => {
+    setPermisosAdmin.mockResolvedValue([{ modulo: 'mapas', puede_ver: true, puede_editar: true }]);
+    const r = res();
+    await setPermisosAdminController(
+      { params: { id: 'a1' }, body: { permisos: [{ modulo: 'mapas', puede_ver: true, puede_editar: true }] }, user: SUPERADMIN },
+      r, mockNext,
+    );
+    expect(setPermisosAdmin).toHaveBeenCalledWith(
+      'a1',
+      [{ modulo: 'mapas', puede_ver: true, puede_editar: true }],
+      { superAdminId: SUPERADMIN.id },
+    );
+    expect(r.json).toHaveBeenCalledWith({ data: [{ modulo: 'mapas', puede_ver: true, puede_editar: true }] });
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    setPermisosAdmin.mockRejectedValue(Object.assign(new Error('no admin_sig'), { status: 400 }));
+    await setPermisosAdminController(
+      { params: { id: 'u1' }, body: { permisos: [{ modulo: 'mapas', puede_ver: true }] }, user: SUPERADMIN },
+      res(), mockNext,
+    );
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
 // ── custodiaRecurso() ─────────────────────────────────────────────────────
 
 describe('admin.controller → custodiaRecurso()', () => {
@@ -831,6 +901,26 @@ describe('admin.controller → batchUsuarios()', () => {
   it('llama next(err) si query de targets lanza', async () => {
     query.mockRejectedValueOnce(new Error('db'));
     await batchUsuarios({ body: { ids: [TARGET_1], accion: 'activar' }, user: ADMIN }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── dashboardTendencias() ────────────────────────────────────────────────────
+
+describe('admin.controller → dashboardTendencias()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('responde con el resultado del servicio', async () => {
+    const tendencias = { usuarios: { serie7: [0,0,0,0,0,0,1], semanaActual: 1, semanaAnterior: 0, deltaPct: 100 } };
+    adminService.getDashboardTendencias.mockResolvedValue(tendencias);
+    const r = res();
+    await dashboardTendencias({}, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith(tendencias);
+  });
+
+  it('llama next(err) si el servicio lanza', async () => {
+    adminService.getDashboardTendencias.mockRejectedValue(new Error('db'));
+    await dashboardTendencias({}, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

@@ -6,6 +6,7 @@ import { registrarAuditoria } from '../../utils/auditLog.js';
 import { notifyNuevoInicioSesion } from '../../utils/mailer.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
 import logger from '../../utils/logger.js';
+import { permisosDeAdmin } from '../admin/modulos.service.js';
 
 const SALT_ROUNDS = 12;
 
@@ -135,6 +136,17 @@ export async function login(email, password, ip, userAgent) {
     // Comparación dummy para igualar tiempo de respuesta con cuentas inexistentes
     await bcrypt.compare(password, DUMMY_HASH);
     throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
+  }
+
+  // Cuenta creada vía OAuth (ver src/modules/oauth/) — no tiene contraseña
+  // propia. Comparación dummy igual por timing; mensaje distinto para no
+  // dejar a la persona intentando recordar una contraseña que nunca existió.
+  if (!user.password_hash) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw Object.assign(
+      new Error('Esta cuenta inicia sesión con Google o Microsoft — usa ese botón en vez de contraseña.'),
+      { status: 401 }
+    );
   }
 
   // Bloqueo temporal por intentos fallidos
@@ -290,7 +302,7 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
   const visitanteId = rows[0].id;
 
   const token = signToken(
-    { visitanteId, rol: 'visitante', tipo: 'visitante', nombre: nombre || null },
+    { visitanteId, rol: 'visitante', tipo: 'visitante' },
     '8h'
   );
 
@@ -316,7 +328,9 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
 }
 
 // ─── Registro ─────────────────────────────────────────────────────────────────
-// Map perfil solicitado → rol inicial en BD
+// Normaliza el perfil declarado en el formulario — 'publico' es el valor por
+// defecto para cualquier entrada no reconocida, nunca se asigna directo como
+// rol (ver register()).
 function perfilToRol(perfil) {
   if (perfil === 'investigador') return 'investigador';
   if (perfil === 'tecnico') return 'tecnico';
@@ -332,7 +346,13 @@ export async function register(data, { ip, userAgent } = {}) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
   }
 
-  const rolInicial = perfilToRol(perfil);
+  // La cuenta siempre nace 'publico' — igual que el registro por OAuth
+  // (ver oauth.service.js#findOrCreateUser). Un rol elevado pedido aquí queda
+  // como solicitud pendiente (rol_solicitado), nunca se asigna directo: antes
+  // este flujo sí lo asignaba de una vez, sin aval de ningún admin, a
+  // diferencia de Google/Microsoft que ya pasaban por completarPerfil().
+  const rolSolicitadoInicial = perfilToRol(perfil);
+  const rolSolicitado = rolSolicitadoInicial !== 'publico' ? rolSolicitadoInicial : null;
   const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
   const verificationToken = generateSecureToken();
   const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
@@ -348,17 +368,17 @@ export async function register(data, { ip, userAgent } = {}) {
 
   const { rows } = await query(
     `INSERT INTO usuarios
-       (nombre, email, password_hash, institucion, motivo_acceso, rol, tipo_acceso, activo,
+       (nombre, email, password_hash, institucion, motivo_acceso, rol, rol_solicitado, tipo_acceso, activo,
         email_verified, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10)
-     RETURNING id, nombre, email, rol`,
+     VALUES ($1, $2, $3, $4, $5, 'publico', $6, $7, $8, false, $9, $10)
+     RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
     [
       nombre,
       email.toLowerCase(),
       password_hash,
       institucion ?? null,
       motivo ?? null,
-      rolInicial,
+      rolSolicitado,
       tipoAcceso ?? 'externo',
       activoInicial,
       hashToken(verificationToken), // almacenar hash — no el token original
@@ -370,7 +390,9 @@ export async function register(data, { ip, userAgent } = {}) {
     accion: 'registro',
     modulo: 'auth',
     entidadId: rows[0].id,
-    descripcion: `Registro exitoso — ${rows[0].email} (perfil: ${rolInicial})`,
+    descripcion: rolSolicitado
+      ? `Registro exitoso — ${rows[0].email} (solicita rol: ${rolSolicitado}, pendiente de aprobación)`
+      : `Registro exitoso — ${rows[0].email}`,
     usuarioId: rows[0].id,
     usuarioEmail: rows[0].email,
     ip,
@@ -510,9 +532,41 @@ export async function resetPassword(token, newPassword) {
 export async function getProfile(userId) {
   const { rows } = await query(
     `SELECT id, nombre, email, rol, tipo_acceso, institucion, avatar_url, creado_en, last_login_at,
-            totp_enabled AS "twoFactorEnabled"
+            totp_enabled AS "twoFactorEnabled", perfil_completo AS "perfilCompleto"
      FROM usuarios WHERE id = $1`,
     [userId]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
+  const usuario = rows[0];
+
+  // Módulos habilitados — solo aplica a admin_sig, para que el sidebar filtre
+  // por función real en vez de por rol atómico. super_admin y roles no-admin
+  // no tienen restricción, así que no cargan este dato.
+  if (usuario.rol === 'admin_sig') {
+    usuario.modulos = await permisosDeAdmin(userId);
+  }
+  return usuario;
+}
+
+// Completa el perfil de una cuenta creada por OAuth (ver src/modules/oauth/)
+// que nació sin institución, y opcionalmente registra una solicitud de rol
+// elevado (perfilSolicitado). Esa solicitud NUNCA se autoconcede — solo
+// queda en rol_solicitado, pendiente de que un admin la apruebe cambiando
+// "rol" a mano desde el panel de Usuarios (mismo mecanismo que ya usa el
+// registro tradicional vía "Solicitar acceso institucional").
+export async function completarPerfil(userId, { nombre, institucion, perfilSolicitado, motivo }) {
+  const { rows } = await query(
+    `UPDATE usuarios
+     SET institucion     = $1,
+         nombre          = COALESCE($2, nombre),
+         perfil_completo = true,
+         rol_solicitado  = COALESCE($3, rol_solicitado),
+         motivo_acceso   = COALESCE($4, motivo_acceso),
+         actualizado_en  = NOW()
+     WHERE id = $5
+     RETURNING id, nombre, email, rol, institucion, perfil_completo AS "perfilCompleto",
+               rol_solicitado AS "rolSolicitado"`,
+    [institucion, nombre ?? null, perfilSolicitado ?? null, motivo ?? null, userId]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
   return rows[0];

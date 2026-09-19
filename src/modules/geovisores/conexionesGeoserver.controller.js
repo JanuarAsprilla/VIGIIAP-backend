@@ -1,6 +1,7 @@
 import { createConexionGeoserverSchema, updateConexionGeoserverSchema } from './geovisores.schema.js';
 import * as conexionService from './conexionesGeoserver.service.js';
 import { listarWorkspacesDeConexion } from './geovisores.service.js';
+import { esGeometriaValida } from '../../utils/geometry.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 export async function index(req, res, next) {
@@ -12,13 +13,6 @@ export async function index(req, res, next) {
 export async function show(req, res, next) {
   try {
     res.json(await conexionService.getById(req.params.id));
-  } catch (err) { next(err); }
-}
-
-/** Workspaces publicados en esta conexión -- para elegir `workspacesGeoserver` al crear/editar un geovisor. */
-export async function workspaces(req, res, next) {
-  try {
-    res.json(await listarWorkspacesDeConexion(req.params.id));
   } catch (err) { next(err); }
 }
 
@@ -54,6 +48,47 @@ export async function update(req, res, next) {
       ip: req.ip,
     });
     res.json(conexion);
+  } catch (err) { next(err); }
+}
+
+/** GET /admin/conexiones-geoserver/:id/workspaces — descubre en vivo qué workspaces
+ *  publica esta conexión, para el selector del constructor de geovisores. */
+export async function workspaces(req, res, next) {
+  try {
+    res.json(await listarWorkspacesDeConexion(req.params.id));
+  } catch (err) { next(err); }
+}
+
+/** GET /admin/conexiones-geoserver/:id/wms — vista previa en vivo mientras se
+ *  construye un geovisor (todavía sin slug). Mismo parseo por cadena cruda que
+ *  geovisores.controller.js#wms — ver ese comentario para el porqué. */
+export async function wmsPreview(req, res, next) {
+  try {
+    const queryCruda = new URLSearchParams(req.originalUrl.split('?')[1] ?? '');
+    let geometriaFiltro;
+    const geometriaRaw = queryCruda.get('geometria');
+    if (geometriaRaw) {
+      const parseada = JSON.parse(geometriaRaw);
+      if (!esGeometriaValida(parseada)) {
+        return res.status(400).json({ error: 'Geometría de filtro inválida' });
+      }
+      geometriaFiltro = parseada;
+    }
+    queryCruda.delete('geometria');
+    const respuesta = await conexionService.proxyWmsDeConexion(req.params.id, queryCruda, geometriaFiltro);
+    res.status(respuesta.status);
+    res.set('Content-Type', respuesta.headers.get('content-type') ?? 'image/png');
+    res.send(Buffer.from(await respuesta.arrayBuffer()));
+  } catch (err) { next(err); }
+}
+
+/** GET /admin/conexiones-geoserver/:id/leyenda/:capaId — leyenda para la vista previa en vivo. */
+export async function leyendaPreview(req, res, next) {
+  try {
+    const respuesta = await conexionService.proxyLeyendaDeConexion(req.params.id, req.params.capaId);
+    res.status(respuesta.status);
+    res.set('Content-Type', respuesta.headers.get('content-type') ?? 'image/png');
+    res.send(Buffer.from(await respuesta.arrayBuffer()));
   } catch (err) { next(err); }
 }
 

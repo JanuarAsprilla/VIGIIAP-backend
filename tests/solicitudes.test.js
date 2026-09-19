@@ -16,8 +16,15 @@ vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
   removeArchivo:           vi.fn(),
 }));
 
+// query() aquí sirve dos dueños: requireModulo (permisos por módulo) y el
+// propio controller (notificaciones de store/responder, ver solicitudes.controller.js).
+// Se distingue por SQL para no alterar el comportamiento existente de esos paths.
 vi.mock('../src/config/database.js', () => ({
-  query: vi.fn().mockResolvedValue({ rows: [] }),
+  query: vi.fn((sql) =>
+    /admin_permisos_modulo/.test(sql)
+      ? Promise.resolve({ rows: [{ puede_ver: true, puede_editar: true }] })
+      : Promise.resolve({ rows: [] })
+  ),
   getClient: vi.fn(),
 }));
 

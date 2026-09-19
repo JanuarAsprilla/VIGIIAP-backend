@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.2.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.1.0...v1.2.0) (2026-09-19)
+
+
+### Features
+
+* capas individuales por geovisor (sin importar workspace/tema) ([786b169](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/786b1692f30bfb61e8ea2b219b3cce4b402921c2))
+* endpoint de tendencias para el dashboard admin ([d48852f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d48852f05f427aade5f35387668afa9fe766bd4a))
+* seleccionar capas individuales por geovisor, sin importar el workspace/tema ([64493a4](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/64493a4780c0ef26339571bf0dda4f6dd9000eae))
+
+
+### Bug Fixes
+
+* registro tradicional ahora requiere aval de admin para roles elevados ([99ee868](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/99ee868eeeb4a0c372eb14c67354781cd1f5ccd8))
+* registro tradicional ya no asigna investigador/tecnico/institucional sin aval de admin ([a42ebb8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a42ebb868b401b81f6b2a7b05adaa308d2142ada))
+
+## [1.1.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.0.0...v1.1.0) (2026-09-18)
+
+
+### Features
+
+* CORS extra, tope de rate limit y correo de respaldo dinámicos ([#97](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/97)) ([54f0da6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/54f0da6dbb00190623a8b7aee7765c88ac618d42))
+* CRUD completo de categorías — agrega renombrar ([292dfcf](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/292dfcf0ba0a0b12a2988b639ec4da0c2bb4f5aa))
+* CRUD completo de categorías — agrega renombrar ([480ade8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/480ade861724e542f00fcf517836d48f2ce1a0ef))
+* endpoint de consulta de features para el popup por capa + corrige acceso a capas no permitidas ([#108](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/108)) ([8e264dd](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8e264dd3486f9ce7cf3cd2637312808d9df52ac2))
+* login con Google y Microsoft (OAuth2) + flujo de completar perfil ([#105](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/105)) ([8767d0f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8767d0f64689460939e54d9cf0db0875ea692a60))
+* modulo nativo de geovisores (backend fase 1) - conector GeoServer, catalogo, CRUD, conexiones cifradas ([7936baa](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7936baab3f547003e526714e8fbc26e4507fc1d3))
+* **seguridad:** PKCE (RFC 7636) para el login OAuth ([#106](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/106)) ([0962c2b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/0962c2bd33fcaec27d59077a1d03fca18f22ce19))
+* separar administradores de usuarios y permisos por módulo ([8460ffc](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8460ffcb4f6e1b82d07789866a57fdd8ee981860))
+* separar administradores de usuarios y permisos por módulo ([f1caf6c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/f1caf6c3640820718e1572a4957403ec5625eabc))
+* SMTP dinámico desde el panel + alerta de cambios críticos ([#96](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/96)) ([e938c90](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e938c901996ce6af5133fae68e58b99094fb8044))
+* solicitud de rol elevado desde "Completar Perfil" (login OAuth) ([#115](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/115)) ([226df78](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/226df78e787815d0cda4b3c5eb6e3c20795e7014))
+
+
+### Bug Fixes
+
+* agrega descubrimiento de workspaces y preview WMS por conexión ([b4ef03a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b4ef03a2e0119513f324610869c789d7ffb4d3e4))
+* agrega descubrimiento de workspaces y preview WMS por conexión ([f251428](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/f25142883965396e22ec384d824ed03f679fdc7d))
+* CORS bloqueaba TODA petición real de navegador en producción ([#93](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/93)) ([c58ef71](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c58ef71c27dffdda6486f4acde1fca13f0153c6d))
+* elimina bypass de autorizacion en getBySlug y unifica el parseo de query en el proxy WMS ([b6b054d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b6b054d8b28ba1cbf7834434a796c38595343d16))
+* incluir el detalle de capas por workspace en el descubrimiento ([312a1d5](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/312a1d533ef6e740702b263b718fde2ce50d3668))
+* no exponer al admin_sig las claves de configuración exclusivas de super_admin ([#101](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/101)) ([cdb29d7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/cdb29d7704501d9aad79eb9eccee350ba52ce083))
+* nombre real del visitante en vez de 'Visitante' fijo ([#95](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/95)) ([9484e45](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/9484e4525ccfe24d47585ede13e69c7cacd16c36))
+
 ## 1.0.0 (2026-09-10)
 
 

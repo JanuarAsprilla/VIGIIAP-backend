@@ -64,6 +64,31 @@ export async function leyenda(req, res, next) {
   } catch (err) { next(err); }
 }
 
+/**
+ * Atributos de las features de una capa bajo el punto donde el usuario hizo clic -- el cliente
+ * arma un pequeño polígono alrededor del clic (no un punto exacto: un clic casi nunca cae
+ * justo sobre la geometría) y este endpoint devuelve qué hay ahí, para el popup de la capa.
+ */
+export async function consulta(req, res, next) {
+  try {
+    const geometriaRaw = req.query.geometria;
+    if (!geometriaRaw || typeof geometriaRaw !== 'string') {
+      return res.status(400).json({ error: 'Falta la geometría de la consulta' });
+    }
+    let geometria;
+    try {
+      geometria = JSON.parse(geometriaRaw);
+    } catch {
+      return res.status(400).json({ error: 'Geometría de consulta inválida' });
+    }
+    if (!esGeometriaValida(geometria)) {
+      return res.status(400).json({ error: 'Geometría de consulta inválida' });
+    }
+    const resultado = await geovisorService.consultarCapaDeGeovisor(req.params.slug, req.params.capaId, geometria, req.user);
+    res.json(resultado);
+  } catch (err) { next(err); }
+}
+
 export async function store(req, res, next) {
   try {
     const data = createGeovisorSchema.parse(req.body);

@@ -251,6 +251,35 @@ describe('notifyAdminNewRegistro()', () => {
     expect(html).toContain('No especificado');
   });
 
+  it('muestra el rol solicitado como pendiente de aprobación cuando el registro pidió uno elevado', async () => {
+    await notifyAdminNewRegistro({
+      adminEmail:    'admin@iiap.gov.co',
+      nombre:        'Nuevo Investigador',
+      email:         'inv@test.co',
+      institucion:   'IIAP',
+      motivo:        'Investigación',
+      rolSolicitado: 'investigador',
+    });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).toContain('Rol solicitado');
+    expect(html).toContain('investigador');
+    expect(html).toContain('pendiente de aprobación');
+  });
+
+  it('no muestra la fila de rol solicitado cuando no se pidió ningún rol (perfil público)', async () => {
+    await notifyAdminNewRegistro({
+      adminEmail:  'admin@iiap.gov.co',
+      nombre:      'Usuario Público',
+      email:       'pub@test.co',
+      institucion: 'IIAP',
+      motivo:      'Consulta',
+    });
+
+    const { html } = sendMailSpy.mock.calls[0]?.[0] ?? {};
+    expect(html).not.toContain('Rol solicitado');
+  });
+
   it('elimina CRLF del nombre en el subject vía sanitizeSMTP', async () => {
     await notifyAdminNewRegistro({
       adminEmail:  'admin@iiap.gov.co',

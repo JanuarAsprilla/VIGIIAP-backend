@@ -24,8 +24,15 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   setConfiguracion:  vi.fn(),
 }));
 
+// query() aquí sirve dos dueños: requireModulo (permisos por módulo) y algún
+// controller real que no esté mockeado. Se distingue por SQL para no alterar
+// el comportamiento existente.
 vi.mock('../src/config/database.js', () => ({
-  query:     vi.fn().mockResolvedValue({ rows: [{ count: '42' }] }),
+  query: vi.fn((sql) =>
+    /admin_permisos_modulo/.test(sql)
+      ? Promise.resolve({ rows: [{ puede_ver: true, puede_editar: true }] })
+      : Promise.resolve({ rows: [{ count: '42' }] })
+  ),
   getClient: vi.fn(),
 }));
 

@@ -696,7 +696,7 @@ export const openApiSpec = {
       post: {
         tags: ['Autenticación'],
         summary: 'Iniciar configuración de 2FA TOTP',
-        description: 'Genera un secret TOTP y devuelve el QR para escanearlo con Google Authenticator u otra app. El secret se activa en `/auth/2fa/verify`.',
+        description: 'Genera un secret TOTP y devuelve el QR para escanearlo con Google Authenticator u otra app. El secret se activa en `/auth/2fa/verify` dentro de los siguientes 10 minutos — pasado ese plazo caduca y hay que pedir un QR nuevo.',
         security: [{ cookieAuth: [] }, { bearerAuth: [] }],
         responses: {
           200: { description: 'Secret y QR generados', content: { 'application/json': { schema: { type: 'object', properties: { secret: { type: 'string', description: 'Secret base32 — mostrar una vez y no persistir en cliente' }, qrDataUrl: { type: 'string', description: 'data:image/png;base64,...' } } } } } },
@@ -714,6 +714,7 @@ export const openApiSpec = {
         responses: {
           200: { description: '2FA activado', content: { 'application/json': { schema: { type: 'object', properties: { message: { type: 'string' }, backupCodes: { type: 'array', items: { type: 'string' }, description: 'Guardar de forma segura — de un solo uso' } } } } } },
           401: { description: 'Código TOTP inválido' },
+          410: { description: 'El QR generado en /auth/2fa/setup caducó (más de 10 minutos sin confirmar) — pedir uno nuevo' },
         },
       },
     },

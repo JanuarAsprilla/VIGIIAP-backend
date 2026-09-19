@@ -1,4 +1,4 @@
-import { loginSchema, registerSchema, recoverSchema, resetPasswordSchema } from './auth.schema.js';
+import { loginSchema, registerSchema, recoverSchema, resetPasswordSchema, completarPerfilSchema } from './auth.schema.js';
 import * as authService from './auth.service.js';
 import {
   notifyVerificacionEmail,
@@ -6,6 +6,7 @@ import {
   notifyAdminNewRegistro,
   notifyAdminUsuarioVerificado,
   notifyRecuperarPassword,
+  notifyAdminSolicitudRolOAuth,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
@@ -79,7 +80,7 @@ export async function login(req, res, next) {
     // Contraseña expirada — emitir token temporal y forzar cambio
     if (result.passwordExpired) {
       res.cookie('vigiiap_expired_temp', result.expiredToken, {
-        httpOnly: true, secure: true, sameSite: 'Lax',
+        httpOnly: true, secure: true, sameSite: 'None',
         maxAge: 15 * 60 * 1000, path: '/api/auth/change-expired-password',
       });
       return res.status(403).json({ passwordExpired: true, code: 'PASSWORD_EXPIRED' });
@@ -88,7 +89,7 @@ export async function login(req, res, next) {
     // 2FA activo — emitir token temporal y pedir segundo factor
     if (result.requiresTwoFactor) {
       res.cookie('vigiiap_2fa_temp', result.twoFactorToken, {
-        httpOnly: true, secure: true, sameSite: 'Lax',
+        httpOnly: true, secure: true, sameSite: 'None',
         maxAge: 15 * 60 * 1000, path: '/api/auth/2fa/confirm',
       });
       return res.json({ requiresTwoFactor: true });
@@ -156,10 +157,11 @@ export async function register(req, res, next) {
       adminEmails.forEach((adminEmail) =>
         notifyAdminNewRegistro({
           adminEmail,
-          nombre:      user.nombre,
-          email:       user.email,
-          institucion: data.institucion,
-          motivo:      data.motivo,
+          nombre:        user.nombre,
+          email:         user.email,
+          institucion:   data.institucion,
+          motivo:        data.motivo,
+          rolSolicitado: user.rolSolicitado,
         }).catch((err) => logger.error(`[auth] Error email admin registro:`, err.message))
       );
     }).catch((err) => logger.error(`[auth] Error obteniendo emails admin:`, err.message));
@@ -267,12 +269,9 @@ export async function resetPassword(req, res, next) {
 export async function me(req, res, next) {
   try {
     if (req.user?.tipo === 'visitante') {
-      // El nombre viaja en el JWT desde loginVisitante() — antes se devolvía
-      // 'Visitante' fijo aquí, sin importar el nombre que la persona escribió
-      // al entrar, así que nunca se veía reflejado en la UI.
       return res.json({
         id:     req.user.visitanteId,
-        nombre: req.user.nombre || 'Visitante',
+        nombre: 'Visitante',
         email:  null,
         rol:    'visitante',
         tipo:   'visitante',
@@ -280,6 +279,36 @@ export async function me(req, res, next) {
     }
     const user = await authService.getProfile(req.user.id);
     res.json(user);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/v1/auth/completar-perfil — cierra la alerta de perfil incompleto tras OAuth */
+export async function completarPerfil(req, res, next) {
+  try {
+    const data = completarPerfilSchema.parse(req.body);
+    const user = await authService.completarPerfil(req.user.id, data);
+    res.json(user);
+
+    // Notificar a los admins de la solicitud de rol — fuera del response,
+    // igual que register(). Solo dispara si de verdad pidió un rol elevado.
+    if (data.perfilSolicitado) {
+      notificacionHabilitada('emailNotifs').then(async (habilitado) => {
+        if (!habilitado) return;
+        const adminEmails = await getAdminEmails();
+        adminEmails.forEach((adminEmail) =>
+          notifyAdminSolicitudRolOAuth({
+            adminEmail,
+            nombre:        user.nombre,
+            email:         user.email,
+            institucion:   data.institucion,
+            rolSolicitado: data.perfilSolicitado,
+            motivo:        data.motivo,
+          }).catch((err) => logger.error(`[auth] Error email admin solicitud de rol:`, err.message))
+        );
+      }).catch((err) => logger.error(`[auth] Error obteniendo emails admin (completarPerfil):`, err.message));
+    }
   } catch (err) {
     next(err);
   }
