@@ -27,8 +27,9 @@ function filaGeovisor(overrides = {}) {
     id: 'geovisor-uuid-1', slug: 'geologia-choco', titulo: 'Geología del Chocó',
     subtitulo: null, descripcion: null, cita: null, categoria: 'Geología',
     conexion_geoserver_id: 'conexion-uuid-1', workspaces_geoserver: ['t_15_geologia'],
+    capas_seleccionadas: [],
     color_por_tema: {}, centro_lat: 5.55, centro_lng: -76.6, zoom_inicial: 8,
-    basemap_defecto: 'calles', area_max_ha: null, presets_area: [], ia_habilitada: false,
+    basemap_defecto: 'calles', area_max_ha: null, presets_area: [],
     visibilidad: 'publico', presentacion: { mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] },
     thumbnail_url: null, activo: true, orden: 0, creado_en: new Date().toISOString(),
     ...overrides,
@@ -84,6 +85,59 @@ describe('proxyWmsDeGeovisor — solo capas permitidas para este geovisor', () =
 
     const params = new URLSearchParams({ layers: 't_15_geologia:unidades,t_20_hidrologia:cuencas' });
     await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('proxyWmsDeGeovisor — capas_seleccionadas (capas sueltas de distintos workspaces)', () => {
+  it('permite mezclar dos capas de dos workspaces/temas distintos', async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [filaGeovisor({
+        workspaces_geoserver: [],
+        capas_seleccionadas: ['t_15_geologia:unidades', 't_20_hidrologia:cuencas'],
+      })],
+    });
+    vi.mocked(geoserver.proxyWms).mockResolvedValueOnce({ status: 200, headers: new Map(), arrayBuffer: async () => new ArrayBuffer(0) });
+
+    const params = new URLSearchParams({ layers: 't_15_geologia:unidades,t_20_hidrologia:cuencas' });
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).resolves.toBeDefined();
+  });
+
+  it('rechaza una capa del workspace correcto que no está en capas_seleccionadas — la lista es exacta, no por workspace', async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [filaGeovisor({
+        workspaces_geoserver: ['t_15_geologia'],
+        capas_seleccionadas: ['t_15_geologia:unidades'],
+      })],
+    });
+
+    const params = new URLSearchParams({ layers: 't_15_geologia:fallas' }); // mismo workspace, otra capa
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('capas_seleccionadas manda sobre workspaces_geoserver cuando ambos están presentes', async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [filaGeovisor({
+        workspaces_geoserver: ['t_20_hidrologia'], // NO incluye geología
+        capas_seleccionadas: ['t_15_geologia:unidades'], // pero sí eligió esta capa suelta
+      })],
+    });
+    vi.mocked(geoserver.proxyWms).mockResolvedValueOnce({ status: 200, headers: new Map(), arrayBuffer: async () => new ArrayBuffer(0) });
+
+    const params = new URLSearchParams({ layers: 't_15_geologia:unidades' });
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).resolves.toBeDefined();
+  });
+
+  it('la exclusión de seguridad sigue bloqueando aunque capas_seleccionadas la incluya por error', async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [filaGeovisor({
+        workspaces_geoserver: [],
+        capas_seleccionadas: ['t_32_areas_reglamentacion_especial:resguardos'],
+      })],
+    });
+
+    const params = new URLSearchParams({ layers: 't_32_areas_reglamentacion_especial:resguardos' });
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 403 });
+    expect(geoserver.proxyWms).not.toHaveBeenCalled();
   });
 });
 
