@@ -4,6 +4,9 @@
  * una `conexion` ({ id, url, usuarioLectura, passwordDescifrada, timeoutMs }) en vez de leer
  * env.GEOSERVER_* fijas -- soporta más de un servidor GeoServer (tabla `conexiones_geoserver`)
  * sin cambiar código, como se acordó en docs/PORTAL_GEOVISORES_DISENO.md § 1.
+ * Desde la migración 047 también soporta conexiones "externas" (WMS/WFS de
+ * terceros) sin credenciales -- Authorization solo se manda cuando la conexión
+ * las tiene, este módulo no necesita saber si el tipo es propio o externo.
  */
 import { geometriaAWkt } from '../../utils/geometry.js';
 
@@ -22,7 +25,9 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
     const respuesta = await fetch(url, {
       signal: controlador.signal,
       headers: {
-        Authorization: `Basic ${credencialesBasicAuth(conexion)}`,
+        ...(conexion.usuarioLectura && conexion.passwordDescifrada
+          ? { Authorization: `Basic ${credencialesBasicAuth(conexion)}` }
+          : {}),
         ...(aceptar ? { Accept: aceptar } : {}),
       },
     });

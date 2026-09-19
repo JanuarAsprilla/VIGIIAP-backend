@@ -85,6 +85,25 @@ describe('obtenerCapacidadesWfs', () => {
     const urlLlamada = new URL(fetchMock.mock.calls[0][0]);
     expect(urlLlamada.origin + urlLlamada.pathname).toContain('otro-geoserver.test.local');
   });
+
+  it('manda Authorization Basic cuando la conexión tiene credenciales', async () => {
+    const fetchMock = stubFetchPorOperacion({ GetCapabilities: () => capabilitiesConFeatureType('') });
+
+    await obtenerCapacidadesWfs(conexion);
+
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(
+      `Basic ${Buffer.from('lector:lector-pass').toString('base64')}`,
+    );
+  });
+
+  it('conexión externa sin credenciales (usuarioLectura/passwordDescifrada null): no manda Authorization', async () => {
+    const fetchMock = stubFetchPorOperacion({ GetCapabilities: () => capabilitiesConFeatureType('') });
+    const conexionExterna = { ...conexion, usuarioLectura: null, passwordDescifrada: null };
+
+    await obtenerCapacidadesWfs(conexionExterna);
+
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
 });
 
 describe('proxyWms', () => {

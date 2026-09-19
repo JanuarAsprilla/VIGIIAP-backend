@@ -120,6 +120,27 @@ describe('errorHandler middleware', () => {
     expect(r.json.mock.calls[0][0].error).toBe('Ya existe un registro con esos datos.');
   });
 
+  it('retorna 422 con mensaje amigable para conexión GeoServer "propia" sin credenciales (23514)', () => {
+    const err = Object.assign(new Error('new row for relation "conexiones_geoserver" violates check constraint "conexiones_geoserver_credenciales_check"'), {
+      code: '23514',
+      constraint: 'conexiones_geoserver_credenciales_check',
+    });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(422);
+    expect(r.json.mock.calls[0][0].error).toMatch(/Usuario y contraseña son obligatorios/i);
+  });
+
+  it('un CHECK (23514) que no reconoce sigue al manejo genérico (500)', () => {
+    const err = Object.assign(new Error('check constraint violated'), {
+      code: '23514',
+      constraint: 'algun_otro_check',
+    });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(500);
+  });
+
   it('registra en errorTracking los errores 500, sin retrasar la respuesta al cliente', () => {
     const err = new Error('boom');
     const r = res();
