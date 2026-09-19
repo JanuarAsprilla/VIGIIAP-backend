@@ -572,29 +572,8 @@ describe('admin.service → setConfiguracion()', () => {
 });
 
 // ─── Additional imports ────────────────────────────────────────────────────
-import { getNotificaciones, getAuditLog, getErrorLog, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
+import { getAuditLog, getErrorLog, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
-
-describe('admin.service → getNotificaciones()', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('retorna lista de notificaciones combinadas y ordenadas', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ id: 'u1', nombre: 'Juan', email: 'j@j.co', creado_en: new Date() }] })
-      .mockResolvedValueOnce({ rows: [{ id: 's1', tipo: 'agua', estado: 'pendiente', creado_en: new Date(), solicitante: 'Juan' }] });
-    const result = await getNotificaciones();
-    expect(Array.isArray(result)).toBe(true);
-    expect(query).toHaveBeenCalledTimes(2);
-  });
-
-  it('retorna lista vacía si no hay datos', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
-    const result = await getNotificaciones();
-    expect(result).toHaveLength(0);
-  });
-});
 
 describe('admin.service → getAuditLog()', () => {
   beforeEach(() => vi.clearAllMocks());

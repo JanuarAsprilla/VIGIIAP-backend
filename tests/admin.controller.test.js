@@ -4,7 +4,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../src/modules/admin/admin.service.js', () => ({
-  getNotificaciones:  vi.fn(),
   getConfiguracion:   vi.fn(),
   setConfiguracion:   vi.fn(),
   listarUsuarios:     vi.fn(),
@@ -64,7 +63,7 @@ import { notifyUsuarioActivacion, notifyRolCambiado, sendTestEmail } from '../sr
 import { revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import { setPermisosAdmin } from '../src/modules/admin/modulos.service.js';
 import {
-  notificaciones, getConfiguracion, setConfiguracion, probarCorreo, stats, resetStatsCache,
+  getConfiguracion, setConfiguracion, probarCorreo, stats, resetStatsCache,
   dashboardTendencias,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
   auditLog, errorLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
@@ -82,25 +81,6 @@ const SUPER_TARGET = 'c3d4e5f6-a7b8-9012-cdef-012345678912';
 function res() {
   return { status: vi.fn().mockReturnThis(), json: vi.fn(), end: vi.fn() };
 }
-
-// ── notificaciones() ──────────────────────────────────────────────────────
-
-describe('admin.controller → notificaciones()', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('retorna las notificaciones del servicio', async () => {
-    adminService.getNotificaciones.mockResolvedValue([{ id: 1 }]);
-    const r = res();
-    await notificaciones({}, r, mockNext);
-    expect(r.json).toHaveBeenCalledWith([{ id: 1 }]);
-  });
-
-  it('llama next(err) si el servicio lanza', async () => {
-    adminService.getNotificaciones.mockRejectedValue(new Error('db'));
-    await notificaciones({}, res(), mockNext);
-    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
-  });
-});
 
 describe('admin.controller → reportes()', () => {
   beforeEach(() => vi.clearAllMocks());

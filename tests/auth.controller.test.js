@@ -40,7 +40,6 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   crearAdminSig:    vi.fn(),
   actualizarUsuario: vi.fn(),
   eliminarUsuario:   vi.fn(),
-  getNotificaciones: vi.fn(),
   getConfiguracion:  vi.fn(),
   setConfiguracion:  vi.fn(),
   getAuditLog:       vi.fn(),
@@ -58,6 +57,7 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 import * as authService from '../src/modules/auth/auth.service.js';
+import { query } from '../src/config/database.js';
 import { revokeToken } from '../src/utils/tokenBlacklist.js';
 import { logout, refresh, me, login, completarPerfil } from '../src/modules/auth/auth.controller.js';
 
@@ -504,6 +504,30 @@ describe('auth.controller → verifyEmail()', () => {
     await vi.waitFor(() => {
       expect(mailer.notifyRegistroRecibido).toHaveBeenCalled();
       expect(mailer.notifyAdminUsuarioVerificado).toHaveBeenCalled();
+    });
+  });
+
+  // Regresión: la notificación en el panel (tabla notificaciones) no debe
+  // depender de emailNotifs -- ese flag solo apaga el correo, no el panel.
+  // mockImplementation (no mockResolvedValueOnce) porque notificarAdmins()
+  // corre fire-and-forget -- la del test anterior puede seguir en vuelo y
+  // consumir un "once" que en realidad era para este test.
+  it('crea la notificación en el panel para los admins, independiente de emailNotifs', async () => {
+    authService.verifyEmail.mockResolvedValue({ alreadyVerified: false, email: 'j@j.co', nombre: 'Juan' });
+    mailer.notifyRegistroRecibido.mockResolvedValueOnce(undefined);
+    query.mockImplementation((sql) =>
+      sql.includes('FROM usuarios WHERE rol IN')
+        ? Promise.resolve({ rows: [{ id: 'admin-1' }] })
+        : Promise.resolve({ rows: [] })
+    );
+
+    const r = res();
+    await verifyEmail({ params: { token: 'tok-valid' } }, r, mockNext);
+
+    await vi.waitFor(() => {
+      const insertCall = query.mock.calls.find(([sql]) => sql.includes('INSERT INTO notificaciones'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[1]).toContain('nuevo_usuario');
     });
   });
 

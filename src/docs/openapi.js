@@ -896,16 +896,37 @@ export const openApiSpec = {
         },
       },
     },
-    // ─── Admin — notificaciones, descargas stats, exports ─────────────────────
-    '/admin/notificaciones': {
+    // ─── Notificaciones ─────────────────────────────────────────────────────────
+    '/notificaciones': {
       get: {
-        tags: ['Admin'],
-        summary: 'Notificaciones recientes para el panel admin',
-        description: 'Devuelve los últimos 5 usuarios pendientes de aprobación y las 5 solicitudes más recientes en estado pendiente/en_revision.',
+        tags: ['Notificaciones'],
+        summary: 'Notificaciones del usuario autenticado',
+        description: 'Devuelve las últimas notificaciones del usuario autenticado (cualquier rol con cuenta real, no solo admins), más recientes primero.',
         security: [{ cookieAuth: [] }, { bearerAuth: [] }],
         responses: { 200: { description: 'Lista de notificaciones ordenada por fecha' } },
       },
     },
+    '/notificaciones/{id}/leida': {
+      patch: {
+        tags: ['Notificaciones'],
+        summary: 'Marca una notificación como leída',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          200: { description: 'Notificación marcada como leída' },
+          404: { description: 'No encontrada o no pertenece al usuario' },
+        },
+      },
+    },
+    '/notificaciones/leer-todas': {
+      patch: {
+        tags: ['Notificaciones'],
+        summary: 'Marca todas las notificaciones pendientes como leídas',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { 200: { description: 'Cantidad de notificaciones marcadas' } },
+      },
+    },
+    // ─── Admin — descargas stats, exports ──────────────────────────────────────
     '/admin/descargas/stats': {
       get: {
         tags: ['Admin'],

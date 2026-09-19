@@ -3,7 +3,7 @@ import { getPapelera, restaurar, purgar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, dashboardTendencias, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
-  getConfiguracion, setConfiguracion, probarCorreo, notificaciones, reportes,
+  getConfiguracion, setConfiguracion, probarCorreo, reportes,
   superStats, crearAdmin, listarAdministradores, setPermisosAdminController,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
   batchUsuarios,
@@ -23,7 +23,6 @@ router.use(authenticate, authorize('admin_sig'), csrfProtection, adminRateLimite
 
 router.get('/stats',              stats);
 router.get('/dashboard/tendencias', dashboardTendencias);
-router.get('/notificaciones',   notificaciones);
 router.get('/reportes',         requireModulo('reportes', 'ver'), reportes);
 router.get('/usuarios',         requireModulo('usuarios', 'ver'), listarUsuarios);
 router.post('/usuarios',        requireModulo('usuarios', 'editar'), crearUsuario);

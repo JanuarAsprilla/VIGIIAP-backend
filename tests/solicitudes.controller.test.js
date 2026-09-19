@@ -191,6 +191,28 @@ describe('updateEstado()', () => {
     expect(notifySolicitudEstado).toHaveBeenCalledWith(expect.objectContaining({ email: 'ana@test.co' }));
   });
 
+  // Regresión: quien envió la solicitud debe recibir una notificación en el
+  // panel cuando su estado cambia -- es justo el caso que antes no existía
+  // (el panel viejo solo mostraba eventos relevantes para admins).
+  it('crea una notificación en el panel para quien envió la solicitud', async () => {
+    solService.updateEstado.mockResolvedValue({
+      ...SOL, usuario_id: 'user-solicitante-1', owner_nombre: 'Ana', owner_email: 'ana@test.co',
+    });
+    const r = res();
+    await updateEstado(
+      { params: { id: SOL.id }, body: { estado: 'aprobada', nota: 'Todo en orden' }, user: ADMIN, ip: '::1' },
+      r, mockNext,
+    );
+    await vi.waitFor(() => {
+      const insertCall = query.mock.calls.find(([sql]) => sql.includes('INSERT INTO notificaciones'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[1]).toEqual([
+        'user-solicitante-1', 'solicitud_actualizada',
+        expect.stringContaining('aprobada'), '/solicitudes',
+      ]);
+    });
+  });
+
   it('sin owner_email no intenta enviar email', async () => {
     solService.updateEstado.mockResolvedValue({ ...SOL, owner_email: null });
     const r = res();
@@ -321,6 +343,38 @@ describe('store()', () => {
       expect(logger.error).toHaveBeenCalledWith(
         '[solicitudes] Email recibida error:', expect.any(String),
       );
+    });
+  });
+
+  // Regresión: la notificación en el panel no depende de solicitudNotifs
+  // (ese flag solo apaga el correo) ni de getAdminEmails (esa lista es para
+  // el correo; notificarAdmins() consulta admin_sig/super_admin directo).
+  // mockImplementation (no mockResolvedValueOnce) porque las llamadas
+  // fire-and-forget de tests anteriores pueden seguir en vuelo.
+  it('crea una notificación en el panel para todos los admins activos', async () => {
+    query.mockImplementation((sql) => {
+      if (sql.includes('SELECT nombre, email FROM usuarios')) {
+        return Promise.resolve({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
+      }
+      if (sql.includes('FROM usuarios WHERE rol IN')) {
+        return Promise.resolve({ rows: [{ id: 'admin-1' }, { id: 'admin-2' }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+    const r = res();
+    await store({
+      body: { tipo: 'uso-suelo', descripcion: 'Solicitud de prueba para el test' },
+      user: USER, ip: '::1',
+    }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(201);
+
+    await vi.waitFor(() => {
+      const insertCall = query.mock.calls.find(([sql]) => sql.includes('INSERT INTO notificaciones'));
+      expect(insertCall).toBeDefined();
+      expect(insertCall[1]).toEqual([
+        'admin-1', 'nueva_solicitud', expect.stringContaining('Juan'), '/admin/solicitudes',
+        'admin-2', 'nueva_solicitud', expect.stringContaining('Juan'), '/admin/solicitudes',
+      ]);
     });
   });
 
