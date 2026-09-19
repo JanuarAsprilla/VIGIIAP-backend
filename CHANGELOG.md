@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.2.0...v1.2.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* valida GEOSERVER_ENCRYPTION_KEY al arrancar y la documenta en .env.example ([#107](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/107)) ([b3a5c5d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b3a5c5dc8de8d5d5a67aa61c6d01b83ac8c37a1f))
+
 ## [1.2.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.1.0...v1.2.0) (2026-09-19)
 
 
