@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.2.1...v1.3.0) (2026-09-19)
+
+
+### Features
+
+* agrega terminosUso como campo público editable de configuración ([#125](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/125)) ([3c3167d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3c3167da6b043ecbeebbde5ca16e010fe1b82047))
+* ajuste automático y gradual del límite de peticiones ([#123](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/123)) ([78b7e0f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/78b7e0f29009fbcebfe4e52ed5bfa473fe37fd82))
+* soft delete para geovisores + purga permanente en Papelera ([#124](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/124)) ([5992947](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/599294749f5c808ecf381ec064d6ad0968192177))
+
+
+### Bug Fixes
+
+* eleva límites de rate limiting general y de autenticación ([#121](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/121)) ([109420c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/109420c382b9de60c936c1ee9becf246629a7d77))
+
 ## [1.2.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.2.0...v1.2.1) (2026-09-19)
 
 
