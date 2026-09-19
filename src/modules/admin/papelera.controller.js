@@ -8,15 +8,17 @@ const TABLAS = {
   mapa:      'mapas',
   documento: 'documentos',
   categoria: 'categorias',
+  geovisor:  'geovisores',
 };
 // Columnas explícitas por tipo — evita exposición de campos futuros con SELECT *
 const COLS = {
   mapa:      'm.id, m.titulo, m.slug, m.categoria, m.activo, m.deleted_at',
   documento: 'd.id, d.titulo, d.slug, d.tipo, d.activo, d.deleted_at',
   categoria: 'c.nombre, c.thumbnail_url, c.deleted_at',
+  geovisor:  'g.id, g.titulo, g.slug, g.categoria, g.activo, g.deleted_at',
 };
 // Alias de tabla para queries
-const ALIAS = { mapa: 'm', documento: 'd', categoria: 'c' };
+const ALIAS = { mapa: 'm', documento: 'd', categoria: 'c', geovisor: 'g' };
 
 
 
@@ -82,5 +84,48 @@ export async function restaurar(req, res, next) {
     });
 
     res.json({ message: `${tipo} restaurado correctamente` });
+  } catch (err) { next(err); }
+}
+
+/**
+ * DELETE /api/admin/papelera/:tipo/:id — purga permanente, irreversible.
+ * A diferencia de restaurar(), esto sí borra la fila -- por eso exige que ya
+ * esté en papelera (deleted_at IS NOT NULL): purgar directo sin pasar antes
+ * por la papelera no es la vía de este endpoint.
+ */
+export async function purgar(req, res, next) {
+  try {
+    const { tipo, id } = req.params;
+    if (!TABLAS[tipo]) {
+      return res.status(400).json({ error: `tipo debe ser uno de: ${Object.keys(TABLAS).join(', ')}` });
+    }
+    const tabla = TABLAS[tipo];
+    const idCol = tipo === 'categoria' ? 'nombre' : 'id';
+    if (idCol === 'id' && !UUID_RE.test(id)) {
+      return res.status(400).json({ error: 'id debe ser un UUID válido' });
+    }
+    if (idCol === 'nombre' && (id.length < 2 || id.length > 100)) {
+      return res.status(400).json({ error: 'nombre inválido' });
+    }
+
+    const { rowCount } = await query(
+      `DELETE FROM ${tabla} WHERE ${idCol} = $1 AND deleted_at IS NOT NULL`,
+      [id],
+    );
+    if (!rowCount) {
+      return res.status(404).json({ error: `${tipo} no encontrado en papelera` });
+    }
+
+    registrarAuditoria({
+      accion:       `purgar_${tipo}`,
+      modulo:       'admin',
+      entidadId:    id,
+      descripcion:  `${tipo} eliminado permanentemente desde papelera`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+
+    res.json({ message: `${tipo} eliminado permanentemente` });
   } catch (err) { next(err); }
 }

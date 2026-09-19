@@ -15,7 +15,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import { query } from '../src/config/database.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
-import { getPapelera, restaurar } from '../src/modules/admin/papelera.controller.js';
+import { getPapelera, restaurar, purgar } from '../src/modules/admin/papelera.controller.js';
 
 const ADMIN_USER = { id: 'admin-uuid', email: 'admin@iiap.org.co', rol: 'admin_sig' };
 
@@ -106,6 +106,23 @@ describe('getPapelera()', () => {
     const res = mockRes();
     await getPapelera(req, res, mockNext);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [] }));
+  });
+
+  it('retorna datos para tipo=geovisor', async () => {
+    const GEOVISOR = { id: 'uuid-g1', titulo: 'Geología del Chocó', deleted_at: new Date() };
+    query
+      .mockResolvedValueOnce({ rows: [GEOVISOR] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+
+    const req = { query: { tipo: 'geovisor' } };
+    const res = mockRes();
+    await getPapelera(req, res, mockNext);
+
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/FROM geovisores g\b/);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [GEOVISOR] })
+    );
   });
 
   it('admite paginación con page y limit', async () => {
@@ -216,6 +233,91 @@ describe('restaurar()', () => {
     const req = { params: { tipo: 'mapa', id: 'd4e5f6a7-b8c9-0123-def0-234567890123' }, user: ADMIN_USER, ip: '10.0.0.1' };
     const res = mockRes();
     await restaurar(req, res, mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('restaura un geovisor', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'e5f6a7b8-c9d0-1234-ef01-345678901234' }] });
+    const req = { params: { tipo: 'geovisor', id: 'e5f6a7b8-c9d0-1234-ef01-345678901234' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await restaurar(req, res, mockNext);
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/UPDATE geovisores/);
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'restaurar_geovisor' })
+    );
+  });
+});
+
+// ─── purgar() ──────────────────────────────────────────────────────────────────
+
+describe('purgar()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 400 si tipo es inválido', async () => {
+    const req = { params: { tipo: 'invalido', id: 'uuid-1' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 si id no es un UUID válido para tipo=geovisor', async () => {
+    const req = { params: { tipo: 'geovisor', id: 'no-es-un-uuid' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 si el nombre de categoria es muy corto', async () => {
+    const req = { params: { tipo: 'categoria', id: 'A' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('purga un geovisor -- DELETE físico, solo si ya estaba en papelera', async () => {
+    query.mockResolvedValueOnce({ rowCount: 1 });
+    const req = { params: { tipo: 'geovisor', id: 'f6a7b8c9-d0e1-2345-f012-456789012345' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/DELETE FROM geovisores/);
+    expect(sql).toMatch(/deleted_at IS NOT NULL/);
+    expect(params).toEqual(['f6a7b8c9-d0e1-2345-f012-456789012345']);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('eliminado permanentemente') })
+    );
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'purgar_geovisor' })
+    );
+  });
+
+  it('purga una categoria usando nombre como columna clave', async () => {
+    query.mockResolvedValueOnce({ rowCount: 1 });
+    const req = { params: { tipo: 'categoria', id: 'Biodiversidad' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/WHERE nombre = \$1/);
+  });
+
+  it('retorna 404 si el recurso no está en la papelera', async () => {
+    query.mockResolvedValueOnce({ rowCount: 0 });
+    const req = { params: { tipo: 'mapa', id: 'a7b8c9d0-e1f2-3456-0123-567890123456' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('llama next(err) ante error de DB', async () => {
+    query.mockRejectedValueOnce(new Error('DB fail'));
+    const req = { params: { tipo: 'mapa', id: 'b8c9d0e1-f2a3-4567-1234-678901234567' }, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await purgar(req, res, mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });

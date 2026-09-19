@@ -23,7 +23,7 @@ vi.mock('../src/utils/slugify.js', () => ({
 import { query } from '../src/config/database.js';
 import { obtenerConexionParaConector } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
-import { create, update, obtenerCatalogoDeGeovisor } from '../src/modules/geovisores/geovisores.service.js';
+import { create, update, remove, obtenerCatalogoDeGeovisor } from '../src/modules/geovisores/geovisores.service.js';
 
 const conexion = { id: 'conexion-uuid-1', url: 'https://geoserver.test.local/geoserver' };
 
@@ -100,6 +100,29 @@ describe('update() — capasSeleccionadas viaja por MAPA_CAMPOS como columna sim
 
     const [sql] = query.mock.calls[0];
     expect(sql).not.toMatch(/capas_seleccionadas/);
+  });
+});
+
+// Regresión: remove() antes hacía un DELETE físico sin ninguna cobertura de
+// test -- se eliminaba sin pasar por Papelera. Ahora es soft delete, mismo
+// patrón que mapas/documentos/categorías (ver migración 042).
+describe('remove() — soft delete, no DELETE físico', () => {
+  it('marca deleted_at en vez de borrar la fila', async () => {
+    query.mockResolvedValueOnce({ rowCount: 1 });
+
+    await remove('geovisor-uuid-1');
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/UPDATE geovisores SET deleted_at = NOW\(\)/);
+    expect(sql).not.toMatch(/DELETE FROM/);
+    expect(sql).toMatch(/AND deleted_at IS NULL/);
+    expect(params).toEqual(['geovisor-uuid-1']);
+  });
+
+  it('lanza 404 si el geovisor no existe o ya estaba eliminado', async () => {
+    query.mockResolvedValueOnce({ rowCount: 0 });
+
+    await expect(remove('geovisor-inexistente')).rejects.toMatchObject({ status: 404 });
   });
 });
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPapelera, restaurar } from './papelera.controller.js';
+import { getPapelera, restaurar, purgar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, dashboardTendencias, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
@@ -59,5 +59,6 @@ router.get('/export/descargas',   exportDescargas);
 // ── Papelera (soft deletes) — solo super_admin ────────────────────────────────
 router.get('/papelera',                      requireSuperAdmin, getPapelera);
 router.patch('/papelera/:tipo/:id/restaurar', requireSuperAdmin, restaurar);
+router.delete('/papelera/:tipo/:id',          requireSuperAdmin, purgar);
 
 export default router;
