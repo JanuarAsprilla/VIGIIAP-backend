@@ -15,22 +15,32 @@ beforeEach(() => vi.clearAllMocks());
 
 describe('crearNotificacion()', () => {
   it('inserta una fila para el destinatario indicado', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
+    query
+      .mockResolvedValueOnce({ rows: [] })  // SELECT preferencia -- sin fila = recibir
+      .mockResolvedValueOnce({ rows: [] }); // INSERT
 
     await crearNotificacion({
       destinatarioId: 'user-1', tipo: 'solicitud_actualizada', mensaje: 'Tu solicitud cambió', link: '/solicitudes',
     });
 
-    const [sql, params] = query.mock.calls[0];
-    expect(sql).toMatch(/INSERT INTO notificaciones/);
-    expect(params).toEqual(['user-1', 'solicitud_actualizada', 'Tu solicitud cambió', '/solicitudes']);
+    const [insertSql, insertParams] = query.mock.calls[1];
+    expect(insertSql).toMatch(/INSERT INTO notificaciones/);
+    expect(insertParams).toEqual(['user-1', 'solicitud_actualizada', 'Tu solicitud cambió', '/solicitudes']);
   });
 
   it('link es opcional -- por defecto null', async () => {
-    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
     await crearNotificacion({ destinatarioId: 'user-1', tipo: 'x', mensaje: 'y' });
-    const [, params] = query.mock.calls[0];
+    const [, params] = query.mock.calls[1];
     expect(params[3]).toBeNull();
+  });
+
+  it('no inserta nada si el destinatario silenció ese tipo (en_pantalla=false)', async () => {
+    query.mockResolvedValueOnce({ rows: [{ en_pantalla: false }] });
+
+    await crearNotificacion({ destinatarioId: 'user-1', tipo: 'solicitud_actualizada', mensaje: 'y' });
+
+    expect(query).toHaveBeenCalledTimes(1); // solo el SELECT, ningún INSERT
   });
 });
 
@@ -58,6 +68,19 @@ describe('notificarAdmins()', () => {
     await notificarAdmins({ tipo: 'x', mensaje: 'y' });
 
     expect(query).toHaveBeenCalledTimes(1); // solo el SELECT, ningún INSERT
+  });
+
+  it('excluye a los admins que silenciaron ese tipo -- el SELECT ya los filtra vía LEFT JOIN', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'admin-1' }] }) // solo admin-1 pasa el filtro COALESCE(en_pantalla, true)
+      .mockResolvedValueOnce({ rows: [] });
+
+    await notificarAdmins({ tipo: 'nueva_solicitud', mensaje: 'y' });
+
+    const [selectSql, selectParams] = query.mock.calls[0];
+    expect(selectSql).toMatch(/LEFT JOIN usuario_notificacion_prefs/);
+    expect(selectSql).toMatch(/COALESCE\(p\.en_pantalla, true\) = true/);
+    expect(selectParams).toEqual(['nueva_solicitud']);
   });
 });
 

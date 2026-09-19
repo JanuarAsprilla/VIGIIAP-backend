@@ -356,7 +356,7 @@ describe('store()', () => {
       if (sql.includes('SELECT nombre, email FROM usuarios')) {
         return Promise.resolve({ rows: [{ nombre: 'Juan', email: 'juan@test.co' }] });
       }
-      if (sql.includes('FROM usuarios WHERE rol IN')) {
+      if (sql.includes("rol IN ('admin_sig', 'super_admin')")) {
         return Promise.resolve({ rows: [{ id: 'admin-1' }, { id: 'admin-2' }] });
       }
       return Promise.resolve({ rows: [] });

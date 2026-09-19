@@ -516,7 +516,7 @@ describe('auth.controller → verifyEmail()', () => {
     authService.verifyEmail.mockResolvedValue({ alreadyVerified: false, email: 'j@j.co', nombre: 'Juan' });
     mailer.notifyRegistroRecibido.mockResolvedValueOnce(undefined);
     query.mockImplementation((sql) =>
-      sql.includes('FROM usuarios WHERE rol IN')
+      sql.includes("rol IN ('admin_sig', 'super_admin')")
         ? Promise.resolve({ rows: [{ id: 'admin-1' }] })
         : Promise.resolve({ rows: [] })
     );

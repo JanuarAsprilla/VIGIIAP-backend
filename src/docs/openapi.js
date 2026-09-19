@@ -926,6 +926,55 @@ export const openApiSpec = {
         responses: { 200: { description: 'Cantidad de notificaciones marcadas' } },
       },
     },
+    '/notificaciones/tipos': {
+      get: {
+        tags: ['Notificaciones'],
+        summary: 'Catálogo de tipos de notificación',
+        description: 'Tipos activos (o todos, con ?admin=true para admin_sig/super_admin) -- ícono/color/etiqueta/audiencia.',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { 200: { description: 'Lista de tipos' } },
+      },
+      post: {
+        tags: ['Notificaciones'],
+        summary: 'Crea un tipo de notificación (solo super_admin)',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { 201: { description: 'Tipo creado' }, 403: { description: 'Solo super_admin' } },
+      },
+    },
+    '/notificaciones/tipos/{clave}': {
+      patch: {
+        tags: ['Notificaciones'],
+        summary: 'Actualiza un tipo de notificación (solo super_admin)',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        parameters: [{ name: 'clave', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Tipo actualizado' }, 404: { description: 'No encontrado' } },
+      },
+      delete: {
+        tags: ['Notificaciones'],
+        summary: 'Desactiva un tipo de notificación -- soft delete (solo super_admin)',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        parameters: [{ name: 'clave', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 204: { description: 'Desactivado' }, 404: { description: 'No encontrado' } },
+      },
+    },
+    '/notificaciones/prefs': {
+      get: {
+        tags: ['Notificaciones'],
+        summary: 'Preferencias de notificación del usuario autenticado',
+        description: 'Tipos aplicables a su rol, con en_pantalla resuelto (default true si no hay fila guardada).',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { 200: { description: 'Lista de preferencias' } },
+      },
+    },
+    '/notificaciones/prefs/{clave}': {
+      patch: {
+        tags: ['Notificaciones'],
+        summary: 'Actualiza la preferencia "en pantalla" para un tipo',
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        parameters: [{ name: 'clave', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Preferencia actualizada' }, 404: { description: 'Tipo no encontrado' } },
+      },
+    },
     // ─── Admin — descargas stats, exports ──────────────────────────────────────
     '/admin/descargas/stats': {
       get: {
