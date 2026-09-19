@@ -15,7 +15,7 @@ import {
 } from './auth.controller.js';
 import { authenticate } from '../../middlewares/auth.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
-import { authRateLimiter, loginAccountRateLimiter, passwordResetLimiter } from '../../middlewares/rateLimiter.js';
+import { authRateLimiter, loginAccountRateLimiter, passwordResetLimiter, twoFactorRateLimiter } from '../../middlewares/rateLimiter.js';
 import { getSessions, revokeSession, revokeAllSessions } from './sessions.controller.js';
 import { setup as tfSetup, verify as tfVerify, disable as tfDisable, confirm as tfConfirm } from './twoFactor.controller.js';
 import { changeExpiredPassword } from './expiredPassword.controller.js';
@@ -52,10 +52,12 @@ router.delete('/sessions',     authenticate, csrfProtection, revokeAllSessions);
 router.post('/change-expired-password', authRateLimiter, changeExpiredPassword);
 
 // 2FA TOTP
-// authRateLimiter en todos los endpoints 2FA — previene fuerza bruta con token robado
-router.post('/2fa/setup',    authenticate, authRateLimiter, csrfProtection, tfSetup);
-router.post('/2fa/verify',   authenticate, authRateLimiter, csrfProtection, tfVerify);
-router.post('/2fa/disable',  authenticate, authRateLimiter, csrfProtection, tfDisable);
-router.post('/2fa/confirm',  authRateLimiter, tfConfirm); // usa cookie vigiiap_2fa_temp, sin authenticate
+// twoFactorRateLimiter en todos los endpoints 2FA — previene fuerza bruta
+// contra un código robado. Deliberadamente separado de authRateLimiter (ver
+// comentario en rateLimiter.js): este no sube junto con el resto.
+router.post('/2fa/setup',    authenticate, twoFactorRateLimiter, csrfProtection, tfSetup);
+router.post('/2fa/verify',   authenticate, twoFactorRateLimiter, csrfProtection, tfVerify);
+router.post('/2fa/disable',  authenticate, twoFactorRateLimiter, csrfProtection, tfDisable);
+router.post('/2fa/confirm',  twoFactorRateLimiter, tfConfirm); // usa cookie vigiiap_2fa_temp, sin authenticate
 
 export default router;

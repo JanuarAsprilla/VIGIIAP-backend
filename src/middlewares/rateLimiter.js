@@ -47,6 +47,10 @@ export const rateLimiter = rateLimit({
  * IP contra fuerza bruta distribuida entre cuentas — el freno específico por
  * cuenta objetivo vive en loginAccountRateLimiter, así que este no necesita
  * ser tan bajo como para golpear a una IP compartida por personal legítimo.
+ *
+ * NO se usa en los endpoints 2FA (ver twoFactorRateLimiter) — ahí sí importa
+ * mantener el límite bajo sin importar cuánta gente comparta la IP, porque
+ * cada intento es una adivinanza directa de un código TOTP de 6 dígitos.
  */
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -55,6 +59,24 @@ export const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de autenticación. Intenta en 15 minutos.' },
+});
+
+/**
+ * Verificación de código 2FA (TOTP): deliberadamente se mantiene en 10 por
+ * 15 min por IP, el valor original de authRateLimiter antes de subirlo a 30
+ * para el resto de endpoints de auth. Subir este límite junto con los demás
+ * le habría dado a quien intenta adivinar un código robado el triple de
+ * intentos por IP — el problema de "IP institucional compartida" que motivó
+ * subir authRateLimiter no aplica aquí: una persona legítima necesita 1-2
+ * intentos, nunca decenas, así que no hay razón para relajarlo.
+ */
+export const twoFactorRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: normalizeIp,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de verificación. Intenta en 15 minutos.' },
 });
 
 /**
