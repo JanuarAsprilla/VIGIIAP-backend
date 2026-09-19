@@ -269,7 +269,7 @@ function bodyText(html) {
 // ─── Emails específicos ───────────────────────────────────────────────────────
 
 /** Notifica al admin cuando un nuevo usuario se registra */
-export async function notifyAdminNewRegistro({ adminEmail, nombre, email, institucion, motivo }) {
+export async function notifyAdminNewRegistro({ adminEmail, nombre, email, institucion, motivo, rolSolicitado }) {
   await send({
     to: adminEmail,
     subject: `[VIGI-IIAP] Nuevo registro: ${sanitizeSMTP(nombre)}`,
@@ -281,6 +281,8 @@ export async function notifyAdminNewRegistro({ adminEmail, nombre, email, instit
         detailRow('Correo', escHtml(email)),
         detailRow('Institución', escHtml(institucion) || 'No especificada'),
         detailRow('Motivo', escHtml(motivo) || 'No especificado'),
+        // La cuenta nace 'publico' — esto es una solicitud pendiente, no el rol ya asignado.
+        ...(rolSolicitado ? [detailRow('Rol solicitado', `<strong>${escHtml(rolSolicitado)}</strong> (pendiente de aprobación)`)] : []),
       ]),
       cta: { url: `${BASE_URL}/admin/usuarios`, label: 'Gestionar en el panel' },
     }),

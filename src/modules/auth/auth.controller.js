@@ -157,10 +157,11 @@ export async function register(req, res, next) {
       adminEmails.forEach((adminEmail) =>
         notifyAdminNewRegistro({
           adminEmail,
-          nombre:      user.nombre,
-          email:       user.email,
-          institucion: data.institucion,
-          motivo:      data.motivo,
+          nombre:        user.nombre,
+          email:         user.email,
+          institucion:   data.institucion,
+          motivo:        data.motivo,
+          rolSolicitado: user.rolSolicitado,
         }).catch((err) => logger.error(`[auth] Error email admin registro:`, err.message))
       );
     }).catch((err) => logger.error(`[auth] Error obteniendo emails admin:`, err.message));
