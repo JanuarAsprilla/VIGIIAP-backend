@@ -98,7 +98,7 @@ export async function getAll(reqQuery, user) {
   const { categoria, admin } = reqQuery;
   const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
 
-  const condiciones = isAdminView ? [] : ['activo = true'];
+  const condiciones = isAdminView ? ['deleted_at IS NULL'] : ['activo = true', 'deleted_at IS NULL'];
   const params = [];
 
   if (!isAdminView) {
@@ -142,7 +142,7 @@ export async function getBySlug(slug, user) {
   const params = permitida ? [slug, permitida] : [slug];
 
   const { rows } = await query(
-    `SELECT * FROM geovisores WHERE slug = $1 AND activo = true ${filtroVisibilidad}`,
+    `SELECT * FROM geovisores WHERE slug = $1 AND activo = true AND deleted_at IS NULL ${filtroVisibilidad}`,
     params,
   );
   if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
@@ -207,7 +207,7 @@ export async function update(id, data) {
 
   valores.push(id);
   const { rows } = await query(
-    `UPDATE geovisores SET ${campos.join(', ')} WHERE id = $${indice} RETURNING *`,
+    `UPDATE geovisores SET ${campos.join(', ')} WHERE id = $${indice} AND deleted_at IS NULL RETURNING *`,
     valores,
   );
   if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
@@ -216,15 +216,21 @@ export async function update(id, data) {
 
 export async function toggleActivo(id, activo) {
   const { rows } = await query(
-    'UPDATE geovisores SET activo = $1, actualizado_en = NOW() WHERE id = $2 RETURNING *',
+    'UPDATE geovisores SET activo = $1, actualizado_en = NOW() WHERE id = $2 AND deleted_at IS NULL RETURNING *',
     [activo, id],
   );
   if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
   return filaAGeovisor(rows[0]);
 }
 
+// Soft delete -- IIAP es entidad del Estado colombiano, los datos geoespaciales no se destruyen
+// permanentemente (ver db/migrations/021_soft_deletes.sql). Antes era un DELETE físico sin red de
+// seguridad; ahora pasa por Papelera como mapas/documentos/categorías.
 export async function remove(id) {
-  const { rowCount } = await query('DELETE FROM geovisores WHERE id = $1', [id]);
+  const { rowCount } = await query(
+    `UPDATE geovisores SET deleted_at = NOW(), actualizado_en = NOW() WHERE id = $1 AND deleted_at IS NULL`,
+    [id],
+  );
   if (!rowCount) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
 }
 
