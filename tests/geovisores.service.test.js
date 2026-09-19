@@ -6,7 +6,7 @@ vi.mock('../src/config/database.js', () => ({
 }));
 
 import { query } from '../src/config/database.js';
-import { getBySlug, create } from '../src/modules/geovisores/geovisores.service.js';
+import { getBySlug, getAll, create } from '../src/modules/geovisores/geovisores.service.js';
 
 const filaGeovisorPublico = {
   id: 'geovisor-uuid-1',
@@ -82,6 +82,44 @@ describe('getBySlug — filtrado de visibilidad', () => {
   it('lanza 404 si el slug no existe', async () => {
     vi.mocked(query).mockResolvedValueOnce({ rows: [] });
     await expect(getBySlug('no-existe', null)).rejects.toMatchObject({ status: 404 });
+  });
+
+  // Regresión: un geovisor soft-deleted no debe aparecer aquí -- getBySlug es
+  // siempre la vía pública (ver migración 042).
+  it('el filtro deleted_at IS NULL vive en la propia consulta SQL', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisorPublico] });
+    await getBySlug('reportes-ambientales', null);
+    const [sql] = vi.mocked(query).mock.calls[0];
+    expect(sql).toMatch(/deleted_at IS NULL/);
+  });
+});
+
+// Regresión: getAll() antes no filtraba deleted_at en absoluto (la columna no
+// existía) -- un geovisor soft-deleted aparecía tanto en el portal público
+// como en el listado admin. Ver migración 042.
+describe('getAll — excluye geovisores en papelera', () => {
+  it('la vista pública filtra deleted_at IS NULL además de activo = true', async () => {
+    vi.mocked(query)
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await getAll({}, null);
+
+    const [sql] = vi.mocked(query).mock.calls[0];
+    expect(sql).toMatch(/activo = true/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
+  });
+
+  it('la vista admin (?admin=true) también filtra deleted_at IS NULL, aunque no filtre activo', async () => {
+    vi.mocked(query)
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await getAll({ admin: 'true' }, { rol: 'admin_sig' });
+
+    const [sql] = vi.mocked(query).mock.calls[0];
+    expect(sql).not.toMatch(/activo = true/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
   });
 });
 
