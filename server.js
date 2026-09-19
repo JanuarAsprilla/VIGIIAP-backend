@@ -53,6 +53,16 @@ function validateEnv() {
     process.exit(1);
   }
 
+  // Advertir si GEOSERVER_ENCRYPTION_KEY falta — crear/editar conexiones GeoServer
+  // fallará en runtime (500) con este mensaje enterrado en logs en vez de visible al
+  // arrancar, que es justo como pasó desapercibida la primera vez.
+  if (!process.env.GEOSERVER_ENCRYPTION_KEY) {
+    logger.warn('[startup] GEOSERVER_ENCRYPTION_KEY no configurada — crear o editar conexiones GeoServer desde el admin fallará con error 500.');
+  } else if (process.env.GEOSERVER_ENCRYPTION_KEY.length < 64) {
+    logger.error('[startup] FATAL: GEOSERVER_ENCRYPTION_KEY demasiado corta (mínimo 64 hex chars = 32 bytes). Genera una con: openssl rand -hex 32');
+    process.exit(1);
+  }
+
   // Validar CORS_ORIGIN — si está vacío o malformado, todas las requests con Origin serán bloqueadas
   const corsOrigin = process.env.CORS_ORIGIN ?? '';
   if (!corsOrigin) {
