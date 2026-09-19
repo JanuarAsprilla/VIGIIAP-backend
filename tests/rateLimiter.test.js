@@ -4,6 +4,7 @@ import request from 'supertest';
 import {
   rateLimiter,
   authRateLimiter,
+  twoFactorRateLimiter,
   loginAccountRateLimiter,
   uploadRateLimiter,
   downloadRateLimiter,
@@ -25,12 +26,12 @@ function buildApp(limiter, { withUser = false } = {}) {
 }
 
 describe('rateLimiter — límite dinámico anónimo vs. autenticado', () => {
-  it('usa la IP normalizada como key y el máximo por defecto (100) para anónimos', async () => {
+  it('usa la IP normalizada como key y el máximo por defecto (300) para anónimos', async () => {
     const app = buildApp(rateLimiter);
     const res = await request(app).get('/ping');
 
     expect(res.status).toBe(200);
-    expect(res.headers['ratelimit-limit']).toBe('100');
+    expect(res.headers['ratelimit-limit']).toBe('300');
   });
 
   it('usa req.user.id como key y el máximo elevado (500) para usuarios autenticados', async () => {
@@ -43,12 +44,12 @@ describe('rateLimiter — límite dinámico anónimo vs. autenticado', () => {
 });
 
 describe('authRateLimiter', () => {
-  it('permite la petición y expone el límite estricto de autenticación (10)', async () => {
+  it('permite la petición y expone el límite estricto de autenticación (30)', async () => {
     const app = buildApp(authRateLimiter);
     const res = await request(app).get('/ping');
 
     expect(res.status).toBe(200);
-    expect(res.headers['ratelimit-limit']).toBe('10');
+    expect(res.headers['ratelimit-limit']).toBe('30');
   });
 
   // Regresión: ipKeyGenerator() de express-rate-limit v8 espera un STRING (req.ip),
@@ -60,7 +61,7 @@ describe('authRateLimiter', () => {
     const app = buildApp(authRateLimiter);
 
     const statuses = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 35; i++) {
       // eslint-disable-next-line no-await-in-loop
       const res = await request(app).get('/ping');
       statuses.push(res.status);
@@ -73,6 +74,39 @@ describe('authRateLimiter', () => {
     expect(blocked).toBeGreaterThan(0);
     expect(statuses[0]).toBe(200);
     // Una vez que empieza a bloquear, se mantiene bloqueado dentro de la ventana.
+    const firstBlockedIdx = statuses.indexOf(429);
+    expect(statuses.slice(firstBlockedIdx)).toEqual(
+      Array(statuses.length - firstBlockedIdx).fill(429),
+    );
+  });
+});
+
+// Regresión: twoFactorRateLimiter debe quedarse en 10 aunque authRateLimiter
+// suba — cada intento contra estos endpoints es una adivinanza directa de un
+// código TOTP de 6 dígitos, no tráfico normal que se beneficie de más cupo
+// por IP compartida.
+describe('twoFactorRateLimiter — se mantiene estricto aunque authRateLimiter suba', () => {
+  it('permite la petición y expone el límite estricto de verificación 2FA (10)', async () => {
+    const app = buildApp(twoFactorRateLimiter);
+    const res = await request(app).get('/ping');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('10');
+  });
+
+  it('bloquea con 429 tras superar el límite desde la misma IP', async () => {
+    const app = buildApp(twoFactorRateLimiter);
+
+    const statuses = [];
+    for (let i = 0; i < 15; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await request(app).get('/ping');
+      statuses.push(res.status);
+    }
+
+    const blocked = statuses.filter((s) => s === 429).length;
+    expect(blocked).toBeGreaterThan(0);
+    expect(statuses[0]).toBe(200);
     const firstBlockedIdx = statuses.indexOf(429);
     expect(statuses.slice(firstBlockedIdx)).toEqual(
       Array(statuses.length - firstBlockedIdx).fill(429),
