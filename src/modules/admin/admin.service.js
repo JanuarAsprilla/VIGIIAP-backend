@@ -24,15 +24,25 @@ function generateTempPassword(length = 12) {
   return Array.from(randomBytes, (byte) => chars[byte % chars.length]).join('');
 }
 
-const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
+// Roles asignables desde el flujo genérico de "Usuarios". admin_sig queda
+// fuera a propósito: crear/gestionar administradores tiene su propio flujo
+// dedicado (ver crearAdminSig, listarAdministradores, GestionAdmins.tsx) para
+// que solo exista un camino claro por tipo de cuenta.
+const ROLES = ['investigador', 'tecnico', 'institucional', 'publico'];
+// Roles que promocionan/degradan una cuenta ya existente (actualizarUsuario) —
+// aquí sí se permite admin_sig: promover un usuario verificado a administrador
+// es una transición legítima, distinta de "crear una cuenta admin desde cero".
+const ROLES_ACTUALIZABLES = [...ROLES, 'admin_sig'];
 
-/** Lista todos los usuarios con filtros */
+/** Lista usuarios finales (nunca administradores) con filtros.
+ *  Para administradores usar listarAdministradores(). */
 export async function listarUsuarios(reqQuery) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { rol, activo, q } = reqQuery;
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
-  // super_admin nunca visible para admin_sig — siempre excluido de la lista
-  const conditions = ["rol != 'super_admin'"];
+  // admin_sig y super_admin nunca aparecen en la lista de usuarios finales —
+  // tienen su propia vista dedicada (Gestión de Administradores).
+  const conditions = ["rol NOT IN ('super_admin', 'admin_sig')"];
   const params = [];
 
   if (rol && ROLES.includes(rol)) {
@@ -55,7 +65,8 @@ export async function listarUsuarios(reqQuery) {
   const [data, count] = await Promise.all([
     query(
       `SELECT id, nombre, email, rol, institucion, tipo_acceso, activo,
-              email_verified, motivo_acceso, creado_en, actualizado_en
+              email_verified, motivo_acceso, creado_en, actualizado_en,
+              rol_solicitado AS "rolSolicitado"
        FROM usuarios ${where}
        ORDER BY creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -67,15 +78,11 @@ export async function listarUsuarios(reqQuery) {
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
 }
 
-/** Crea un usuario desde el panel de admin */
-export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso, adminId, adminRol, adminEmail }) {
+/** Crea un usuario desde el panel de admin. Nunca crea cuentas admin_sig —
+ *  esas se crean exclusivamente vía crearAdminSig() (POST /admin/super/crear-admin). */
+export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso, adminId, adminEmail }) {
   if (!ROLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
-  }
-  // Solo el super_admin puede crear cuentas admin_sig — evita auto-escalación
-  // de admin_sig creando otros admin_sig vía POST /api/admin/usuarios
-  if (rol === 'admin_sig' && adminRol !== 'super_admin') {
-    throw Object.assign(new Error('Solo el Super Administrador puede asignar el rol de administrador'), { status: 403 });
   }
 
   const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
@@ -114,7 +121,7 @@ export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso
 
 /** Activa o desactiva un usuario, opcionalmente cambia su rol */
 export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, adminEmail }) {
-  if (rol && !ROLES.includes(rol)) {
+  if (rol && !ROLES_ACTUALIZABLES.includes(rol)) {
     throw Object.assign(new Error('Rol inválido'), { status: 400 });
   }
   // Nadie puede modificar su propia cuenta desde el panel de administración
@@ -140,7 +147,13 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, ad
   const updates = [];
   const params = [];
 
-  if (rol !== undefined) { params.push(rol); updates.push(`rol = $${params.length}`); }
+  // Cambiar el rol resuelve cualquier solicitud pendiente (rol_solicitado) —
+  // sea que el admin la haya aprobado tal cual o asignado un rol distinto,
+  // ya no debe seguir apareciendo como "pendiente" en el panel.
+  if (rol !== undefined) {
+    params.push(rol); updates.push(`rol = $${params.length}`);
+    updates.push('rol_solicitado = NULL');
+  }
   if (activo !== undefined) { params.push(activo); updates.push(`activo = $${params.length}`); }
   updates.push('actualizado_en = NOW()');
 
@@ -398,6 +411,47 @@ export async function getSuperStats() {
   return rows[0];
 }
 
+/** Lista administradores SIG (rol=admin_sig) con sus permisos por módulo —
+ *  vista dedicada del super_admin, separada por completo de listarUsuarios(). */
+export async function listarAdministradores(reqQuery) {
+  const { limit, offset, meta } = paginate(reqQuery);
+  const { activo, q } = reqQuery;
+  const conditions = ["rol = 'admin_sig'"];
+  const params = [];
+
+  if (activo !== undefined) {
+    params.push(activo === 'true');
+    conditions.push(`activo = $${params.length}`);
+  }
+  if (q) {
+    if (q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
+    const qEsc = q.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${qEsc}%`);
+    conditions.push(`(nombre ILIKE $${params.length} OR email ILIKE $${params.length})`);
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
+  params.push(limit, offset);
+
+  const [data, count] = await Promise.all([
+    query(
+      `SELECT u.id, u.nombre, u.email, u.institucion, u.activo, u.email_verified, u.creado_en,
+              COALESCE(
+                (SELECT json_agg(json_build_object('modulo', p.modulo, 'puede_ver', p.puede_ver, 'puede_editar', p.puede_editar))
+                 FROM admin_permisos_modulo p WHERE p.usuario_id = u.id),
+                '[]'
+              ) AS permisos
+       FROM usuarios u ${where}
+       ORDER BY u.creado_en DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    ),
+    query(`SELECT COUNT(*) FROM usuarios ${where}`, params.slice(0, -2)),
+  ]);
+
+  return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
+}
+
 /** Crea un nuevo admin_sig — solo puede llamar super_admin */
 export async function crearAdminSig({ nombre, email, institucion, superAdminId }) {
   const { rows: existing } = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
@@ -530,4 +584,51 @@ export async function getErrorLog(reqQuery) {
   ]);
 
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
+}
+
+// ── Tendencias del dashboard ────────────────────────────────────────────────
+// Deltas semana-vs-semana-anterior + serie de 7 días por KPI, derivadas de
+// audit_log (mismo enfoque que getReporte, sin tabla ni agregación nueva).
+const KPI_ACCION = {
+  usuarios:    'registro',
+  solicitudes: 'create_solicitud',
+  documentos:  'publish_documento',
+  mapas:       'publish_mapa',
+};
+
+export async function getDashboardTendencias() {
+  const desde = new Date();
+  desde.setDate(desde.getDate() - 14);
+  desde.setHours(0, 0, 0, 0);
+
+  const { rows } = await query(
+    `SELECT accion, creado_en FROM audit_log WHERE creado_en >= $1 AND accion = ANY($2::text[])`,
+    [desde, Object.values(KPI_ACCION)]
+  );
+
+  const hoy = new Date();
+  // 14 días locales, del más viejo al más nuevo (índice 13 = hoy).
+  const dias14 = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(hoy);
+    d.setDate(hoy.getDate() - (13 - i));
+    return fmtLocalDate(d);
+  });
+
+  const tendencias = {};
+  for (const [kpi, accion] of Object.entries(KPI_ACCION)) {
+    const porDia = new Map(dias14.map((d) => [d, 0]));
+    rows.filter((r) => r.accion === accion).forEach((r) => {
+      const dia = fmtLocalDate(new Date(r.creado_en));
+      if (porDia.has(dia)) porDia.set(dia, porDia.get(dia) + 1);
+    });
+    const serie = dias14.map((d) => porDia.get(d));
+    const semanaActual   = serie.slice(7).reduce((a, b) => a + b, 0);
+    const semanaAnterior = serie.slice(0, 7).reduce((a, b) => a + b, 0);
+    // Sin datos en la semana anterior: 0% si tampoco hay esta semana, 100% si arrancó de cero.
+    const deltaPct = semanaAnterior === 0
+      ? (semanaActual > 0 ? 100 : 0)
+      : Math.round(((semanaActual - semanaAnterior) / semanaAnterior) * 100);
+    tendencias[kpi] = { serie7: serie.slice(7), semanaActual, semanaAnterior, deltaPct };
+  }
+  return tendencias;
 }

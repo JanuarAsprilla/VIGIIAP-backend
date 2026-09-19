@@ -1,4 +1,4 @@
-import { query } from '../../config/database.js';
+import { query, getClient } from '../../config/database.js';
 import { deleteFile, extractKey } from '../../config/r2.js';
 import logger from '../../utils/logger.js';
 
@@ -42,6 +42,36 @@ export async function updateThumbnail(nombre, newUrl) {
   }
 
   return result;
+}
+
+/** Renombra una categoría y propaga el nuevo nombre a mapas, documentos y
+ *  geovisores en una sola transacción. geovisores.categoria tiene FK con
+ *  ON UPDATE CASCADE (se actualiza sola); mapas.categoria y documentos.tipo
+ *  son TEXT libres sin FK, así que se actualizan a mano aquí. */
+export async function rename(nombreActual, nombreNuevo) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'UPDATE categorias SET nombre = $2, actualizado_en = NOW() WHERE nombre = $1 AND deleted_at IS NULL RETURNING *',
+      [nombreActual, nombreNuevo],
+    );
+    if (!rows[0]) throw Object.assign(new Error('Categoría no encontrada'), { status: 404 });
+
+    await client.query('UPDATE mapas SET categoria = $2 WHERE categoria = $1', [nombreActual, nombreNuevo]);
+    await client.query('UPDATE documentos SET tipo = $2 WHERE tipo = $1', [nombreActual, nombreNuevo]);
+
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.code === '23505') {
+      throw Object.assign(new Error('Ya existe una categoría con ese nombre'), { status: 409 });
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** Elimina una categoría (soft delete) y su thumbnail de R2 si existe. */

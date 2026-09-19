@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { query } from '../../config/database.js';
 import { notifyUsuarioActivacion, notifyRolCambiado, sendTestEmail } from '../../utils/mailer.js';
 import * as adminService from './admin.service.js';
+import { MODULOS, setPermisosAdmin } from './modulos.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
@@ -109,10 +110,11 @@ export async function stats(req, res, next) {
     if (_statsCache && Date.now() - _statsCacheAt < 30_000) {
       return res.json(_statsCache);
     }
-    const [usuarios, solicitudes, documentos, visitantes] = await Promise.all([
+    const [usuarios, solicitudes, documentos, mapas, visitantes] = await Promise.all([
       query("SELECT COUNT(*) FROM usuarios WHERE activo = true AND rol != 'super_admin'"),
       query("SELECT COUNT(*) FROM solicitudes WHERE estado IN ('pendiente','en_revision')"),
       query('SELECT COUNT(*) FROM documentos WHERE activo = true'),
+      query('SELECT COUNT(*) FROM mapas WHERE activo = true AND deleted_at IS NULL'),
       query("SELECT COUNT(*) FROM visitantes WHERE creado_en >= NOW() - INTERVAL '30 days'"),
     ]);
 
@@ -120,6 +122,7 @@ export async function stats(req, res, next) {
       usuarios:              Number(usuarios.rows[0].count),
       solicitudesPendientes: Number(solicitudes.rows[0].count),
       documentos:            Number(documentos.rows[0].count),
+      mapasPublicados:       Number(mapas.rows[0].count),
       visitantesUltimos30d:  Number(visitantes.rows[0].count),
     };
     _statsCache = result;
@@ -128,6 +131,13 @@ export async function stats(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/** GET /api/admin/dashboard/tendencias — deltas semana-vs-anterior + serie de 7 días por KPI */
+export async function dashboardTendencias(req, res, next) {
+  try {
+    res.json(await adminService.getDashboardTendencias());
+  } catch (err) { next(err); }
 }
 
 /** GET /api/admin/usuarios */
@@ -146,7 +156,7 @@ export async function crearUsuario(req, res, next) {
     const crearUsuarioSchema = z.object({
       nombre:      z.string().trim().min(2).max(150),
       email:       z.string().email('Email inválido').toLowerCase(),
-      rol:         z.enum(['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico']),
+      rol:         z.enum(['investigador', 'tecnico', 'institucional', 'publico']),
       institucion: z.string().trim().max(200).optional(),
       tipoAcceso:  z.enum(['institucional', 'externo']).optional(),
     });
@@ -224,6 +234,30 @@ export async function errorLog(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+/** GET /api/admin/administradores — exclusivo super_admin */
+export async function listarAdministradores(req, res, next) {
+  try {
+    res.json(await adminService.listarAdministradores(req.query));
+  } catch (err) { next(err); }
+}
+
+const permisosSchema = z.object({
+  permisos: z.array(z.object({
+    modulo:       z.enum(MODULOS.map((m) => m.clave)),
+    puede_ver:    z.boolean(),
+    puede_editar: z.boolean().optional().default(false),
+  })).max(MODULOS.length),
+});
+
+/** PUT /api/admin/administradores/:id/permisos — exclusivo super_admin */
+export async function setPermisosAdminController(req, res, next) {
+  try {
+    const { permisos } = permisosSchema.parse(req.body);
+    const result = await setPermisosAdmin(req.params.id, permisos, { superAdminId: req.user.id });
+    res.json({ data: result });
+  } catch (err) { next(err); }
 }
 
 /** GET /api/admin/super/stats — exclusivo super_admin */

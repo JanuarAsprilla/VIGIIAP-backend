@@ -272,9 +272,9 @@ describe('register()', () => {
     query.mockResolvedValueOnce({ rows: [] });
     // 2da query: lectura de configuracion.requireApproval → ausente (default seguro)
     query.mockResolvedValueOnce({ rows: [] });
-    // 3ra query: INSERT → nuevo usuario
+    // 3ra query: INSERT → nuevo usuario — nace 'publico', el rol pedido queda pendiente
     query.mockResolvedValueOnce({
-      rows: [{ id: 'uuid-002', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'investigador' }],
+      rows: [{ id: 'uuid-002', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'publico', rolSolicitado: 'investigador' }],
     });
     bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
 
@@ -293,19 +293,79 @@ describe('register()', () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 
-  it('asigna rol "publico" cuando el perfil no es reconocido', async () => {
+  it('perfil no reconocido → sin solicitud de rol pendiente (rol_solicitado null)', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({
-      rows: [{ id: 'uuid-003', nombre: 'Test', email: 'test@test.com', rol: 'publico' }],
+      rows: [{ id: 'uuid-003', nombre: 'Test', email: 'test@test.com', rol: 'publico', rolSolicitado: null }],
     });
     bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
 
     await register({ ...validData, perfil: 'desconocido' });
 
-    // El tercer query (INSERT) debe haber sido llamado con rol 'publico'
     const insertParams = query.mock.calls[2][1];
-    expect(insertParams[5]).toBe('publico'); // índice 5 = rol en el array de params
+    expect(insertParams[5]).toBeNull(); // índice 5 = rol_solicitado en el array de params
+  });
+
+  // ─── Regresión: el rol pedido nunca se asigna directo — siempre queda pendiente ──
+  describe('register() → el rol solicitado nunca se asigna directo, siempre queda pendiente de aprobación', () => {
+    it('la fila se inserta con rol \'publico\' hardcodeado en el SQL, no como parámetro', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-020', nombre: 'T', email: 't@t.co', rol: 'publico', rolSolicitado: 'investigador' }],
+      });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await register(validData);
+
+      const insertSql = query.mock.calls[2][0];
+      expect(insertSql).toMatch(/VALUES\s*\([^)]*'publico'/);
+    });
+
+    it('perfil "investigador" queda guardado como rol_solicitado, no en el parámetro de rol', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-021', nombre: 'T', email: 't@t.co', rol: 'publico', rolSolicitado: 'investigador' }],
+      });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await register({ ...validData, perfil: 'investigador' });
+
+      const insertParams = query.mock.calls[2][1];
+      expect(insertParams[5]).toBe('investigador');
+    });
+
+    it('perfil "tecnico" e "institucional" también quedan como solicitud pendiente', async () => {
+      for (const perfil of ['tecnico', 'institucional']) {
+        vi.clearAllMocks();
+        query.mockResolvedValueOnce({ rows: [] });
+        query.mockResolvedValueOnce({ rows: [] });
+        query.mockResolvedValueOnce({
+          rows: [{ id: 'uuid-022', nombre: 'T', email: 't@t.co', rol: 'publico', rolSolicitado: perfil }],
+        });
+        bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+        await register({ ...validData, perfil });
+
+        const insertParams = query.mock.calls[2][1];
+        expect(insertParams[5]).toBe(perfil);
+      }
+    });
+
+    it('devuelve rolSolicitado en el resultado para que el controller pueda notificar al admin', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-023', nombre: 'T', email: 't@t.co', rol: 'publico', rolSolicitado: 'tecnico' }],
+      });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      const result = await register({ ...validData, perfil: 'tecnico' });
+
+      expect(result.rolSolicitado).toBe('tecnico');
+    });
   });
 
   it('normaliza email a minúsculas antes de insertar', async () => {
@@ -325,7 +385,7 @@ describe('register()', () => {
     query.mockResolvedValueOnce({ rows: [] });
     query.mockResolvedValueOnce({ rows: [] }); // configuracion.requireApproval ausente
     query.mockResolvedValueOnce({
-      rows: [{ id: 'uuid-005', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'investigador' }],
+      rows: [{ id: 'uuid-005', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'publico', rolSolicitado: 'investigador' }],
     });
     bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
 
@@ -338,6 +398,7 @@ describe('register()', () => {
         entidadId: 'uuid-005',
         usuarioId: 'uuid-005',
         usuarioEmail: 'nuevo@iiap.gob.pe',
+        descripcion: expect.stringContaining('pendiente de aprobación'),
         ip: '127.0.0.1',
         userAgent: 'jest',
       })
@@ -400,7 +461,10 @@ describe('getProfile()', () => {
       twoFactorEnabled: true,
       creado_en: new Date().toISOString(),
     };
-    query.mockResolvedValueOnce({ rows: [profileRow] });
+    query
+      .mockResolvedValueOnce({ rows: [profileRow] })
+      // rol admin_sig → getProfile también carga sus permisos por módulo (ver modulos.service.js)
+      .mockResolvedValueOnce({ rows: [] });
 
     const result = await getProfile('uuid-001');
 
@@ -410,6 +474,7 @@ describe('getProfile()', () => {
       avatar_url: 'https://files.test.local/avatars/admin.jpg',
       twoFactorEnabled: true,
     });
+    expect(result.modulos).toHaveLength(11); // catálogo completo, todos en false por defecto
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE id = $1'),
       ['uuid-001']
@@ -444,7 +509,7 @@ describe('completarPerfil()', () => {
     expect(result).toMatchObject({ institucion: 'IIAP', perfilCompleto: true });
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('perfil_completo = true'),
-      ['IIAP', null, 'uuid-oauth-1']
+      ['IIAP', null, null, null, 'uuid-oauth-1']
     );
   });
 
@@ -455,7 +520,7 @@ describe('completarPerfil()', () => {
 
     await completarPerfil('uuid-oauth-1', { nombre: 'Ana R.', institucion: 'IIAP' });
 
-    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', 'Ana R.', 'uuid-oauth-1']);
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', 'Ana R.', null, null, 'uuid-oauth-1']);
   });
 
   it('lanza 404 cuando el usuario no existe', async () => {
@@ -463,6 +528,37 @@ describe('completarPerfil()', () => {
 
     await expect(completarPerfil('uuid-inexistente', { institucion: 'IIAP' }))
       .rejects.toMatchObject({ status: 404 });
+  });
+
+  it('con perfilSolicitado, guarda rol_solicitado y motivo_acceso — sin tocar "rol" directamente', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{
+        id: 'uuid-oauth-1', nombre: 'Ana Restrepo', email: 'ana@gmail.com',
+        rol: 'publico', institucion: 'IIAP', perfilCompleto: true, rolSolicitado: 'investigador',
+      }],
+    });
+
+    const result = await completarPerfil('uuid-oauth-1', {
+      institucion: 'IIAP', perfilSolicitado: 'investigador', motivo: 'Necesito datos de biodiversidad',
+    });
+
+    expect(result.rolSolicitado).toBe('investigador');
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('rol_solicitado  = COALESCE($3, rol_solicitado)'),
+      ['IIAP', null, 'investigador', 'Necesito datos de biodiversidad', 'uuid-oauth-1']
+    );
+    // No debe tocar la columna "rol" — la solicitud queda pendiente de aprobación admin
+    expect(query.mock.calls[0][0]).not.toMatch(/\bSET[\s\S]*?\brol\s*=/);
+  });
+
+  it('sin perfilSolicitado, rol_solicitado no cambia (COALESCE mantiene el valor existente)', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'uuid-oauth-1', institucion: 'IIAP', perfilCompleto: true, rolSolicitado: null }],
+    });
+
+    await completarPerfil('uuid-oauth-1', { institucion: 'IIAP' });
+
+    expect(query).toHaveBeenCalledWith(expect.any(String), ['IIAP', null, null, null, 'uuid-oauth-1']);
   });
 });
 

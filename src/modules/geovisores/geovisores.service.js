@@ -26,6 +26,29 @@ function temaDesdeWorkspace(workspace) {
   return { id, nombre };
 }
 
+/**
+ * Misma regla de acceso que obtenerCatalogoDeGeovisor (workspaces_geoserver + exclusión fija),
+ * pero aplicada a un capaId puntual -- los proxies WMS/leyenda/consulta reciben el capaId directo
+ * del cliente, así que sin esta validación un geovisor podría exponer CUALQUIER capa de su
+ * conexión GeoServer (incluida la de comunidades étnicas) con solo conocer o adivinar su id,
+ * saltándose por completo la curaduría que el catálogo sí aplica.
+ */
+function capaPermitidaEnGeovisor(geovisor, capaId) {
+  const workspace = workspaceDeCapa(capaId);
+  if (WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspace)) return false;
+  if (geovisor.workspacesGeoserver.length === 0) return true;
+  return geovisor.workspacesGeoserver.includes(workspace);
+}
+
+function exigirCapaPermitida(geovisor, capaId) {
+  if (!capaPermitidaEnGeovisor(geovisor, capaId)) {
+    throw Object.assign(
+      new Error(`La capa "${capaId}" no está disponible en este geovisor`),
+      { status: 403, code: 'CAPA_NO_PERMITIDA' },
+    );
+  }
+}
+
 function filaAGeovisor(fila) {
   return {
     id: fila.id,
@@ -225,16 +248,65 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
   return [...temasPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
-/** Proxy WMS GetMap de un geovisor -- resuelve su conexión y delega al conector. */
+/**
+ * Workspaces (temas) publicados por una conexión GeoServer, con conteo de capas -- para el
+ * selector del constructor de geovisores ANTES de que exista un geovisor guardado (a diferencia
+ * de obtenerCatalogoDeGeovisor, que ya filtra por workspaces_geoserver de un geovisor existente,
+ * aquí se listan TODOS los disponibles en la conexión para elegir cuáles usar).
+ */
+export async function listarWorkspacesDeConexion(conexionId) {
+  const conexion = await obtenerConexionParaConector(conexionId);
+
+  const [vectoriales, raster] = await Promise.all([
+    geoserver.obtenerCapacidadesWfs(conexion),
+    geoserver.obtenerCapacidadesWcs(conexion),
+  ]);
+
+  const capas = [...vectoriales, ...raster]
+    .filter((capa) => !WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspaceDeCapa(capa.id)));
+
+  // `id` es el workspace CRUDO de GeoServer (ej. "t_20_hidrologia"), el mismo valor que
+  // geovisor.workspacesGeoserver guarda y que capaPermitidaEnGeovisor compara -- no el id de tema
+  // "bonito" (sin el prefijo t_NN_) que solo sirve para agrupar visualmente en el catálogo público.
+  // `capas` viaja completo (no solo el conteo) porque el constructor visual de geovisores necesita
+  // los ids reales para pintarlas en la vista previa en vivo -- un WMS GetMap exige nombres de capa
+  // explícitos, GeoServer no tiene comodín "todo el workspace".
+  const workspacesPorId = new Map();
+  for (const capa of capas) {
+    const workspace = workspaceDeCapa(capa.id);
+    const existente = workspacesPorId.get(workspace);
+    if (existente) { existente.capas.push(capa); existente.totalCapas += 1; continue; }
+    const { nombre } = temaDesdeWorkspace(workspace);
+    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1, capas: [capa] });
+  }
+  return [...workspacesPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+/** Proxy WMS GetMap de un geovisor -- resuelve su conexión, valida la(s) capa(s) pedidas y delega al conector. */
 export async function proxyWmsDeGeovisor(slug, queryParams, geometriaFiltro, user) {
   const geovisor = await getBySlug(slug, user);
+  const capasPedidas = (queryParams.get('layers') ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+  capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId));
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
   return geoserver.proxyWms(conexion, queryParams, geometriaFiltro);
 }
 
-/** Proxy WMS GetLegendGraphic de un geovisor -- resuelve su conexión y delega al conector. */
+/** Proxy WMS GetLegendGraphic de un geovisor -- resuelve su conexión, valida la capa y delega al conector. */
 export async function proxyLeyendaDeGeovisor(slug, capaId, user) {
   const geovisor = await getBySlug(slug, user);
+  exigirCapaPermitida(geovisor, capaId);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
   return geoserver.proxyLeyenda(conexion, capaId);
+}
+
+/**
+ * Consulta los atributos de las features de una capa que intersectan una geometría (el pequeño
+ * polígono que arma el cliente alrededor de un clic en el mapa) -- es el WFS GetFeature que
+ * alimenta el popup de "click sobre una capa", separado del catálogo (que solo lista qué existe).
+ */
+export async function consultarCapaDeGeovisor(slug, capaId, geometria, user) {
+  const geovisor = await getBySlug(slug, user);
+  exigirCapaPermitida(geovisor, capaId);
+  const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
+  return geoserver.consultarWfs(conexion, capaId, geometria);
 }
