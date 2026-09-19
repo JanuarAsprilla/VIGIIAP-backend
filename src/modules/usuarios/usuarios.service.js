@@ -83,18 +83,19 @@ export async function updateRol(id, rol, activo, caller = {}) {
   return usuario;
 }
 
-export async function updatePerfil(userId, { nombre, institucion }) {
+export async function updatePerfil(userId, { nombre, institucion, tema }) {
   const updates = [];
   const params  = [];
 
   if (nombre      !== undefined) { params.push(nombre);      updates.push(`nombre = $${params.length}`); }
   if (institucion !== undefined) { params.push(institucion); updates.push(`institucion = $${params.length}`); }
+  if (tema        !== undefined) { params.push(tema);        updates.push(`tema = $${params.length}`); }
   updates.push('actualizado_en = NOW()');
   params.push(userId);
 
   const { rows } = await query(
     `UPDATE usuarios SET ${updates.join(', ')} WHERE id = $${params.length}
-     RETURNING id, nombre, email, rol, institucion, activo`,
+     RETURNING id, nombre, email, rol, institucion, activo, tema`,
     params
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
