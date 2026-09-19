@@ -483,6 +483,9 @@ describe('getProfile()', () => {
     // (antes de este fix, /auth/me nunca devolvía el estado real de 2FA al frontend)
     expect(query.mock.calls[0][0]).toMatch(/avatar_url/);
     expect(query.mock.calls[0][0]).toMatch(/totp_enabled AS "twoFactorEnabled"/);
+    // Ítem 5 del plan de módulos administrables: /auth/me debe traer la
+    // preferencia de tema guardada para que ThemeContext la aplique al cargar.
+    expect(query.mock.calls[0][0]).toMatch(/\btema\b/);
   });
 
   it('lanza 404 cuando el id no existe', async () => {

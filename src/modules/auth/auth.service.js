@@ -531,7 +531,7 @@ export async function resetPassword(token, newPassword) {
 // ─── Perfil ───────────────────────────────────────────────────────────────────
 export async function getProfile(userId) {
   const { rows } = await query(
-    `SELECT id, nombre, email, rol, tipo_acceso, institucion, avatar_url, creado_en, last_login_at,
+    `SELECT id, nombre, email, rol, tipo_acceso, institucion, avatar_url, creado_en, last_login_at, tema,
             totp_enabled AS "twoFactorEnabled", perfil_completo AS "perfilCompleto"
      FROM usuarios WHERE id = $1`,
     [userId]

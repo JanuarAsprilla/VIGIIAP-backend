@@ -303,6 +303,17 @@ describe('usuarios.service → updatePerfil()', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  // Ítem 5 del plan de módulos administrables: tema persistido por cuenta.
+  it('actualiza tema correctamente y lo incluye en el RETURNING', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...USER, tema: 'dark' }] });
+    const result = await updatePerfil('usr-uuid-1', { tema: 'dark' });
+    expect(result.tema).toBe('dark');
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/tema = \$1/);
+    expect(sql).toMatch(/RETURNING .*tema/);
+    expect(params).toContain('dark');
+  });
+
   it('maneja campos undefined (no se incluyen en el SET)', async () => {
     query.mockResolvedValueOnce({ rows: [USER] });
     // Solo se pasa institucion; nombre=undefined no debe aparecer en params del SET

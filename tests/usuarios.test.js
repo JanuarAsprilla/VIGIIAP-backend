@@ -113,6 +113,26 @@ describe('PATCH /api/usuarios/me (actualizar perfil)', () => {
       .send({ institucion: null });
     expect(res.status).toBe(200);
   });
+
+  // Ítem 5 del plan de módulos administrables: tema persistido por cuenta.
+  it('actualiza tema correctamente — retorna 200', async () => {
+    const updated = { ...USER_FIXTURE, tema: 'dark' };
+    userService.updatePerfil.mockResolvedValue(updated);
+    const res = await request(app)
+      .patch('/api/usuarios/me')
+      .set('Authorization', `Bearer ${verToken}`)
+      .send({ tema: 'dark' });
+    expect(res.status).toBe(200);
+    expect(res.body.tema).toBe('dark');
+  });
+
+  it('retorna 422 si tema no es "light" ni "dark"', async () => {
+    const res = await request(app)
+      .patch('/api/usuarios/me')
+      .set('Authorization', `Bearer ${verToken}`)
+      .send({ tema: 'azul' });
+    expect(res.status).toBe(422);
+  });
 });
 
 describe('PATCH /api/usuarios/me/avatar', () => {
