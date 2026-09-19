@@ -1,5 +1,6 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { getRateLimitMax } from '../config/dynamicConfig.js';
+import { recordRequest, recordBlocked } from '../utils/trafficMonitor.js';
 
 /**
  * Normaliza IP usando el helper oficial de express-rate-limit (IPv4 e IPv6).
@@ -29,7 +30,7 @@ function normalizeIp(req) {
 // en paralelo por persona, multiplicadas por todo el personal detrás de esa
 // IP). 100/15min agotaba el cupo con solo unas pocas cargas de página; el
 // fallback estático (si no hay valor guardado en `configuracion`) sube a 300.
-export const rateLimiter = rateLimit({
+const _rateLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: async (req) => {
     if (req.user) return 500;
@@ -40,7 +41,23 @@ export const rateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' },
+  // Registra el bloqueo para rateLimitAutoScaler.js antes de responder con el
+  // mismo cuerpo/estado que el comportamiento por defecto de la librería.
+  handler: (req, res, _next, optionsUsed) => {
+    recordBlocked();
+    res.status(optionsUsed.statusCode ?? 429).json(optionsUsed.message);
+  },
 });
+
+/**
+ * Envuelve _rateLimiter para contar CADA petición que pasa por acá (bloqueada
+ * o no) -- rateLimitAutoScaler.js necesita el total para calcular la tasa de
+ * bloqueo, no solo cuántas se bloquearon.
+ */
+export function rateLimiter(req, res, next) {
+  recordRequest();
+  _rateLimiter(req, res, next);
+}
 
 /**
  * Rate limiter más estricto para endpoints de autenticación. Es defensa por
