@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.2.1...v1.2.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* eleva límites de rate limiting general y de autenticación ([#121](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/121)) ([109420c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/109420c382b9de60c936c1ee9becf246629a7d77))
+
 ## [1.2.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.2.0...v1.2.1) (2026-09-19)
 
 
