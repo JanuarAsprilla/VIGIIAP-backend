@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.1.0...v1.2.0) (2026-09-19)
+
+
+### Features
+
+* capas individuales por geovisor (sin importar workspace/tema) ([786b169](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/786b1692f30bfb61e8ea2b219b3cce4b402921c2))
+* endpoint de tendencias para el dashboard admin ([d48852f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d48852f05f427aade5f35387668afa9fe766bd4a))
+* seleccionar capas individuales por geovisor, sin importar el workspace/tema ([64493a4](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/64493a4780c0ef26339571bf0dda4f6dd9000eae))
+
+
+### Bug Fixes
+
+* registro tradicional ahora requiere aval de admin para roles elevados ([99ee868](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/99ee868eeeb4a0c372eb14c67354781cd1f5ccd8))
+* registro tradicional ya no asigna investigador/tecnico/institucional sin aval de admin ([a42ebb8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a42ebb868b401b81f6b2a7b05adaa308d2142ada))
+
 ## [1.1.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.0.0...v1.1.0) (2026-09-18)
 
 
