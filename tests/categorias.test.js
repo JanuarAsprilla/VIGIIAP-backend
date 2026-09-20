@@ -354,4 +354,32 @@ describe('Categorias routes — auth guards via supertest', () => {
     expect(res.status).toBe(200);
     expect(catService.updateModulos).toHaveBeenCalledWith('Flora', ['mapas']);
   });
+
+  // Regresión: uploadSingle('thumbnail', ..., 5) nunca pasaba la categoría de
+  // archivo ('thumbnail'), así que caía al valor por defecto 'document' --
+  // que solo acepta application/pdf. Cualquier imagen real (jpg/png/webp)
+  // era rechazada con 422 antes de llegar siquiera al controller.
+  const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D]);
+
+  it('POST /api/categorias/:nombre/thumbnail → una imagen PNG real no se rechaza por tipo de archivo', async () => {
+    catService.updateThumbnail.mockResolvedValue({ ...CAT, thumbnail_url: 'https://files.test.local/new.png' });
+    const res = await request(app)
+      .post('/api/categorias/Flora/thumbnail')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('thumbnail', PNG_BYTES, 'portada.png');
+
+    expect(res.status).not.toBe(422);
+    expect(catService.updateThumbnail).toHaveBeenCalled();
+  });
+
+  it('POST /api/categorias/:nombre/thumbnail → un PDF (fuera de la categoría "thumbnail") sí se rechaza con 422', async () => {
+    const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]);
+    const res = await request(app)
+      .post('/api/categorias/Flora/thumbnail')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('thumbnail', pdfBytes, 'no-es-imagen.pdf');
+
+    expect(res.status).toBe(422);
+    expect(catService.updateThumbnail).not.toHaveBeenCalled();
+  });
 });

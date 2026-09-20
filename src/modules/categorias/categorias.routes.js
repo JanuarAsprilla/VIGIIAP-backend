@@ -26,7 +26,7 @@ router.post(
   authorize('admin_sig'),
   requireModulo('categorias', 'editar'),
   csrfProtection,
-  uploadSingle('thumbnail', 'categorias/thumbnails', 5),
+  uploadSingle('thumbnail', 'categorias/thumbnails', 5, 'thumbnail'),
   upsertThumbnail,
 );
 
