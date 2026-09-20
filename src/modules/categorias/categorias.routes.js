@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { index, create, rename, upsertThumbnail, destroy } from './categorias.controller.js';
+import { index, create, rename, upsertThumbnail, destroy, updateModulos } from './categorias.controller.js';
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
@@ -32,6 +32,9 @@ router.post(
 
 // PATCH /api/categorias/:nombre     — solo admin (renombrar)
 router.patch('/:nombre', authenticate, authorize('admin_sig'), requireModulo('categorias', 'editar'), csrfProtection, rename);
+
+// PATCH /api/categorias/:nombre/modulos — solo admin (reasignar a qué módulos pertenece)
+router.patch('/:nombre/modulos', authenticate, authorize('admin_sig'), requireModulo('categorias', 'editar'), csrfProtection, updateModulos);
 
 // DELETE /api/categorias/:nombre    — solo admin
 router.delete('/:nombre', authenticate, authorize('admin_sig'), requireModulo('categorias', 'editar'), csrfProtection, destroy);

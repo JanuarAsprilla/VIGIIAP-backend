@@ -8,6 +8,7 @@ vi.mock('../src/modules/categorias/categorias.service.js', () => ({
   updateThumbnail: vi.fn(),
   rename:          vi.fn(),
   remove:          vi.fn(),
+  updateModulos:   vi.fn(),
 }));
 
 // query() aquí solo lo consume requireModulo (categorias.service.js está
@@ -38,7 +39,7 @@ vi.mock('../src/middlewares/cache.js', () => ({
 }));
 
 import * as catService from '../src/modules/categorias/categorias.service.js';
-import { index, create, rename, destroy, upsertThumbnail } from '../src/modules/categorias/categorias.controller.js';
+import { index, create, rename, destroy, upsertThumbnail, updateModulos } from '../src/modules/categorias/categorias.controller.js';
 
 // ── Helper: mock Express req/res/next ──────────────────────────────────────
 
@@ -86,7 +87,7 @@ describe('categorias.controller → create()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('retorna 400 cuando nombre está vacío', async () => {
-    const req = { body: { nombre: '   ' }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const req = { body: { nombre: '   ', modulos: ['documentos'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
     const res = mockRes();
     await create(req, res, mockNext);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -95,18 +96,42 @@ describe('categorias.controller → create()', () => {
   });
 
   it('retorna 400 cuando nombre está ausente', async () => {
-    const req = { body: {}, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const req = { body: { modulos: ['documentos'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
     const res = mockRes();
     await create(req, res, mockNext);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  it('crea categoría y responde 201 con resultado del servicio', async () => {
-    catService.upsert.mockResolvedValue(CAT);
+  it('retorna 400 cuando modulos está ausente', async () => {
     const req = { body: { nombre: 'Biodiversidad' }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
     const res = mockRes();
     await create(req, res, mockNext);
-    expect(catService.upsert).toHaveBeenCalledWith('Biodiversidad');
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(catService.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 cuando modulos es un arreglo vacío', async () => {
+    const req = { body: { nombre: 'Biodiversidad', modulos: [] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await create(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(catService.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna 400 cuando modulos incluye un valor no reconocido', async () => {
+    const req = { body: { nombre: 'Biodiversidad', modulos: ['usuarios'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await create(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(catService.upsert).not.toHaveBeenCalled();
+  });
+
+  it('crea categoría y responde 201 con resultado del servicio', async () => {
+    catService.upsert.mockResolvedValue(CAT);
+    const req = { body: { nombre: 'Biodiversidad', modulos: ['documentos', 'mapas'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await create(req, res, mockNext);
+    expect(catService.upsert).toHaveBeenCalledWith('Biodiversidad', null, ['documentos', 'mapas']);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(CAT);
   });
@@ -114,9 +139,50 @@ describe('categorias.controller → create()', () => {
   it('llama next(err) cuando el servicio lanza', async () => {
     const err = new Error('upsert fail');
     catService.upsert.mockRejectedValue(err);
-    const req = { body: { nombre: 'Flora' }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const req = { body: { nombre: 'Flora', modulos: ['documentos'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
     const res = mockRes();
     await create(req, res, mockNext);
+    expect(mockNext).toHaveBeenCalledWith(err);
+  });
+});
+
+// ── updateModulos() ───────────────────────────────────────────────────────
+
+describe('categorias.controller → updateModulos()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('retorna 400 cuando modulos es inválido', async () => {
+    const req = { params: { nombre: 'Biodiversidad' }, body: { modulos: [] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await updateModulos(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(catService.updateModulos).not.toHaveBeenCalled();
+  });
+
+  it('actualiza los módulos y responde con el resultado', async () => {
+    const updated = { ...CAT, modulos: ['geovisores'] };
+    catService.updateModulos.mockResolvedValue(updated);
+    const req = { params: { nombre: 'Biodiversidad' }, body: { modulos: ['geovisores'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await updateModulos(req, res, mockNext);
+    expect(catService.updateModulos).toHaveBeenCalledWith('Biodiversidad', ['geovisores']);
+    expect(res.json).toHaveBeenCalledWith(updated);
+  });
+
+  it('decodifica el nombre del parámetro URL', async () => {
+    catService.updateModulos.mockResolvedValue(CAT);
+    const req = { params: { nombre: 'Biodiversidad%20Marina' }, body: { modulos: ['mapas'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await updateModulos(req, res, mockNext);
+    expect(catService.updateModulos).toHaveBeenCalledWith('Biodiversidad Marina', ['mapas']);
+  });
+
+  it('llama next(err) cuando el servicio lanza', async () => {
+    const err = Object.assign(new Error('no found'), { status: 404 });
+    catService.updateModulos.mockRejectedValue(err);
+    const req = { params: { nombre: 'NoExiste' }, body: { modulos: ['mapas'] }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    const res = mockRes();
+    await updateModulos(req, res, mockNext);
     expect(mockNext).toHaveBeenCalledWith(err);
   });
 });
@@ -272,5 +338,20 @@ describe('Categorias routes — auth guards via supertest', () => {
       .send({ nuevoNombre: 'Fauna' });
     expect(res.status).toBe(200);
     expect(catService.rename).toHaveBeenCalledWith('Flora', 'Fauna');
+  });
+
+  it('PATCH /api/categorias/:nombre/modulos → 401 sin token', async () => {
+    const res = await request(app).patch('/api/categorias/Flora/modulos').send({ modulos: ['mapas'] });
+    expect(res.status).toBe(401);
+  });
+
+  it('PATCH /api/categorias/:nombre/modulos → 200 con token admin_sig y módulo habilitado', async () => {
+    catService.updateModulos.mockResolvedValue({ nombre: 'Flora', modulos: ['mapas'] });
+    const res = await request(app)
+      .patch('/api/categorias/Flora/modulos')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ modulos: ['mapas'] });
+    expect(res.status).toBe(200);
+    expect(catService.updateModulos).toHaveBeenCalledWith('Flora', ['mapas']);
   });
 });

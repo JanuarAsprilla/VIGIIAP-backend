@@ -43,7 +43,7 @@ export async function getAll(reqQuery = {}, user = null) {
   };
 
   const { rows } = await query(
-    `SELECT c.nombre, c.thumbnail_url, c.actualizado_en,
+    `SELECT c.nombre, c.thumbnail_url, c.actualizado_en, c.modulos,
             COUNT(DISTINCT d.id) AS docs_count,
             COUNT(DISTINCT m.id) AS mapas_count,
             COUNT(DISTINCT g.id) AS geovisores_count
@@ -52,7 +52,7 @@ export async function getAll(reqQuery = {}, user = null) {
      LEFT JOIN mapas m ON m.categoria = c.nombre AND ${gate('m')}
      LEFT JOIN geovisores g ON g.categoria = c.nombre AND ${gate('g')}
      WHERE c.deleted_at IS NULL
-     GROUP BY c.nombre, c.thumbnail_url, c.actualizado_en
+     GROUP BY c.nombre, c.thumbnail_url, c.actualizado_en, c.modulos
      ORDER BY c.nombre`,
     params,
   );
@@ -60,6 +60,7 @@ export async function getAll(reqQuery = {}, user = null) {
     nombre: r.nombre,
     thumbnail_url: r.thumbnail_url,
     actualizado_en: r.actualizado_en,
+    modulos: r.modulos,
     conteo: {
       docs: Number(r.docs_count),
       mapas: Number(r.mapas_count),
@@ -68,17 +69,34 @@ export async function getAll(reqQuery = {}, user = null) {
   }));
 }
 
-/** Crea la categoría si no existe, actualiza thumbnail_url si se provee. */
-export async function upsert(nombre, thumbnailUrl = null) {
+/**
+ * Crea la categoría si no existe, actualiza thumbnail_url si se provee.
+ * `modulos` solo aplica en la creación (INSERT) -- un upsert de solo
+ * thumbnail (ver updateThumbnail) sobre una categoría ya existente nunca
+ * debe pisar los módulos ya asignados.
+ */
+export async function upsert(nombre, thumbnailUrl = null, modulos = null) {
   const { rows } = await query(
-    `INSERT INTO categorias (nombre, thumbnail_url, actualizado_en)
-     VALUES ($1, $2, NOW())
+    `INSERT INTO categorias (nombre, thumbnail_url, modulos, actualizado_en)
+     VALUES ($1, $2, COALESCE($3::text[], ARRAY['documentos','mapas','geovisores']), NOW())
      ON CONFLICT (nombre) DO UPDATE
        SET thumbnail_url  = COALESCE($2, categorias.thumbnail_url),
            actualizado_en = NOW()
      RETURNING *`,
-    [nombre, thumbnailUrl],
+    [nombre, thumbnailUrl, modulos],
   );
+  return rows[0];
+}
+
+/** Reasigna a qué módulos pertenece una categoría ya existente. */
+export async function updateModulos(nombre, modulos) {
+  const { rows } = await query(
+    `UPDATE categorias SET modulos = $2, actualizado_en = NOW()
+     WHERE nombre = $1 AND deleted_at IS NULL
+     RETURNING *`,
+    [nombre, modulos],
+  );
+  if (!rows[0]) throw Object.assign(new Error('Categoría no encontrada'), { status: 404 });
   return rows[0];
 }
 

@@ -35,6 +35,9 @@ export function errorHandler(err, _req, res, _next) {
     if (err.constraint === 'conexiones_geoserver_credenciales_check') {
       return res.status(422).json({ error: 'Usuario y contraseña son obligatorios para una conexión propia' });
     }
+    if (err.constraint === 'categorias_modulos_check') {
+      return res.status(422).json({ error: 'La categoría debe pertenecer al menos a un módulo válido (documentos, mapas o geovisores)' });
+    }
   }
 
   const status = err.status || err.statusCode || 500;
