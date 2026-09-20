@@ -15,10 +15,11 @@ vi.mock('../src/config/r2.js', () => ({
 
 import { query, getClient } from '../src/config/database.js';
 import { deleteFile } from '../src/config/r2.js';
-import { getAll, upsert, remove, rename } from '../src/modules/categorias/categorias.service.js';
+import { getAll, upsert, remove, rename, updateModulos } from '../src/modules/categorias/categorias.service.js';
 
 const CAT = {
   nombre: 'Biodiversidad', thumbnail_url: 'https://files.test.local/cat.jpg', actualizado_en: new Date(),
+  modulos: ['documentos', 'mapas'],
   docs_count: '3', mapas_count: '0', geovisores_count: '1',
 };
 
@@ -31,6 +32,7 @@ describe('categorias.service → getAll()', () => {
     expect(result).toHaveLength(1);
     expect(result[0].nombre).toBe('Biodiversidad');
     expect(result[0].conteo).toEqual({ docs: 3, mapas: 0, geovisores: 1 });
+    expect(result[0].modulos).toEqual(['documentos', 'mapas']);
     expect(query).toHaveBeenCalledOnce();
   });
 
@@ -107,6 +109,38 @@ describe('categorias.service → upsert()', () => {
     const params = query.mock.calls[0][1];
     expect(params[1]).toBeNull();
     expect(result).toBeDefined();
+  });
+
+  it('crea con módulos explícitos (creación desde el formulario de Categorías)', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...CAT, modulos: ['geovisores'] }] });
+    await upsert('Biodiversidad', null, ['geovisores']);
+    const params = query.mock.calls[0][1];
+    expect(params[2]).toEqual(['geovisores']);
+  });
+
+  it('sin módulos explícitos, pasa null -- la BD aplica el default de las 3 categorías', async () => {
+    query.mockResolvedValueOnce({ rows: [CAT] });
+    await upsert('Biodiversidad');
+    const params = query.mock.calls[0][1];
+    expect(params[2]).toBeNull();
+  });
+});
+
+describe('categorias.service → updateModulos()', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('actualiza los módulos de una categoría existente', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...CAT, modulos: ['mapas'] }] });
+    const result = await updateModulos('Biodiversidad', ['mapas']);
+    expect(result.modulos).toEqual(['mapas']);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/UPDATE categorias SET modulos/);
+    expect(params).toEqual(['Biodiversidad', ['mapas']]);
+  });
+
+  it('lanza 404 si la categoría no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(updateModulos('NoExiste', ['mapas'])).rejects.toMatchObject({ status: 404 });
   });
 });
 

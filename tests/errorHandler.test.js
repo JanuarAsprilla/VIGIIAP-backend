@@ -131,6 +131,17 @@ describe('errorHandler middleware', () => {
     expect(r.json.mock.calls[0][0].error).toMatch(/Usuario y contraseña son obligatorios/i);
   });
 
+  it('retorna 422 con mensaje amigable cuando una categoría queda sin módulos válidos (23514)', () => {
+    const err = Object.assign(new Error('new row for relation "categorias" violates check constraint "categorias_modulos_check"'), {
+      code: '23514',
+      constraint: 'categorias_modulos_check',
+    });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(422);
+    expect(r.json.mock.calls[0][0].error).toMatch(/al menos a un módulo válido/i);
+  });
+
   it('un CHECK (23514) que no reconoce sigue al manejo genérico (500)', () => {
     const err = Object.assign(new Error('check constraint violated'), {
       code: '23514',

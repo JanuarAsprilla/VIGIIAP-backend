@@ -30,22 +30,52 @@ const nombreSchema = z.string()
   .max(100, 'Máximo 100 caracteres')
   .regex(/^[\p{L}\p{N}\s\-_.]+$/u, 'Solo se permiten letras, números, espacios y - _ .');
 
+const modulosSchema = z.array(z.enum(['documentos', 'mapas', 'geovisores']))
+  .min(1, 'Selecciona al menos un módulo')
+  .max(3);
+
 export async function create(req, res, next) {
   try {
     const parseResult = nombreSchema.safeParse(req.body?.nombre?.trim());
     if (!parseResult.success) {
       return res.status(400).json({ error: parseResult.error.errors[0].message });
     }
+    const modulosResult = modulosSchema.safeParse(req.body?.modulos);
+    if (!modulosResult.success) {
+      return res.status(400).json({ error: modulosResult.error.errors[0].message });
+    }
     const nombre = parseResult.data;
-    const result = await categoriasService.upsert(nombre);
+    const result = await categoriasService.upsert(nombre, null, modulosResult.data);
     invalidateCache('cache:/api/categorias*').catch(() => {});
     invalidateCache('cache:/api/v1/categorias*').catch(() => {});
     registrarAuditoria({
       accion: 'create_categoria', modulo: 'categorias', entidadId: nombre.trim(),
-      descripcion: `Categoría creada: ${nombre.trim()}`,
+      descripcion: `Categoría creada: ${nombre.trim()} (${modulosResult.data.join(', ')})`,
       usuarioId: req.user?.id, usuarioEmail: req.user?.email, ip: req.ip,
     });
     res.status(201).json(result);
+  } catch (err) { next(err); }
+}
+
+export async function updateModulos(req, res, next) {
+  try {
+    const nombre = decodeURIComponent(req.params.nombre);
+    const modulosResult = modulosSchema.safeParse(req.body?.modulos);
+    if (!modulosResult.success) {
+      return res.status(400).json({ error: modulosResult.error.errors[0].message });
+    }
+    const result = await categoriasService.updateModulos(nombre, modulosResult.data);
+    invalidateCache('cache:/api/categorias*').catch(() => {});
+    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
+    invalidateCache('cache:/api/mapas*').catch(() => {});
+    invalidateCache('cache:/api/documentos*').catch(() => {});
+    invalidateCache('cache:/api/geovisores*').catch(() => {});
+    registrarAuditoria({
+      accion: 'update_categoria_modulos', modulo: 'categorias', entidadId: nombre,
+      descripcion: `Módulos de "${nombre}" actualizados: ${modulosResult.data.join(', ')}`,
+      usuarioId: req.user?.id, usuarioEmail: req.user?.email, ip: req.ip,
+    });
+    res.json(result);
   } catch (err) { next(err); }
 }
 
