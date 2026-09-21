@@ -212,7 +212,7 @@ export async function eliminarUsuario(req, res, next) {
 /** GET /api/admin/audit */
 export async function auditLog(req, res, next) {
   try {
-    const result = await adminService.getAuditLog(req.query);
+    const result = await adminService.getAuditLog(req.query, req.user?.rol);
     res.json(result);
   } catch (err) {
     next(err);

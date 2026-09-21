@@ -403,7 +403,7 @@ export async function register(data, { ip, userAgent } = {}) {
 }
 
 // ─── Verificar email ──────────────────────────────────────────────────────────
-export async function verifyEmail(token) {
+export async function verifyEmail(token, { ip, userAgent } = {}) {
   const { rows } = await query(
     `SELECT id, nombre, email, email_verified, email_verification_expires
      FROM usuarios
@@ -435,6 +435,17 @@ export async function verifyEmail(token) {
     [user.id]
   );
 
+  registrarAuditoria({
+    accion: 'email_verificado',
+    modulo: 'auth',
+    entidadId: user.id,
+    descripcion: `Email verificado — ${user.email}`,
+    usuarioId: user.id,
+    usuarioEmail: user.email,
+    ip,
+    userAgent,
+  });
+
   return { alreadyVerified: false, nombre: user.nombre, email: user.email };
 }
 
@@ -464,7 +475,7 @@ export async function reenviarVerificacion(email) {
 }
 
 // ─── Solicitar recuperación de contraseña ────────────────────────────────────
-export async function solicitarRecuperacion(email) {
+export async function solicitarRecuperacion(email, { ip, userAgent } = {}) {
   const { rows } = await query(
     'SELECT id, nombre, email, email_verified, activo FROM usuarios WHERE email = $1',
     [email.toLowerCase()]
@@ -486,11 +497,25 @@ export async function solicitarRecuperacion(email) {
     [hashToken(resetToken), resetExpires, user.id]
   );
 
+  // Señal de seguridad relevante aunque todavía no cambie nada -- varias
+  // solicitudes seguidas sobre la misma cuenta, o desde IPs distintas, son
+  // indicio de un intento de account takeover en curso.
+  registrarAuditoria({
+    accion: 'password_recuperacion_solicitada',
+    modulo: 'auth',
+    entidadId: user.id,
+    descripcion: `Recuperación de contraseña solicitada — ${user.email}`,
+    usuarioId: user.id,
+    usuarioEmail: user.email,
+    ip,
+    userAgent,
+  });
+
   return { nombre: user.nombre, email: user.email, resetToken };
 }
 
 // ─── Resetear contraseña ──────────────────────────────────────────────────────
-export async function resetPassword(token, newPassword) {
+export async function resetPassword(token, newPassword, { ip, userAgent } = {}) {
   const { rows } = await query(
     `SELECT id, email, password_reset_expires
      FROM usuarios
@@ -524,6 +549,17 @@ export async function resetPassword(token, newPassword) {
 
   // Revocar todas las sesiones — quien recupera su cuenta invalida sesiones previas comprometidas
   await revokeAllRefreshTokens(user.id);
+
+  registrarAuditoria({
+    accion: 'password_reset',
+    modulo: 'auth',
+    entidadId: user.id,
+    descripcion: `Contraseña restablecida por recuperación — ${user.email}`,
+    usuarioId: user.id,
+    usuarioEmail: user.email,
+    ip,
+    userAgent,
+  });
 
   return { email: user.email };
 }

@@ -321,20 +321,36 @@ export async function getAdminEmails() {
   return [...new Set([...dbEmails, ...envEmails])];
 }
 
-/** Consulta el audit log con paginación */
-export async function getAuditLog(reqQuery) {
+/**
+ * Consulta el audit log con paginación.
+ * @param {string} [viewerRol] - rol de quien consulta. Las acciones de un
+ *   super_admin se ocultan a admin_sig (su email nunca debe aparecer en el
+ *   log para un rol inferior) -- pero SOLO a admin_sig. Antes se ocultaban
+ *   incondicionalmente para cualquiera, incluido OTRO super_admin viendo su
+ *   propio panel: una cuenta super_admin comprometida (o que hace algo
+ *   indebido) quedaba completamente invisible en el log, incluso para quien
+ *   más autoridad tiene para actuar sobre eso.
+ */
+export async function getAuditLog(reqQuery, viewerRol) {
   const { limit, offset, meta } = paginate(reqQuery);
-  const { modulo, accion } = reqQuery;
-  // Excluir acciones del super_admin — su email nunca debe aparecer en el log para admin_sig
-  const conditions = [
-    `usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`
-  ];
+  const { modulo, accion, fechaDesde, fechaHasta, q } = reqQuery;
+  const conditions = [];
   const params = [];
 
+  if (viewerRol !== 'super_admin') {
+    conditions.push(`usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`);
+  }
   if (modulo) { params.push(modulo); conditions.push(`modulo = $${params.length}`); }
   if (accion) { params.push(accion); conditions.push(`accion = $${params.length}`); }
+  if (fechaDesde) { params.push(fechaDesde); conditions.push(`creado_en >= $${params.length}`); }
+  if (fechaHasta) { params.push(fechaHasta); conditions.push(`creado_en <= $${params.length}`); }
+  if (q) {
+    if (q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
+    params.push(`%${q}%`);
+    conditions.push(`(descripcion ILIKE $${params.length} OR usuario_email ILIKE $${params.length} OR accion ILIKE $${params.length})`);
+  }
 
-  const where = `WHERE ${conditions.join(' AND ')}`;
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(limit, offset);
 
   const [data, count] = await Promise.all([

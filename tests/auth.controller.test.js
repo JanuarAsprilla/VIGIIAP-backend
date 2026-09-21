@@ -55,8 +55,12 @@ vi.mock('../src/config/database.js', () => ({
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
+vi.mock('../src/utils/auditLog.js', () => ({
+  registrarAuditoria: vi.fn(),
+}));
 
 import * as authService from '../src/modules/auth/auth.service.js';
+import { registrarAuditoria } from '../src/utils/auditLog.js';
 import { query } from '../src/config/database.js';
 import { revokeToken } from '../src/utils/tokenBlacklist.js';
 import { logout, refresh, me, login, completarPerfil } from '../src/modules/auth/auth.controller.js';
@@ -187,12 +191,15 @@ describe('auth.controller → logout()', () => {
     const r = res();
     await logout({
       cookies: { vigiiap_token: 'access.token.here' },
-      user: { id: 'u1', exp: Math.floor(Date.now() / 1000) + 3600 },
+      user: { id: 'u1', email: 'u1@iiap.org.co', exp: Math.floor(Date.now() / 1000) + 3600 },
       headers: {},
     }, r, mockNext);
     expect(revokeToken).toHaveBeenCalled();
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
     expect(r.clearCookie).toHaveBeenCalled();
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'logout', usuarioId: 'u1', usuarioEmail: 'u1@iiap.org.co' })
+    );
   });
 
   it('revoca token de header Authorization si no hay cookie', async () => {
@@ -666,7 +673,7 @@ describe('auth.controller → resetPassword()', () => {
     authService.resetPassword.mockResolvedValue(undefined);
     const r = res();
     await resetPassword({ body: { token: 'tok-valido', password: 'Pass1234!' } }, r, mockNext);
-    expect(authService.resetPassword).toHaveBeenCalledWith('tok-valido', 'Pass1234!');
+    expect(authService.resetPassword).toHaveBeenCalledWith('tok-valido', 'Pass1234!', expect.any(Object));
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
   });
 

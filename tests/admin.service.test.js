@@ -605,6 +605,53 @@ describe('admin.service → getAuditLog()', () => {
     const params = query.mock.calls[0][1];
     expect(params).toContain('login');
   });
+
+  it('filtra por rango de fechas cuando se pasan fechaDesde/fechaHasta', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({ fechaDesde: '2026-01-01', fechaHasta: '2026-01-31' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/creado_en >= \$\d+/);
+    expect(sql).toMatch(/creado_en <= \$\d+/);
+    expect(params).toEqual(expect.arrayContaining(['2026-01-01', '2026-01-31']));
+  });
+
+  it('busca por descripcion/usuario_email/accion cuando se pasa q', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({ q: 'ana@iiap' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/ILIKE/);
+    expect(params).toContain('%ana@iiap%');
+  });
+
+  it('rechaza una búsqueda demasiado larga', async () => {
+    await expect(getAuditLog({ q: 'x'.repeat(201) })).rejects.toMatchObject({ status: 400 });
+  });
+
+  // Regresión de accountability: antes NADIE (ni siquiera otro super_admin)
+  // podía ver la actividad de una cuenta super_admin en el log -- si esa
+  // cuenta se veía comprometida o hacía algo indebido, quedaba invisible
+  // para todos, incluido quien más autoridad tiene para actuar sobre eso.
+  it('sin viewerRol (u otro rol), excluye la actividad de cuentas super_admin', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({}, 'admin_sig');
+    const sql = query.mock.calls[0][0];
+    expect(sql).toMatch(/usuario_id NOT IN \(SELECT id FROM usuarios WHERE rol = 'super_admin'\)/);
+  });
+
+  it('cuando viewerRol es super_admin, NO excluye la actividad de otras cuentas super_admin', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({}, 'super_admin');
+    const sql = query.mock.calls[0][0];
+    expect(sql).not.toMatch(/super_admin/);
+  });
 });
 
 describe('admin.service → getErrorLog()', () => {
