@@ -5,8 +5,15 @@ vi.mock('../src/config/database.js', () => ({
   query:     vi.fn().mockResolvedValue({ rows: [] }),
   getClient: vi.fn(),
 }));
+// Sin este mock, revokeSession()/revokeAllSessions() dispararían un INSERT
+// real de auditoría (registrarAuditoria usa el mismo query() mockeado
+// arriba), inflando el conteo de llamadas que estos tests verifican.
+vi.mock('../src/utils/auditLog.js', () => ({
+  registrarAuditoria: vi.fn(),
+}));
 
 import { query } from '../src/config/database.js';
+import { registrarAuditoria } from '../src/utils/auditLog.js';
 import { getSessions, revokeSession, revokeAllSessions } from '../src/modules/auth/sessions.controller.js';
 
 function mockRes() {
@@ -91,6 +98,9 @@ describe('revokeSession()', () => {
     const res = mockRes();
     await revokeSession(req, res, mockNext);
     expect(res.json).toHaveBeenCalledWith({ message: expect.stringContaining('cerrada') });
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'sesion_revocada', usuarioId: USER.id, usuarioEmail: USER.email })
+    );
   });
 
   it('retorna 404 si la sesión no existe o no pertenece al usuario', async () => {
@@ -125,6 +135,9 @@ describe('revokeAllSessions()', () => {
     const sql = query.mock.calls[0][0];
     expect(sql).toMatch(/UPDATE refresh_tokens/i);
     expect(res.json).toHaveBeenCalledWith({ message: expect.stringContaining('cerradas') });
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'todas_sesiones_revocadas', usuarioId: USER.id, usuarioEmail: USER.email })
+    );
   });
 
   it('llama next(err) cuando query lanza', async () => {

@@ -211,6 +211,24 @@ describe('exportAudit()', () => {
     expect(sql).toMatch(/creado_en >= \$1/);
   });
 
+  it('excluye actividad de super_admin cuando quien exporta es admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [AUDIT_ROW] });
+    const req = { query: {}, user: ADMIN_USER, ip: '10.0.0.1' };
+    const res = mockRes();
+    await exportAudit(req, res, mockNext);
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/super_admin/);
+  });
+
+  it('NO excluye actividad de super_admin cuando quien exporta es otro super_admin', async () => {
+    query.mockResolvedValueOnce({ rows: [AUDIT_ROW] });
+    const req = { query: {}, user: { ...ADMIN_USER, rol: 'super_admin' }, ip: '10.0.0.1' };
+    const res = mockRes();
+    await exportAudit(req, res, mockNext);
+    const [sql] = query.mock.calls[0];
+    expect(sql).not.toMatch(/super_admin/);
+  });
+
   it('retorna 400 si hay 10.000 o más registros', async () => {
     query.mockResolvedValueOnce({ rows: Array.from({ length: 10_000 }, () => ({ ...AUDIT_ROW })) });
     const req = { query: {}, user: ADMIN_USER, ip: '10.0.0.1' };

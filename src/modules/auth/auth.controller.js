@@ -18,6 +18,7 @@ import {
 } from '../../utils/cookieOptions.js';
 import { generateCsrfToken } from '../../utils/csrf.js';
 import logger from '../../utils/logger.js';
+import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /**
  * GET /api/auth/csrf-token — entrega el token CSRF ligado a la cookie de
@@ -43,6 +44,16 @@ export async function logout(req, res, next) {
     }
     if (req.user?.id) {
       await authService.revokeAllRefreshTokens(req.user.id).catch(() => {});
+      registrarAuditoria({
+        accion: 'logout',
+        modulo: 'auth',
+        entidadId: req.user.id,
+        descripcion: `Logout — ${req.user.email ?? req.user.id}`,
+        usuarioId: req.user.id,
+        usuarioEmail: req.user.email,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
     }
     res.clearCookie(COOKIE_NAME, clearCookieOptions());
     res.clearCookie(REFRESH_COOKIE_NAME, clearRefreshCookieOptions());
@@ -175,7 +186,7 @@ export async function register(req, res, next) {
 /** GET /api/auth/verificar-email/:token */
 export async function verifyEmail(req, res, next) {
   try {
-    const result = await authService.verifyEmail(req.params.token);
+    const result = await authService.verifyEmail(req.params.token, { ip: req.ip, userAgent: req.headers?.['user-agent'] });
 
     // Notificar solo si es verificación nueva (no si ya estaba verificado)
     if (!result.alreadyVerified) {
@@ -247,7 +258,7 @@ export async function reenviarVerificacion(req, res, next) {
 export async function recuperarPassword(req, res, next) {
   try {
     const { email } = recoverSchema.parse(req.body);
-    const result    = await authService.solicitarRecuperacion(email);
+    const result    = await authService.solicitarRecuperacion(email, { ip: req.ip, userAgent: req.headers?.['user-agent'] });
 
     if (result) {
       notifyRecuperarPassword({
@@ -268,7 +279,7 @@ export async function recuperarPassword(req, res, next) {
 export async function resetPassword(req, res, next) {
   try {
     const { token, password } = resetPasswordSchema.parse(req.body);
-    await authService.resetPassword(token, password);
+    await authService.resetPassword(token, password, { ip: req.ip, userAgent: req.headers?.['user-agent'] });
     res.json({ message: 'Contraseña actualizada correctamente.' });
   } catch (err) {
     next(err);

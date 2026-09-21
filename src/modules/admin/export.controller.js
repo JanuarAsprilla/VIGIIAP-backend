@@ -123,12 +123,14 @@ export async function exportSolicitudes(req, res, next) {
 export async function exportAudit(req, res, next) {
   try {
     const formato = req.query.formato === 'json' ? 'json' : 'csv';
-    // Excluir acciones del super_admin — nunca visibles para admin_sig
-    const params = [], conditions = [
-      `usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`,
-    ];
+    // Excluir acciones del super_admin — nunca visibles para admin_sig, pero
+    // SÍ visibles cuando quien exporta es otro super_admin (ver mismo
+    // criterio en getAuditLog, admin.service.js).
+    const params = [], conditions = req.user?.rol === 'super_admin'
+      ? []
+      : [`usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`];
     dateFilter(req.query.desde, req.query.hasta, 'creado_en', params, conditions);
-    const where = `WHERE ${conditions.join(' AND ')}`;
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(MAX_ROWS);
     const { rows } = await query(
       `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, creado_en

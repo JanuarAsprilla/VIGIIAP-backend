@@ -667,6 +667,9 @@ describe('resetPassword()', () => {
     );
     expect(revokeCall).toBeDefined();
     expect(revokeCall[1]).toEqual([mockUser.id]);
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'password_reset', usuarioId: mockUser.id, usuarioEmail: mockUser.email })
+    );
   });
 
   it('lanza 400 si el token no existe en la BD', async () => {
@@ -710,6 +713,9 @@ describe('verifyEmail()', () => {
     const result = await verifyEmail('valid-token');
     expect(result.alreadyVerified).toBe(false);
     expect(result.email).toBe('j@j.co');
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'email_verificado', usuarioId: 'u1', usuarioEmail: 'j@j.co' })
+    );
   });
 });
 
@@ -754,6 +760,9 @@ describe('solicitarRecuperacion()', () => {
     const result = await solicitarRecuperacion('j@j.co');
     expect(result).toHaveProperty('resetToken');
     expect(result.email).toBe('j@j.co');
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: 'password_recuperacion_solicitada', usuarioId: 'u1', usuarioEmail: 'j@j.co' })
+    );
   });
 });
 

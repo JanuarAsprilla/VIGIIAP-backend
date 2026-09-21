@@ -16,10 +16,18 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
   proxyWms: vi.fn(),
   proxyLeyenda: vi.fn(),
 }));
+// Sin este mock, obtenerConexionParaConector() haría resolución DNS real
+// (ver ssrfGuard.js) contra el hostname de prueba en cada test -- lento y no
+// determinista. Por defecto "no es privada" (deja pasar); un test puntual la
+// sobreescribe para probar el camino de bloqueo.
+vi.mock('../src/utils/ssrfGuard.js', () => ({
+  urlApuntaARedPrivada: vi.fn().mockResolvedValue(false),
+}));
 
 import { query } from '../src/config/database.js';
 import { encryptGeoserverPassword } from '../src/utils/geoserverEncryption.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
+import { urlApuntaARedPrivada } from '../src/utils/ssrfGuard.js';
 import {
   getAll, getById, create, update, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
 } from '../src/modules/geovisores/conexionesGeoserver.service.js';
@@ -112,6 +120,17 @@ describe('conexionesGeoserver.service → obtenerConexionParaConector()', () => 
   it('lanza 503 si la conexión está desactivada', async () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, activo: false }] });
     await expect(obtenerConexionParaConector('conexion-uuid-1')).rejects.toMatchObject({ status: 503 });
+  });
+
+  // Regresión TOCTOU/DNS rebinding: la conexión pudo aprobarse cuando su
+  // dominio resolvía a una IP pública -- esta función es el único punto por
+  // el que pasa CADA petición real del proxy, así que revalida en cada
+  // llamada (con caché corto en ssrfGuard.js, no hace DNS por cada tile).
+  it('lanza 502 si la url ahora resuelve a una red privada (revalidación en cada uso, no solo al crear/editar)', async () => {
+    query.mockResolvedValueOnce({ rows: [FILA] });
+    urlApuntaARedPrivada.mockResolvedValueOnce(true);
+    await expect(obtenerConexionParaConector('conexion-uuid-1')).rejects.toMatchObject({ status: 502 });
+    expect(urlApuntaARedPrivada).toHaveBeenCalledWith(FILA.url);
   });
 });
 

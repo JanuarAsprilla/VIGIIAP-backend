@@ -7,6 +7,7 @@ import {
   authCookieOptions, refreshCookieOptions,
 } from '../../utils/cookieOptions.js';
 import { query } from '../../config/database.js';
+import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /** POST /api/auth/2fa/setup — genera secret + QR */
 export async function setup(req, res, next) {
@@ -23,6 +24,16 @@ export async function verify(req, res, next) {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Código TOTP requerido' });
     const { backupCodes } = await tfService.enableTotp(req.user.id, code);
+    registrarAuditoria({
+      accion: '2fa_activado',
+      modulo: 'auth',
+      entidadId: req.user.id,
+      descripcion: `2FA activado — ${req.user.email}`,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     res.json({ message: '2FA activado. Guarda estos códigos de emergencia en un lugar seguro.', backupCodes });
   } catch (err) { next(err); }
 }
@@ -33,6 +44,19 @@ export async function disable(req, res, next) {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Código TOTP requerido para desactivar' });
     await tfService.disableTotp(req.user.id, code);
+    // Desactivar 2FA es un evento de seguridad de alto valor -- un atacante
+    // con la sesión ya comprometida suele apagar el segundo factor antes de
+    // moverse; que quede en el log permite correlacionarlo con lo que sigue.
+    registrarAuditoria({
+      accion: '2fa_desactivado',
+      modulo: 'auth',
+      entidadId: req.user.id,
+      descripcion: `2FA desactivado — ${req.user.email}`,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     res.json({ message: '2FA desactivado' });
   } catch (err) { next(err); }
 }

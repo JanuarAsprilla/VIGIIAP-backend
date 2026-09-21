@@ -52,6 +52,21 @@ describe('urlApuntaARedPrivada', () => {
     expect(await urlApuntaARedPrivada('http://[fe80::1]/geoserver')).toBe(true);
   });
 
+  // Regresión: net.BlockList representa toda dirección IPv4 internamente
+  // como su forma mapeada ::ffff:a.b.c.d para comparar -- una subred IPv6
+  // ::ffff:0:0/96 agregada ingenuamente para cubrir este caso termina
+  // emparejando CUALQUIER chequeo de familia 'ipv4' (bloqueaba hasta 8.8.8.8).
+  // La IPv4 embebida se extrae y evalúa aparte contra los rangos IPv4.
+  it('IPv4-mapped IPv6 (::ffff:a.b.c.d): evalúa la IPv4 embebida, no bloquea todo por igual', async () => {
+    expect(await urlApuntaARedPrivada('http://[::ffff:192.168.1.1]/geoserver')).toBe(true);
+    expect(await urlApuntaARedPrivada('http://[::ffff:8.8.8.8]/geoserver')).toBe(false);
+  });
+
+  it('no bloquea una IPv4 pública normal (regresión del bug de BlockList descrito arriba)', async () => {
+    expect(await urlApuntaARedPrivada('http://8.8.8.8/geoserver')).toBe(false);
+    expect(await urlApuntaARedPrivada('http://1.1.1.1/geoserver')).toBe(false);
+  });
+
   it('no revienta con una URL malformada -- deja que z.string().url() la rechace primero', async () => {
     expect(await urlApuntaARedPrivada('no-es-una-url')).toBe(false);
   });
