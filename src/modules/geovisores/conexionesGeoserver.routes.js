@@ -5,6 +5,7 @@ import {
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
+import { tileRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 
@@ -19,8 +20,8 @@ router.get('/:id', authenticate, authorize('admin_sig'), requireModulo('conexion
 // el módulo 'geovisores' (no 'conexiones_geoserver'): es la acción de construir un geovisor, no de
 // administrar la conexión en sí.
 router.get('/:id/workspaces', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), workspaces);
-router.get('/:id/wms', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), wmsPreview);
-router.get('/:id/leyenda/:capaId', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), leyendaPreview);
+router.get('/:id/wms', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), tileRateLimiter, wmsPreview);
+router.get('/:id/leyenda/:capaId', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), tileRateLimiter, leyendaPreview);
 
 router.post('/', authenticate, requireSuperAdmin, csrfProtection, store);
 router.patch('/:id', authenticate, requireSuperAdmin, csrfProtection, update);

@@ -7,7 +7,7 @@ import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { cacheMiddleware } from '../../middlewares/cache.js';
 import { uploadSingle } from '../../middlewares/upload.js';
-import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
+import { uploadRateLimiter, tileRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 const thumbnailUpload = uploadSingle('thumbnail', 'geovisores/thumbnails', 5, 'thumbnail');
@@ -17,8 +17,8 @@ router.get('/', cacheMiddleware(120), optionalAuthenticate, index);
 router.get('/:slug', cacheMiddleware(300), optionalAuthenticate, show);
 router.get('/:slug/capas', cacheMiddleware(300), optionalAuthenticate, catalogo);
 // wms/leyenda son proxys binarios hacia GeoServer -- sin cacheMiddleware (asume JSON, ver cache.js).
-router.get('/:slug/wms', optionalAuthenticate, wms);
-router.get('/:slug/capas/:capaId/leyenda', optionalAuthenticate, leyenda);
+router.get('/:slug/wms', optionalAuthenticate, tileRateLimiter, wms);
+router.get('/:slug/capas/:capaId/leyenda', optionalAuthenticate, tileRateLimiter, leyenda);
 router.get('/:slug/capas/:capaId/consulta', optionalAuthenticate, consulta);
 
 // ─── CRUD de geovisores (curaduría de contenido: admin_sig, super_admin siempre pasa) ───────────
