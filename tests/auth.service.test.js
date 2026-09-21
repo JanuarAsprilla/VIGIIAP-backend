@@ -56,6 +56,7 @@ import {
 import { revokeAllRefreshTokens } from '../src/utils/tokenBlacklist.js';
 import { notifyNuevoInicioSesion } from '../src/utils/mailer.js';
 import { notificacionHabilitada } from '../src/utils/configFlags.js';
+import { MODULOS } from '../src/modules/admin/modulos.service.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 const mockUser = {
@@ -474,7 +475,7 @@ describe('getProfile()', () => {
       avatar_url: 'https://files.test.local/avatars/admin.jpg',
       twoFactorEnabled: true,
     });
-    expect(result.modulos).toHaveLength(11); // catálogo completo, todos en false por defecto
+    expect(result.modulos).toHaveLength(MODULOS.length); // catálogo completo, todos en false por defecto
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE id = $1'),
       ['uuid-001']

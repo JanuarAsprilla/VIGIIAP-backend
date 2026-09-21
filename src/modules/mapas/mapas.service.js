@@ -46,7 +46,8 @@ export async function getAll(reqQuery, user) {
     query(
       `SELECT m.id, m.titulo, m.slug, m.categoria, m.anio, m.descripcion,
               m.thumbnail_url, m.archivo_pdf_url, m.archivo_img_url, m.geovisor_url,
-              m.activo, m.visibilidad, m.creado_en
+              m.activo, m.visibilidad, m.creado_en,
+              m.epsg, m.escala, m.fuente, m.bbox_norte, m.bbox_sur, m.bbox_este, m.bbox_oeste
        FROM mapas m
        ${where}
        ORDER BY m.creado_en DESC
