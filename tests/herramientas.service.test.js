@@ -82,6 +82,20 @@ describe('herramientas.service → listar()', () => {
     expect(sql).not.toMatch(/visibilidad = ANY/);
     expect(params).toEqual([]);
   });
+
+  // Regresión: revisión de seguridad encontró que una versión anterior
+  // colapsaba a "cualquier rol no visitante/publico ve todo" -- fallaba
+  // ABIERTO ante un rol inesperado (typo, rol futuro que esta función
+  // todavía no contempla). Debe fallar CERRADO: un rol no reconocido cae en
+  // el filtro restringido (mismo criterio que mapas.service.js), nunca en
+  // acceso total sin verificación explícita.
+  it('rol no reconocido (ni staff conocido ni visitante/publico), falla cerrado -- no ve todo sin filtro', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await listar(false, { rol: 'rol-futuro-no-contemplado' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/AND visibilidad = ANY\(\$1\)/);
+    expect(params).toEqual([['publico', 'usuarios']]);
+  });
 });
 
 describe('herramientas.service → crear()', () => {

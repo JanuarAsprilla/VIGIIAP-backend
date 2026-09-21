@@ -8,13 +8,16 @@ const CAMPOS_EDITABLES = ['titulo', 'descripcion', 'tag', 'activa', 'visibilidad
 
 const COLUMNAS = 'clave, titulo, descripcion, tag, activa, visibilidad, orden, creado_en, actualizado_en';
 
-/** Mismo criterio que mapas/documentos/geovisores/categorias (ver
- *  mapas.service.js#visibilidadPermitida): visitante/publico solo ven
- *  contenido 'publico'; cualquier otro rol autenticado (investigador,
- *  tecnico, institucional, admin_sig, super_admin) ve todo. */
+/** Mismo criterio y misma estructura de 3 ramas que mapas/documentos/
+ *  geovisores/categorias (ver mapas.service.js#visibilidadPermitida) --
+ *  a propósito NO se colapsa a "cualquier rol no visitante/publico ve todo":
+ *  el acceso total exige un rol conocido y listado explícitamente. Un rol
+ *  inesperado (typo, JWT de un rol futuro que esta función todavía no
+ *  contempla, etc.) cae en la rama intermedia -- falla cerrado, nunca abierto. */
 function visibilidadPermitida(user) {
   if (!user || user.rol === 'visitante' || user.rol === 'publico') return ['publico'];
-  return null;
+  if (['admin_sig', 'super_admin', 'investigador', 'tecnico', 'institucional'].includes(user.rol)) return null;
+  return ['publico', 'usuarios'];
 }
 
 /**
