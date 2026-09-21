@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { encryptGeoserverPassword, decryptGeoserverPassword } from '../../utils/geoserverEncryption.js';
+import { urlApuntaARedPrivada } from '../../utils/ssrfGuard.js';
 import * as geoserver from './geoserver.connector.js';
 
 // Nunca se selecciona password_cifrado en las lecturas de listado/detalle expuestas por la API —
@@ -87,6 +88,18 @@ export async function obtenerConexionParaConector(id) {
   if (!fila) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });
   if (!fila.activo) {
     throw Object.assign(new Error('La conexión GeoServer de este geovisor está desactivada'), { status: 503 });
+  }
+  // Revalidado acá (no solo al crear/editar la conexión) -- el DNS de un
+  // dominio puede cambiar después de aprobado (rebinding); esta función es
+  // el único punto por el que pasa CADA petición real del proxy, tanto del
+  // visor público como de la vista previa admin. urlApuntaARedPrivada()
+  // cachea por hostname con TTL corto, así que esto no agrega una
+  // resolución DNS por cada tile.
+  if (await urlApuntaARedPrivada(fila.url)) {
+    throw Object.assign(
+      new Error('La conexión GeoServer apunta a una red privada/interna -- bloqueada'),
+      { status: 502 },
+    );
   }
   return {
     id: fila.id,
