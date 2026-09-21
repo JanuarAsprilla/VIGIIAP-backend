@@ -11,6 +11,7 @@ import {
   adminRateLimiter,
   passwordResetLimiter,
   emailActionRateLimiter,
+  tileRateLimiter,
 } from '../src/middlewares/rateLimiter.js';
 
 function buildApp(limiter, { withUser = false } = {}) {
@@ -141,6 +142,57 @@ describe('adminRateLimiter', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['ratelimit-limit']).toBe('200');
+  });
+});
+
+describe('tileRateLimiter', () => {
+  it('permite la petición y expone un cupo alto para tiles WMS/leyenda (600 por minuto)', async () => {
+    const app = buildApp(tileRateLimiter);
+    const res = await request(app).get('/ping');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('600');
+  });
+});
+
+// Regresión: un solo pan/zoom del visor de geovisores dispara decenas de
+// peticiones a /wms y /leyenda en pocos segundos. Antes de este fix, esas
+// peticiones compartían el cupo general (300/500 por 15 min) con el resto de
+// la API -- se agotaba en minutos y de paso bloqueaba con 429 cualquier otra
+// petición de esa IP/usuario (ej. la lista de geovisores dejaba de
+// refrescar justo después de crear uno nuevo).
+describe('rateLimiter — excluye rutas de tiles WMS/leyenda de su propio cupo', () => {
+  function buildTileApp() {
+    const app = express();
+    app.use(rateLimiter);
+    app.get('/geovisores/:slug/wms', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/geovisores/:slug/capas/:capaId/leyenda', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/ping', (_req, res) => res.status(200).json({ ok: true }));
+    return app;
+  }
+
+  it('no aplica cabeceras de rate limit (ni cuenta contra el cupo) en /wms', async () => {
+    const app = buildTileApp();
+    const res = await request(app).get('/geovisores/mapa-de-prueba/wms');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBeUndefined();
+  });
+
+  it('no aplica cabeceras de rate limit (ni cuenta contra el cupo) en /leyenda', async () => {
+    const app = buildTileApp();
+    const res = await request(app).get('/geovisores/mapa-de-prueba/capas/3/leyenda');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBeUndefined();
+  });
+
+  it('una ruta que no es de tiles sigue quedando sujeta al cupo general', async () => {
+    const app = buildTileApp();
+    const res = await request(app).get('/ping');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('300');
   });
 });
 

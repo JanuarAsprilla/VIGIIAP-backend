@@ -30,6 +30,16 @@ function normalizeIp(req) {
 // en paralelo por persona, multiplicadas por todo el personal detrás de esa
 // IP). 100/15min agotaba el cupo con solo unas pocas cargas de página; el
 // fallback estático (si no hay valor guardado en `configuracion`) sube a 300.
+// Los proxys de tiles WMS/leyenda (ver tileRateLimiter más abajo) comparten
+// ruta con /wms o /leyenda tanto en el visor público (geovisores.routes.js)
+// como en la vista previa admin (conexionesGeoserver.routes.js). Un solo pan
+// o zoom del mapa dispara decenas de estas peticiones en pocos segundos --
+// agotan el cupo general (pensado para llamadas normales de API) en minutos,
+// y de paso bloquean con el mismo 429 cualquier otra petición de esa
+// IP/usuario (ej. la lista de geovisores dejaba de refrescar después de
+// crear uno). Se excluyen de acá para que caigan solo bajo tileRateLimiter.
+const esRutaDeTiles = (req) => req.path.includes('/wms') || req.path.includes('/leyenda');
+
 const _rateLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: async (req) => {
@@ -38,6 +48,7 @@ const _rateLimiter = rateLimit({
     return dynamic ?? (Number(process.env.RATE_LIMIT_MAX) || 300);
   },
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
+  skip: esRutaDeTiles,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' },
@@ -144,6 +155,23 @@ export const adminRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas operaciones administrativas.' },
+});
+
+/**
+ * Proxy de tiles WMS/leyenda de un geovisor (visor público y vista previa
+ * admin). Ventana corta y cupo alto a propósito: un solo pan/zoom del mapa
+ * dispara decenas de estas peticiones en pocos segundos -- es tráfico bursty
+ * por diseño, no un patrón de abuso. Ver esRutaDeTiles() arriba: estas rutas
+ * quedan excluidas del rate limiter general para no compartir su cupo (mucho
+ * más bajo) con el resto de la API.
+ */
+export const tileRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones de mapa. Intenta de nuevo en un momento.' },
 });
 
 /** Recuperación de contraseña: máximo 3 solicitudes por hora por email. */
