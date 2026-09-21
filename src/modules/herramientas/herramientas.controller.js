@@ -8,12 +8,14 @@ const tituloSchema = z.string().min(2, 'Mínimo 2 caracteres').max(150, 'Máximo
 const descripcionSchema = z.string().max(500, 'Máximo 500 caracteres').nullable().optional();
 const tagSchema = z.string().min(2, 'Mínimo 2 caracteres').max(40, 'Máximo 40 caracteres');
 const ordenSchema = z.number().int().min(0).optional();
+const visibilidadSchema = z.enum(['publico', 'usuarios']);
 
 const crearSchema = z.object({
   clave: claveSchema,
   titulo: tituloSchema,
   descripcion: descripcionSchema,
   tag: tagSchema,
+  visibilidad: visibilidadSchema.optional(),
   orden: ordenSchema,
 });
 
@@ -22,6 +24,7 @@ const actualizarSchema = z.object({
   descripcion: descripcionSchema,
   tag: tagSchema.optional(),
   activa: z.boolean().optional(),
+  visibilidad: visibilidadSchema.optional(),
   orden: z.number().int().min(0).optional(),
 }).refine((datos) => Object.keys(datos).length > 0, { message: 'No hay campos para actualizar' });
 
@@ -37,7 +40,7 @@ function invalidarCacheHerramientas() {
 export async function index(req, res, next) {
   try {
     const isAdminView = req.query.admin === 'true' && ['admin_sig', 'super_admin'].includes(req.user?.rol);
-    res.json(await herramientasService.listar(isAdminView));
+    res.json(await herramientasService.listar(isAdminView, req.user));
   } catch (err) { next(err); }
 }
 

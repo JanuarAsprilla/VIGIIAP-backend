@@ -10,7 +10,7 @@ import { listar, crear, actualizar, reordenar, eliminar } from '../src/modules/h
 
 const HERRAMIENTA = {
   clave: 'conversor', titulo: 'Conversor de Coordenadas', descripcion: null,
-  tag: 'Geodésico', activa: true, orden: 0, creado_en: new Date(), actualizado_en: new Date(),
+  tag: 'Geodésico', activa: true, visibilidad: 'publico', orden: 0, creado_en: new Date(), actualizado_en: new Date(),
 };
 
 describe('herramientas.service → listar()', () => {
@@ -35,7 +35,15 @@ describe('herramientas.service → listar()', () => {
     query.mockResolvedValueOnce({ rows: [] });
     await listar(true);
     const [sql] = query.mock.calls[0];
-    expect(sql).not.toMatch(/AND activa = true/);
+    expect(sql).not.toMatch(/activa = true/);
+  });
+
+  it('con isAdminView, no filtra por visibilidad (ignora el rol de user)', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await listar(true, { rol: 'visitante' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).not.toMatch(/visibilidad = ANY/);
+    expect(params).toBeUndefined();
   });
 
   it('siempre excluye las borradas (deleted_at)', async () => {
@@ -43,6 +51,36 @@ describe('herramientas.service → listar()', () => {
     await listar(true);
     const [sql] = query.mock.calls[0];
     expect(sql).toMatch(/deleted_at IS NULL/);
+  });
+
+  it('sin usuario (anónimo), restringe a visibilidad publico', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await listar(false, null);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/AND visibilidad = ANY\(\$1\)/);
+    expect(params).toEqual([['publico']]);
+  });
+
+  it('rol visitante, restringe a visibilidad publico', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await listar(false, { rol: 'visitante' });
+    const [, params] = query.mock.calls[0];
+    expect(params).toEqual([['publico']]);
+  });
+
+  it('rol publico, restringe a visibilidad publico', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await listar(false, { rol: 'publico' });
+    const [, params] = query.mock.calls[0];
+    expect(params).toEqual([['publico']]);
+  });
+
+  it('rol investigador (usuario autenticado no-visitante), sin filtro de visibilidad', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await listar(false, { rol: 'investigador' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).not.toMatch(/visibilidad = ANY/);
+    expect(params).toEqual([]);
   });
 });
 
@@ -54,7 +92,7 @@ describe('herramientas.service → crear()', () => {
     await crear({ clave: 'conversor', titulo: 'Conversor', tag: 'Geodésico', orden: 3 });
     const [sql, params] = query.mock.calls[0];
     expect(sql).toMatch(/INSERT INTO herramientas/);
-    expect(params).toEqual(['conversor', 'Conversor', null, 'Geodésico', 3]);
+    expect(params).toEqual(['conversor', 'Conversor', null, 'Geodésico', 'publico', 3]);
   });
 
   it('sin orden explícito, calcula el siguiente (MAX(orden)+1)', async () => {
@@ -63,7 +101,21 @@ describe('herramientas.service → crear()', () => {
     await crear({ clave: 'nueva', titulo: 'Nueva', tag: 'Reportes' });
     expect(query).toHaveBeenCalledTimes(2);
     const [, params] = query.mock.calls[1];
-    expect(params[4]).toBe(2);
+    expect(params[5]).toBe(2);
+  });
+
+  it('sin visibilidad explícita, por defecto es publico', async () => {
+    query.mockResolvedValueOnce({ rows: [HERRAMIENTA] });
+    await crear({ clave: 'conversor', titulo: 'Conversor', tag: 'Geodésico', orden: 0 });
+    const [, params] = query.mock.calls[0];
+    expect(params[4]).toBe('publico');
+  });
+
+  it('acepta visibilidad explícita "usuarios"', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...HERRAMIENTA, visibilidad: 'usuarios' }] });
+    await crear({ clave: 'conversor', titulo: 'Conversor', tag: 'Geodésico', visibilidad: 'usuarios', orden: 0 });
+    const [, params] = query.mock.calls[0];
+    expect(params[4]).toBe('usuarios');
   });
 
   it('descripcion ausente se guarda como null', async () => {

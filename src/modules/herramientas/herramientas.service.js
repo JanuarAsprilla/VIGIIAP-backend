@@ -4,32 +4,57 @@ import { query, getClient } from '../../config/database.js';
  *  es la clave primaria y el join hacia el registro estático de componentes
  *  del frontend, cambiarla rompería esa referencia sin ningún beneficio
  *  (mismo criterio que el slug inmutable de mapas, ver mapas.service.js). */
-const CAMPOS_EDITABLES = ['titulo', 'descripcion', 'tag', 'activa', 'orden'];
+const CAMPOS_EDITABLES = ['titulo', 'descripcion', 'tag', 'activa', 'visibilidad', 'orden'];
+
+const COLUMNAS = 'clave, titulo, descripcion, tag, activa, visibilidad, orden, creado_en, actualizado_en';
+
+/** Mismo criterio que mapas/documentos/geovisores/categorias (ver
+ *  mapas.service.js#visibilidadPermitida): visitante/publico solo ven
+ *  contenido 'publico'; cualquier otro rol autenticado (investigador,
+ *  tecnico, institucional, admin_sig, super_admin) ve todo. */
+function visibilidadPermitida(user) {
+  if (!user || user.rol === 'visitante' || user.rol === 'publico') return ['publico'];
+  return null;
+}
 
 /**
  * Catálogo de herramientas. `isAdminView` (admin_sig/super_admin autenticado
- * con ?admin=true, resuelto en el controller) ve también las inactivas y las
- * borradas lógicamente quedan siempre fuera para todos -- igual criterio que
- * categorias.service.js#getAll.
+ * con ?admin=true, resuelto en el controller) ve también las inactivas y
+ * cualquier visibilidad, sin filtrar por `user`. Fuera de esa vista, se
+ * aplican ambos filtros: activa=true y la visibilidad que el rol de `user`
+ * tenga permitida. Las borradas lógicamente quedan siempre fuera para todos
+ * -- igual criterio que categorias.service.js#getAll.
  */
-export async function listar(isAdminView = false) {
-  const gate = isAdminView ? '' : 'AND activa = true';
+export async function listar(isAdminView = false, user = null) {
+  if (isAdminView) {
+    const { rows } = await query(`SELECT ${COLUMNAS} FROM herramientas WHERE deleted_at IS NULL ORDER BY orden ASC, clave ASC`);
+    return rows;
+  }
+
+  const permitida = visibilidadPermitida(user);
+  const params = [];
+  let visCond = '';
+  if (permitida) {
+    params.push(permitida);
+    visCond = 'AND visibilidad = ANY($1)';
+  }
+
   const { rows } = await query(
-    `SELECT clave, titulo, descripcion, tag, activa, orden, creado_en, actualizado_en
-     FROM herramientas
-     WHERE deleted_at IS NULL ${gate}
+    `SELECT ${COLUMNAS} FROM herramientas
+     WHERE deleted_at IS NULL AND activa = true ${visCond}
      ORDER BY orden ASC, clave ASC`,
+    params,
   );
   return rows;
 }
 
-export async function crear({ clave, titulo, descripcion = null, tag, orden }) {
+export async function crear({ clave, titulo, descripcion = null, tag, visibilidad = 'publico', orden }) {
   const ordenFinal = orden ?? await siguienteOrden();
   const { rows } = await query(
-    `INSERT INTO herramientas (clave, titulo, descripcion, tag, orden)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING clave, titulo, descripcion, tag, activa, orden, creado_en, actualizado_en`,
-    [clave, titulo, descripcion, tag, ordenFinal],
+    `INSERT INTO herramientas (clave, titulo, descripcion, tag, visibilidad, orden)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING ${COLUMNAS}`,
+    [clave, titulo, descripcion, tag, visibilidad, ordenFinal],
   );
   return rows[0];
 }
@@ -54,7 +79,7 @@ export async function actualizar(clave, cambios) {
   const { rows } = await query(
     `UPDATE herramientas SET ${asignaciones}, actualizado_en = NOW()
      WHERE clave = $1 AND deleted_at IS NULL
-     RETURNING clave, titulo, descripcion, tag, activa, orden, creado_en, actualizado_en`,
+     RETURNING ${COLUMNAS}`,
     [clave, ...valores],
   );
   if (!rows[0]) throw Object.assign(new Error('Herramienta no encontrada'), { status: 404 });

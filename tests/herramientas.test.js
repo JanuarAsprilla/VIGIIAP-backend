@@ -47,22 +47,32 @@ describe('herramientas.controller → index()', () => {
     herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
     const res = mockRes();
     await index({ query: {} }, res, mockNext);
-    expect(herramientasService.listar).toHaveBeenCalledWith(false);
+    expect(herramientasService.listar).toHaveBeenCalledWith(false, undefined);
     expect(res.json).toHaveBeenCalledWith([HERRAMIENTA]);
   });
 
   it('admin=true con rol admin_sig activa isAdminView', async () => {
     herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
     const res = mockRes();
-    await index({ query: { admin: 'true' }, user: { rol: 'admin_sig' } }, res, mockNext);
-    expect(herramientasService.listar).toHaveBeenCalledWith(true);
+    const user = { rol: 'admin_sig' }
+    await index({ query: { admin: 'true' }, user }, res, mockNext);
+    expect(herramientasService.listar).toHaveBeenCalledWith(true, user);
   });
 
   it('admin=true sin rol admin/super_admin se ignora', async () => {
     herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
     const res = mockRes();
-    await index({ query: { admin: 'true' }, user: { rol: 'investigador' } }, res, mockNext);
-    expect(herramientasService.listar).toHaveBeenCalledWith(false);
+    const user = { rol: 'investigador' }
+    await index({ query: { admin: 'true' }, user }, res, mockNext);
+    expect(herramientasService.listar).toHaveBeenCalledWith(false, user);
+  });
+
+  it('propaga req.user al servicio para filtrar por visibilidad', async () => {
+    herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
+    const res = mockRes();
+    const user = { rol: 'investigador' }
+    await index({ query: {}, user }, res, mockNext);
+    expect(herramientasService.listar).toHaveBeenCalledWith(false, user);
   });
 
   it('llama next(err) cuando el servicio lanza', async () => {
@@ -243,7 +253,18 @@ describe('Herramientas routes — auth guards via supertest', () => {
     herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
     const res = await request(app).get('/api/herramientas');
     expect(res.status).toBe(200);
-    expect(herramientasService.listar).toHaveBeenCalledWith(false);
+    expect(herramientasService.listar).toHaveBeenCalledWith(false, undefined);
+  });
+
+  it('GET /api/herramientas con token investigador → propaga el usuario al servicio', async () => {
+    herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
+    const investigadorToken = jwt.sign(
+      { id: 'uuid-inv', email: 'inv@iiap.org.co', rol: 'investigador' },
+      process.env.JWT_SECRET,
+    );
+    const res = await request(app).get('/api/herramientas').set('Authorization', `Bearer ${investigadorToken}`);
+    expect(res.status).toBe(200);
+    expect(herramientasService.listar).toHaveBeenCalledWith(false, expect.objectContaining({ rol: 'investigador' }));
   });
 
   it('POST /api/herramientas → 401 sin token', async () => {

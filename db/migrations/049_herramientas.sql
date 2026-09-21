@@ -12,17 +12,20 @@
 -- nada (el frontend descarta silenciosamente las claves que no reconoce),
 -- pero tampoco hace aparecer una herramienta de la nada.
 --
--- Igual que admin_permisos_modulo (ver 038), no hay campo `rol_visible`
--- todavía -- ninguna herramienta hoy necesita ocultarse solo para ciertos
--- roles (público/visitante ya ven todo en modo lectura dentro de cada
--- herramienta, ver PanelChocoBiogeografico). Agregar esa columna es trivial
--- el día que haga falta -- YAGNI por ahora.
+-- `visibilidad` sigue el mismo campo/valores ya usados en mapas/documentos/
+-- geovisores/categorias (ver mapas.service.js#visibilidadPermitida): 'publico'
+-- lo ve cualquiera (incluido visitante anónimo), 'usuarios' exige sesión con
+-- un rol que no sea visitante/publico. No se replica el tercer valor
+-- 'acreditados' de esos módulos -- es específico de descargas con link
+-- directo sin iniciar sesión, un concepto que no aplica a una tarjeta de
+-- catálogo (YAGNI: agregarlo el día que una herramienta lo necesite de verdad).
 CREATE TABLE herramientas (
   clave          TEXT PRIMARY KEY CHECK (clave ~ '^[a-z0-9-]{2,50}$'),
   titulo         TEXT NOT NULL CHECK (char_length(titulo) BETWEEN 2 AND 150),
   descripcion    TEXT CHECK (descripcion IS NULL OR char_length(descripcion) <= 500),
   tag            TEXT NOT NULL CHECK (char_length(tag) BETWEEN 2 AND 40),
   activa         BOOLEAN NOT NULL DEFAULT true,
+  visibilidad    TEXT NOT NULL DEFAULT 'publico' CHECK (visibilidad IN ('publico', 'usuarios')),
   orden          INTEGER NOT NULL DEFAULT 0,
   creado_en      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
