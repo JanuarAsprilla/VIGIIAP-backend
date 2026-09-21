@@ -20,6 +20,19 @@ const optionalUrlExt = trustedUrl(true); // geovisor puede ser externo (ArcGIS, 
 const visibilidadEnum = z.enum(['publico', 'usuarios', 'acreditados']).default('publico');
 const CURRENT_YEAR = new Date().getFullYear();
 
+// Campos opcionales que el admin puede borrar explícitamente desde el
+// formulario (mandan '' para "quitar este dato"). Sin este preprocess, ''
+// entra directo a z.coerce.number()/z.string().min(...) y revienta la
+// validación (Number('') = 0, no positive; '' no cumple min(3)) en vez de
+// limpiarse. '' se normaliza a null ANTES de validar -- .nullable() deja
+// pasar null sin tocar el resto de la cadena, así que sigue siendo un valor
+// "presente" (no undefined) y update() sí lo manda a limpiar la columna,
+// a diferencia de omitir el campo del todo (que update() interpreta como
+// "no tocar esta columna").
+function clearable(schema) {
+  return z.preprocess((v) => (v === '' ? null : v), schema.nullable().optional());
+}
+
 const mapaBase = z.object({
   titulo:          z.string().min(3, 'Título requerido (mín. 3 caracteres)'),
   categoria:       z.string().min(2, 'Categoría requerida'),
@@ -30,14 +43,15 @@ const mapaBase = z.object({
   archivo_img_url: optionalUrl,
   geovisor_url:    optionalUrlExt,
   visibilidad:     visibilidadEnum,
-  // Metadatos geoespaciales (ISO 19115 / IGAC)
-  epsg:       z.coerce.number().int().positive().optional(),
-  escala:     z.coerce.number().int().min(500).max(5_000_000).optional(),
-  fuente:     z.string().min(3).max(200).optional(),
-  bbox_norte: z.coerce.number().min(-90).max(90).optional(),
-  bbox_sur:   z.coerce.number().min(-90).max(90).optional(),
-  bbox_este:  z.coerce.number().min(-180).max(180).optional(),
-  bbox_oeste: z.coerce.number().min(-180).max(180).optional(),
+  // Metadatos geoespaciales (ISO 19115 / IGAC) -- todos opcionales y
+  // borrables (ver clearable() arriba).
+  epsg:       clearable(z.coerce.number().int().positive()),
+  escala:     clearable(z.coerce.number().int().min(500).max(5_000_000)),
+  fuente:     clearable(z.string().min(3).max(200)),
+  bbox_norte: clearable(z.coerce.number().min(-90).max(90)),
+  bbox_sur:   clearable(z.coerce.number().min(-90).max(90)),
+  bbox_este:  clearable(z.coerce.number().min(-180).max(180)),
+  bbox_oeste: clearable(z.coerce.number().min(-180).max(180)),
 });
 
 export const createMapaSchema = mapaBase
