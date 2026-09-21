@@ -27,9 +27,19 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
+// Sin este mock, la validación de url (ver urlGeoserverSegura en
+// geovisores.schema.js) haría resolución DNS real contra internet en cada
+// test que crea/actualiza una conexión -- lento y no determinista en CI.
+// Por defecto "no es privada" (deja pasar); un test puntual la sobreescribe
+// para probar el camino de rechazo end-to-end.
+vi.mock('../src/utils/ssrfGuard.js', () => ({
+  urlApuntaARedPrivada: vi.fn().mockResolvedValue(false),
+}));
+
 import * as conexionService from '../src/modules/geovisores/conexionesGeoserver.service.js';
 import { listarWorkspacesDeConexion } from '../src/modules/geovisores/geovisores.service.js';
 import { query } from '../src/config/database.js';
+import { urlApuntaARedPrivada } from '../src/utils/ssrfGuard.js';
 
 const adminToken = jwt.sign(
   { id: 'uuid-admin', email: 'admin@iiap.org.co', rol: 'admin_sig' },
@@ -165,5 +175,31 @@ describe('Conexiones GeoServer routes — auth guards via supertest', () => {
       .set('Authorization', `Bearer ${superToken}`)
       .send({ nombre: 'GeoServer IIAP', url: 'https://geo.iiap.org.co' });
     expect(res.status).toBe(422);
+  });
+
+  // Regresión SSRF: el proxy WMS/WFS/WCS hace fetch() desde el backend contra
+  // esta url -- si apuntara a una red interna (169.254.169.254, 127.0.0.1,
+  // 10.0.0.0/8, ...), convertiría el proxy en un canal hacia la red del VPS.
+  it('POST /api/admin/conexiones-geoserver → una url que resuelve a una red privada se rechaza con 422 y no crea la conexión', async () => {
+    urlApuntaARedPrivada.mockResolvedValueOnce(true);
+    const res = await request(app)
+      .post('/api/admin/conexiones-geoserver')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({
+        nombre: 'GeoServer sospechoso', url: 'http://169.254.169.254/geoserver',
+        tipo: 'externo',
+      });
+    expect(res.status).toBe(422);
+    expect(conexionService.create).not.toHaveBeenCalled();
+  });
+
+  it('PATCH /api/admin/conexiones-geoserver/:id → una url que resuelve a una red privada se rechaza con 422 y no actualiza la conexión', async () => {
+    urlApuntaARedPrivada.mockResolvedValueOnce(true);
+    const res = await request(app)
+      .patch('/api/admin/conexiones-geoserver/conexion-1')
+      .set('Authorization', `Bearer ${superToken}`)
+      .send({ url: 'http://192.168.1.1/geoserver' });
+    expect(res.status).toBe(422);
+    expect(conexionService.update).not.toHaveBeenCalled();
   });
 });

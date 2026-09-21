@@ -18,7 +18,9 @@ export async function show(req, res, next) {
 
 export async function store(req, res, next) {
   try {
-    const data = createConexionGeoserverSchema.parse(req.body);
+    // parseAsync: la validación de url resuelve DNS para bloquear SSRF hacia
+    // redes internas (ver urlGeoserverSegura en geovisores.schema.js).
+    const data = await createConexionGeoserverSchema.parseAsync(req.body);
     const conexion = await conexionService.create(data);
     registrarAuditoria({
       accion: 'create_conexion_geoserver',
@@ -35,7 +37,7 @@ export async function store(req, res, next) {
 
 export async function update(req, res, next) {
   try {
-    const data = updateConexionGeoserverSchema.parse(req.body);
+    const data = await updateConexionGeoserverSchema.parseAsync(req.body);
     const conexion = await conexionService.update(req.params.id, data);
     registrarAuditoria({
       accion: 'update_conexion_geoserver',
