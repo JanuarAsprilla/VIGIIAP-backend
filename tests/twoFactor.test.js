@@ -18,10 +18,14 @@ vi.mock('../src/config/database.js', () => ({
 vi.mock('qrcode', () => ({
   default: { toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,fake') },
 }));
+vi.mock('../src/utils/auditLog.js', () => ({
+  registrarAuditoria: vi.fn(),
+}));
 
 import * as tfService from '../src/modules/auth/twoFactor.service.js';
 import * as authService from '../src/modules/auth/auth.service.js';
 import { query } from '../src/config/database.js';
+import { registrarAuditoria } from '../src/utils/auditLog.js';
 import { setup, verify, disable, confirm } from '../src/modules/auth/twoFactor.controller.js';
 
 const mockNext = vi.fn();
@@ -62,6 +66,9 @@ describe('twoFactor.controller → verify()', () => {
     const r = res();
     await verify({ user: USER, body: { code: '123456' } }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ backupCodes: ['A', 'B'] }));
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: '2fa_activado', usuarioId: USER.id, usuarioEmail: USER.email })
+    );
   });
 
   it('llama next(err) si enableTotp lanza', async () => {
@@ -85,6 +92,9 @@ describe('twoFactor.controller → disable()', () => {
     const r = res();
     await disable({ user: USER, body: { code: '123456' } }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ message: expect.any(String) }));
+    expect(registrarAuditoria).toHaveBeenCalledWith(
+      expect.objectContaining({ accion: '2fa_desactivado', usuarioId: USER.id, usuarioEmail: USER.email })
+    );
   });
 
   it('llama next(err) si disableTotp lanza', async () => {

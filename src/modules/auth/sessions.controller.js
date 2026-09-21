@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { REFRESH_COOKIE_NAME } from '../../utils/cookieOptions.js';
+import { registrarAuditoria } from '../../utils/auditLog.js';
 import crypto from 'node:crypto';
 
 function hashToken(token) {
@@ -43,6 +44,16 @@ export async function revokeSession(req, res, next) {
       [req.params.id, req.user.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Sesión no encontrada' });
+    registrarAuditoria({
+      accion: 'sesion_revocada',
+      modulo: 'auth',
+      entidadId: req.user.id,
+      descripcion: `Sesión revocada — ${req.user.email}`,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     res.json({ message: 'Sesión cerrada correctamente' });
   } catch (err) { next(err); }
 }
@@ -54,6 +65,16 @@ export async function revokeAllSessions(req, res, next) {
       'UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1 AND revocado = false',
       [req.user.id]
     );
+    registrarAuditoria({
+      accion: 'todas_sesiones_revocadas',
+      modulo: 'auth',
+      entidadId: req.user.id,
+      descripcion: `Todas las sesiones revocadas — ${req.user.email}`,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     res.json({ message: 'Todas las sesiones cerradas correctamente' });
   } catch (err) { next(err); }
 }
