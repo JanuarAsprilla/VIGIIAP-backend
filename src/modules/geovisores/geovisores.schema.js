@@ -1,6 +1,16 @@
 import { z } from 'zod';
+import { urlApuntaARedPrivada } from '../../utils/ssrfGuard.js';
 
 const visibilidadEnum = z.enum(['publico', 'usuarios', 'acreditados']).default('publico');
+
+// El backend hace fetch() a esta URL desde el propio servidor (proxy WMS/WFS/WCS
+// en geoserver.connector.js) -- sin esta guarda, un super_admin (comprometido, o
+// si este formulario se le abre algún día a un rol menor) podría apuntarla a una
+// IP interna del VPS y convertir el proxy en un canal SSRF. Ver ssrfGuard.js.
+const urlGeoserverSegura = z.string().url().refine(
+  async (url) => !(await urlApuntaARedPrivada(url)),
+  { message: 'La URL no puede apuntar a una red privada/interna' },
+);
 
 const presetAreaSchema = z.object({
   nombre: z.string().min(1).max(100),
@@ -76,7 +86,7 @@ export const toggleGeovisorSchema = z.object({
 // de terceros) no las requiere -- misma invariante reforzada en BD (migración 047).
 export const createConexionGeoserverSchema = z.object({
   nombre: z.string().min(2).max(150),
-  url: z.string().url(),
+  url: urlGeoserverSegura,
   tipo: z.enum(['propio', 'externo']).default('propio'),
   usuarioLectura: z.string().min(1).max(100).optional(),
   password: z.string().min(1).max(500).optional(),
@@ -88,7 +98,7 @@ export const createConexionGeoserverSchema = z.object({
 
 export const updateConexionGeoserverSchema = z.object({
   nombre: z.string().min(2).max(150).optional(),
-  url: z.string().url().optional(),
+  url: urlGeoserverSegura.optional(),
   tipo: z.enum(['propio', 'externo']).optional(),
   usuarioLectura: z.string().min(1).max(100).optional(),
   password: z.string().min(1).max(500).optional(), // solo si se está rotando la contraseña
