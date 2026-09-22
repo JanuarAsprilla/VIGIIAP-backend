@@ -23,6 +23,7 @@ vi.mock('../src/config/r2.js', () => ({
 }));
 
 import * as userService from '../src/modules/usuarios/usuarios.service.js';
+import { query } from '../src/config/database.js';
 
 const pubToken = jwt.sign(
   { id: 'uuid-pub', email: 'pub@iiap.org.co', rol: 'publico' },
@@ -249,6 +250,19 @@ describe('PATCH /api/usuarios/me/password', () => {
       .get('/api/usuarios/me')
       .set('Authorization', `Bearer ${tokenConExp}`);
     expect(res2.status).toBe(401);
+  });
+
+  it('retorna 422 si la nueva contraseña no alcanza el mínimo configurado por el super_admin', async () => {
+    // passwordMinLength=12 guardado en configuracion — Nueva123! cumple
+    // strongPassword (mayúscula, número, símbolo) pero solo tiene 9.
+    query.mockResolvedValueOnce({ rows: [{ clave: 'passwordMinLength', valor: '12' }] });
+    const res = await request(app)
+      .patch('/api/usuarios/me/password')
+      .set('Authorization', `Bearer ${verToken}`)
+      .send({ currentPassword: 'OldPass1!', newPassword: 'Nueva123!' });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain('mínimo 12 caracteres');
+    expect(userService.updatePassword).not.toHaveBeenCalled();
   });
 });
 

@@ -18,6 +18,7 @@ import {
 } from '../../utils/cookieOptions.js';
 import { generateCsrfToken } from '../../utils/csrf.js';
 import logger from '../../utils/logger.js';
+import { validarLongitudMinima } from '../../utils/passwordPolicy.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /**
@@ -144,6 +145,7 @@ export async function visitante(req, res, next) {
 export async function register(req, res, next) {
   try {
     const data      = registerSchema.parse(req.body);
+    await validarLongitudMinima(data.password);
     const ip        = req.ip;
     const userAgent = req.headers?.['user-agent'];
     const user      = await authService.register(data, { ip, userAgent });
@@ -279,6 +281,7 @@ export async function recuperarPassword(req, res, next) {
 export async function resetPassword(req, res, next) {
   try {
     const { token, password } = resetPasswordSchema.parse(req.body);
+    await validarLongitudMinima(password);
     await authService.resetPassword(token, password, { ip: req.ip, userAgent: req.headers?.['user-agent'] });
     res.json({ message: 'Contraseña actualizada correctamente.' });
   } catch (err) {

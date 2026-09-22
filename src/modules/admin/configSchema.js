@@ -46,6 +46,12 @@ export const CONFIG_SCHEMA = {
   cors_extra_origins:   { type: 'string', maxLength: 1000 },
   rate_limit_max:       { type: 'string', maxLength: 6, pattern: /^\d{1,6}$/ },
   admin_email_fallback: { type: 'string', maxLength: 1000 },
+  // Seguridad -- ver src/utils/passwordPolicy.js y RequireAdmin (frontend).
+  // passwordExpiryDays ya se leía en auth.service.js#login() desde siempre
+  // (default 90), pero nunca estuvo aquí -- solo era editable por SQL directo.
+  passwordExpiryDays: { type: 'string', maxLength: 4, pattern: /^\d{1,4}$/ },
+  passwordMinLength:  { type: 'string', maxLength: 3, pattern: /^\d{1,3}$/ },
+  require2faAdmins:   { type: 'boolean' },
 };
 
 // Ajustes rutinarios de contenido (siteName, phone, notifs, etc.) quedan
@@ -59,6 +65,7 @@ export const SUPER_ADMIN_ONLY_KEYS = new Set([
   'modoMantenimiento', 'mensajeMantenimiento',
   'mail_host', 'mail_port', 'mail_secure', 'mail_user', 'mail_pass',
   'cors_extra_origins', 'rate_limit_max', 'admin_email_fallback',
+  'passwordExpiryDays', 'passwordMinLength', 'require2faAdmins',
 ]);
 
 // Etiquetas legibles para el correo de alerta — mail_pass nunca debe mostrar
@@ -76,4 +83,7 @@ export const CONFIG_LABELS = {
   cors_extra_origins:    'Dominios adicionales permitidos (CORS)',
   rate_limit_max:        'Límite de peticiones (rate limit)',
   admin_email_fallback:  'Correo de respaldo para alertas admin',
+  passwordExpiryDays:    'Vigencia de contraseña (días)',
+  passwordMinLength:     'Longitud mínima de contraseña',
+  require2faAdmins:      'Exigir 2FA a administradores',
 };

@@ -11,7 +11,11 @@
  */
 import { query } from './database.js';
 
-const DYNAMIC_KEYS = ['cors_extra_origins', 'rate_limit_max', 'admin_email_fallback'];
+const DYNAMIC_KEYS = [
+  'cors_extra_origins', 'rate_limit_max', 'admin_email_fallback',
+  'passwordMinLength', 'require2faAdmins',
+];
+const PASSWORD_MIN_LENGTH_FLOOR = 8; // ver strongPassword en passwordPolicy.js -- el schema ya exige esto
 const TTL_MS = 5 * 60_000;
 
 let _cache = null;
@@ -56,4 +60,17 @@ export async function getRateLimitMax() {
 export async function getAdminEmailFallback() {
   const cfg = await loadConfig();
   return cfg.admin_email_fallback || null;
+}
+
+/** Longitud mínima de contraseña configurada -- nunca por debajo del piso fijo del schema. */
+export async function getPasswordMinLength() {
+  const cfg = await loadConfig();
+  const n = Number(cfg.passwordMinLength);
+  return Number.isFinite(n) && n > PASSWORD_MIN_LENGTH_FLOOR ? n : PASSWORD_MIN_LENGTH_FLOOR;
+}
+
+/** Si está activo, admin_sig/super_admin sin 2FA quedan bloqueados hasta activarlo (ver RequireAdmin en el frontend). */
+export async function getRequire2faAdmins() {
+  const cfg = await loadConfig();
+  return cfg.require2faAdmins === 'true';
 }

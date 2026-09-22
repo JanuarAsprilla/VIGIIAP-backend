@@ -269,8 +269,11 @@ export async function setConfiguracion(config, adminId, adminEmail) {
   }
 
   // Mismo motivo — dynamicConfig.js cachea CORS extra / rate limit / correo
-  // de respaldo 5 min.
-  const DYNAMIC_KEYS = ['cors_extra_origins', 'rate_limit_max', 'admin_email_fallback'];
+  // de respaldo / longitud mínima de contraseña / 2FA obligatorio, 5 min.
+  const DYNAMIC_KEYS = [
+    'cors_extra_origins', 'rate_limit_max', 'admin_email_fallback',
+    'passwordMinLength', 'require2faAdmins',
+  ];
   if (DYNAMIC_KEYS.some((k) => k in config)) {
     clearDynamicConfigCache();
   }

@@ -465,7 +465,9 @@ describe('getProfile()', () => {
     query
       .mockResolvedValueOnce({ rows: [profileRow] })
       // rol admin_sig → getProfile también carga sus permisos por módulo (ver modulos.service.js)
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] })
+      // ...y si el panel exige 2FA obligatorio para admins (ver dynamicConfig.js)
+      .mockResolvedValueOnce({ rows: [{ clave: 'require2faAdmins', valor: 'true' }] });
 
     const result = await getProfile('uuid-001');
 
@@ -474,6 +476,7 @@ describe('getProfile()', () => {
       email: 'admin@iiap.gob.pe',
       avatar_url: 'https://files.test.local/avatars/admin.jpg',
       twoFactorEnabled: true,
+      require2FA: true,
     });
     expect(result.modulos).toHaveLength(MODULOS.length); // catálogo completo, todos en false por defecto
     expect(query).toHaveBeenCalledWith(
@@ -493,6 +496,18 @@ describe('getProfile()', () => {
     query.mockResolvedValueOnce({ rows: [] });
 
     await expect(getProfile('uuid-inexistente')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('un rol no-admin no trae require2FA ni consulta esa config -- no le hace falta', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'uuid-002', nombre: 'Investigadora', rol: 'investigador', creado_en: new Date().toISOString() }],
+    });
+
+    const result = await getProfile('uuid-002');
+
+    expect(result.require2FA).toBeUndefined();
+    expect(result.modulos).toBeUndefined();
+    expect(query).toHaveBeenCalledOnce(); // ni permisosDeAdmin ni getRequire2faAdmins se llaman
   });
 });
 

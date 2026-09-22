@@ -73,6 +73,46 @@ describe('getAdminEmailFallback()', () => {
   });
 });
 
+describe('getPasswordMinLength()', () => {
+  it('retorna el valor guardado cuando supera el piso de 8', async () => {
+    const { query: q, mod } = await loadFresh();
+    q.mockResolvedValue({ rows: [{ clave: 'passwordMinLength', valor: '12' }] });
+    expect(await mod.getPasswordMinLength()).toBe(12);
+  });
+
+  it('nunca baja del piso de 8, ni con un valor guardado menor', async () => {
+    const { query: q, mod } = await loadFresh();
+    q.mockResolvedValue({ rows: [{ clave: 'passwordMinLength', valor: '5' }] });
+    expect(await mod.getPasswordMinLength()).toBe(8);
+  });
+
+  it('retorna 8 si no hay nada guardado', async () => {
+    const { query: q, mod } = await loadFresh();
+    q.mockResolvedValue({ rows: [] });
+    expect(await mod.getPasswordMinLength()).toBe(8);
+  });
+
+  it('retorna 8 ante un valor no numérico', async () => {
+    const { query: q, mod } = await loadFresh();
+    q.mockResolvedValue({ rows: [{ clave: 'passwordMinLength', valor: 'abc' }] });
+    expect(await mod.getPasswordMinLength()).toBe(8);
+  });
+});
+
+describe('getRequire2faAdmins()', () => {
+  it('retorna true cuando está activado', async () => {
+    const { query: q, mod } = await loadFresh();
+    q.mockResolvedValue({ rows: [{ clave: 'require2faAdmins', valor: 'true' }] });
+    expect(await mod.getRequire2faAdmins()).toBe(true);
+  });
+
+  it('retorna false si no hay nada guardado', async () => {
+    const { query: q, mod } = await loadFresh();
+    q.mockResolvedValue({ rows: [] });
+    expect(await mod.getRequire2faAdmins()).toBe(false);
+  });
+});
+
 describe('cache de 5 minutos + clearDynamicConfigCache()', () => {
   it('sirve de cache en llamadas seguidas — no golpea BD dos veces', async () => {
     const { query: q, mod } = await loadFresh();
