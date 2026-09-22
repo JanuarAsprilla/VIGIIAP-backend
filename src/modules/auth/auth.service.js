@@ -7,6 +7,7 @@ import { notifyNuevoInicioSesion } from '../../utils/mailer.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
 import logger from '../../utils/logger.js';
 import { permisosDeAdmin } from '../admin/modulos.service.js';
+import { getRequire2faAdmins } from '../../config/dynamicConfig.js';
 
 const SALT_ROUNDS = 12;
 
@@ -580,6 +581,13 @@ export async function getProfile(userId) {
   // no tienen restricción, así que no cargan este dato.
   if (usuario.rol === 'admin_sig') {
     usuario.modulos = await permisosDeAdmin(userId);
+  }
+
+  // Solo admin_sig/super_admin les importa -- el frontend usa esto en
+  // RequireAdmin para bloquear el panel hasta que activen 2FA cuando el
+  // super_admin lo exige. Roles no-admin nunca lo necesitan.
+  if (['admin_sig', 'super_admin'].includes(usuario.rol)) {
+    usuario.require2FA = await getRequire2faAdmins();
   }
   return usuario;
 }

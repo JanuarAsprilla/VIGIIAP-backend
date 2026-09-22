@@ -8,6 +8,7 @@ import {
   COOKIE_NAME, REFRESH_COOKIE_NAME,
   authCookieOptions, refreshCookieOptions,
 } from '../../utils/cookieOptions.js';
+import { validarLongitudMinima } from '../../utils/passwordPolicy.js';
 
 /** POST /api/auth/change-expired-password */
 export async function changeExpiredPassword(req, res, next) {
@@ -40,6 +41,7 @@ export async function changeExpiredPassword(req, res, next) {
     }
 
     const { password } = resetPasswordSchema.pick({ password: true }).parse(req.body);
+    await validarLongitudMinima(password);
 
     // Verificar que el token no fue ya consumido (previene replay del JWT temporal)
     const { rows: check } = await query(

@@ -6,6 +6,7 @@ import {
   COOKIE_NAME, clearCookieOptions,
   REFRESH_COOKIE_NAME, clearRefreshCookieOptions,
 } from '../../utils/cookieOptions.js';
+import { validarLongitudMinima } from '../../utils/passwordPolicy.js';
 
 export async function getMe(req, res, next) {
   try { res.json(await userService.getProfile(req.user.id)); } catch (err) { next(err); }
@@ -72,6 +73,7 @@ export async function updateAvatar(req, res, next) {
 export async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = updatePasswordSchema.parse(req.body);
+    await validarLongitudMinima(newPassword);
     await userService.updatePassword(req.user.id, currentPassword, newPassword);
 
     // Blacklistear el access token actual — ya no es válido tras el cambio

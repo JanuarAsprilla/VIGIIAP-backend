@@ -20,6 +20,16 @@ vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+// Sin este mock, validarLongitudMinima() dispara su propio query() contra
+// dynamicConfig.js, corriendo el orden de los mockResolvedValueOnce()
+// encadenados más abajo (que asumen la secuencia exacta de queries del
+// controlador original, sin esta llamada extra). strongPassword se
+// mantiene real -- lo sigue necesitando resetPasswordSchema (auth.schema.js).
+vi.mock('../src/utils/passwordPolicy.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  validarLongitudMinima: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { query } from '../src/config/database.js';
 import { issueTokenPair, revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import { verifyTotpOrBackup } from '../src/modules/auth/twoFactor.service.js';
