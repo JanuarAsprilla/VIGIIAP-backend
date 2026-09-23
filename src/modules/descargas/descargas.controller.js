@@ -4,19 +4,22 @@
  * Problema que resuelve: las URLs de R2 almacenadas en BD son directas (públicas).
  * Cualquiera con el link puede descargar un documento "acreditados" sin autenticarse.
  *
- * Solución: este controlador verifica visibilidad ANTES de generar una URL prefirmada
- * de 120 segundos. El bucket debe estar configurado como privado en Cloudflare R2.
+ * Solución: este controlador verifica visibilidad y reenvía el archivo él mismo
+ * (streamPrivateFile) en vez de redirigir a una URL prefirmada -- redirigir expone
+ * al navegador el host/IP real del almacenamiento S3 (y, en un despliegue sin
+ * dominio propio delante, en texto plano). El bucket debe estar configurado como
+ * privado en Cloudflare R2 / MinIO.
  *
  * Flujo: GET /api/descargar/mapa/:id?campo=archivo_pdf
  *   1. Buscar recurso en BD
  *   2. Verificar activo + visibilidad vs. usuario
- *   3. Generar URL prefirmada temporal (getPresignedUrl)
+ *   3. Reenviar el archivo directamente (getFileStream + pipe)
  *   4. Registrar descarga en descarga_log (fire-and-forget)
- *   5. Redirect 302 → URL prefirmada
  */
 import { query } from '../../config/database.js';
-import { getPresignedUrl, extractKey, isPublicUrl } from '../../config/r2.js';
+import { isPublicUrl } from '../../config/r2.js';
 import { registrarDescarga } from '../../utils/dataCustody.js';
+import { streamPrivateFile } from '../../utils/streamFile.js';
 
 /**
  * Verifica si el usuario puede acceder al recurso según su visibilidad.
@@ -55,15 +58,6 @@ export async function descargarMapa(req, res, next) {
       return res.status(404).json({ error: 'Archivo no disponible para este mapa' });
     }
 
-    // Archivos públicos (imágenes, thumbnails) se sirven directamente
-    // Archivos privados (PDFs) requieren URL prefirmada
-    let downloadUrl = fileUrl;
-    if (!isPublicUrl(fileUrl)) {
-      const key = extractKey(fileUrl);
-      if (!key) return res.status(500).json({ error: 'No se pudo resolver la clave del archivo' });
-      downloadUrl = await getPresignedUrl(key, 120);
-    }
-
     registrarDescarga({
       tipoRecurso:   'mapa',
       recursoId:     mapa.id,
@@ -74,7 +68,13 @@ export async function descargarMapa(req, res, next) {
       archivoUrl:    fileUrl,
     });
 
-    res.redirect(302, downloadUrl);
+    // Archivos públicos (imágenes, thumbnails) se sirven directamente --
+    // no llevan credenciales que proteger. Archivos privados (PDFs) se
+    // reenvían desde el propio backend (ver streamPrivateFile).
+    if (isPublicUrl(fileUrl)) {
+      return res.redirect(302, fileUrl);
+    }
+    await streamPrivateFile(res, next, fileUrl);
   } catch (err) { next(err); }
 }
 
@@ -97,13 +97,6 @@ export async function descargarDocumento(req, res, next) {
       return res.status(404).json({ error: 'Archivo no disponible para este documento' });
     }
 
-    let downloadUrl = doc.archivo_url;
-    if (!isPublicUrl(doc.archivo_url)) {
-      const key = extractKey(doc.archivo_url);
-      if (!key) return res.status(500).json({ error: 'No se pudo resolver la clave del archivo' });
-      downloadUrl = await getPresignedUrl(key, 120);
-    }
-
     registrarDescarga({
       tipoRecurso:   'documento',
       recursoId:     doc.id,
@@ -114,6 +107,9 @@ export async function descargarDocumento(req, res, next) {
       archivoUrl:    doc.archivo_url,
     });
 
-    res.redirect(302, downloadUrl);
+    if (isPublicUrl(doc.archivo_url)) {
+      return res.redirect(302, doc.archivo_url);
+    }
+    await streamPrivateFile(res, next, doc.archivo_url);
   } catch (err) { next(err); }
 }

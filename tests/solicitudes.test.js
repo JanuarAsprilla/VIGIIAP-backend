@@ -1,19 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
+import { Readable } from 'node:stream';
 import app from '../src/app.js';
 
 vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
-  getAll:                  vi.fn(),
-  getMine:                 vi.fn(),
-  getById:                 vi.fn(),
-  create:                  vi.fn(),
-  updateEstado:            vi.fn(),
-  responder:               vi.fn(),
-  addArchivo:              vi.fn(),
-  getArchivos:             vi.fn(),
-  getArchivoPresignedUrl:  vi.fn(),
-  removeArchivo:           vi.fn(),
+  getAll:         vi.fn(),
+  getMine:        vi.fn(),
+  getById:        vi.fn(),
+  create:         vi.fn(),
+  updateEstado:   vi.fn(),
+  responder:      vi.fn(),
+  addArchivo:     vi.fn(),
+  getArchivos:    vi.fn(),
+  getArchivoInfo: vi.fn(),
+  removeArchivo:  vi.fn(),
 }));
 
 // query() aquí sirve dos dueños: requireModulo (permisos por módulo) y el
@@ -29,11 +30,23 @@ vi.mock('../src/config/database.js', () => ({
 }));
 
 vi.mock('../src/config/r2.js', () => ({
-  uploadFile:      vi.fn().mockResolvedValue('https://files.test.local/solicitudes/archivo.pdf'),
-  deleteFile:      vi.fn(),
-  extractKey:      vi.fn((url) => url?.split('/').pop() ?? null),
-  isPublicUrl:     vi.fn(() => true),
-  getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.test.local/file'),
+  uploadFile:  vi.fn().mockResolvedValue('https://files.test.local/solicitudes/archivo.pdf'),
+  deleteFile:  vi.fn(),
+  extractKey:  vi.fn((url) => url?.split('/').pop() ?? null),
+  isPublicUrl: vi.fn(() => true),
+  // streamPrivateFile() reenvía esto al cliente -- un Readable real para que
+  // el test de integración (supertest, HTTP de verdad) reciba una respuesta
+  // completa en vez de colgarse esperando datos que nunca llegan. Content-Length
+  // debe coincidir exacto con los bytes reales -- si no, Node corta la conexión
+  // ("aborted") en vez de completar la respuesta.
+  getFileStream: vi.fn(() => {
+    const body = Buffer.from('contenido de prueba');
+    return Promise.resolve({
+      stream: Readable.from(body),
+      contentType: 'application/pdf',
+      contentLength: body.byteLength,
+    });
+  }),
 }));
 
 import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
@@ -313,16 +326,17 @@ describe('GET /api/solicitudes/:id/archivos/:archivoId/download', () => {
     expect(res.status).toBe(401);
   });
 
-  it('usuario obtiene URL prefirmada — retorna 200', async () => {
-    const { getArchivoPresignedUrl } = await import('../src/modules/solicitudes/solicitudes.service.js');
-    getArchivoPresignedUrl.mockResolvedValue({
-      url: 'https://r2.example.com/presigned?token=abc', nombre: 'doc.pdf',
+  it('reenvía el archivo directamente -- retorna 200 sin exponer una URL prefirmada', async () => {
+    const { getArchivoInfo } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    getArchivoInfo.mockResolvedValue({
+      url: 'https://files.test.local/solicitudes/doc.pdf', nombre: 'doc.pdf',
     });
     const res = await request(app)
       .get('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1/download')
       .set('Authorization', `Bearer ${invToken}`);
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('url');
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(Buffer.isBuffer(res.body) ? res.body.toString() : res.text).toBe('contenido de prueba');
   });
 });
 

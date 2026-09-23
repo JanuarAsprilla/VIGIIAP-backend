@@ -7,6 +7,7 @@ import { registrarAuditoria } from '../../utils/auditLog.js';
 import { notificarAdmins, crearNotificacion } from '../notificaciones/notificaciones.service.js';
 import { query } from '../../config/database.js';
 import logger from '../../utils/logger.js';
+import { streamPrivateFile } from '../../utils/streamFile.js';
 
 export async function index(req, res, next) {
   try { res.json(await solService.getAll(req.query)); } catch (err) { next(err); }
@@ -146,10 +147,10 @@ export async function getArchivos(req, res, next) {
 export async function downloadArchivo(req, res, next) {
   try {
     const isAdmin = ['admin_sig', 'super_admin'].includes(req.user.rol);
-    const result = await solService.getArchivoPresignedUrl(
+    const { url, nombre } = await solService.getArchivoInfo(
       req.params.id, req.params.archivoId, req.user.id, isAdmin
     );
-    res.json(result);
+    await streamPrivateFile(res, next, url, nombre);
   } catch (err) { next(err); }
 }
 

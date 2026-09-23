@@ -5,12 +5,19 @@ vi.mock('../src/config/database.js', () => ({
   getClient: vi.fn(),
 }));
 
+// Un stream falso mínimo -- streamPrivateFile() solo necesita .pipe() y
+// .on('error', ...), no un Readable real, para que estos tests queden
+// enfocados en control de acceso/headers en vez de en I/O de verdad.
 vi.mock('../src/config/r2.js', () => ({
   uploadFile:      vi.fn(),
   deleteFile:      vi.fn(),
   extractKey:      vi.fn((url) => (url ? url.replace('https://private.r2.local/', '') : null)),
   isPublicUrl:     vi.fn((url) => url?.startsWith('https://files.test.local')),
-  getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.r2.local/signed-url'),
+  getFileStream:   vi.fn().mockResolvedValue({
+    stream: { pipe: vi.fn(), on: vi.fn() },
+    contentType: 'application/pdf',
+    contentLength: 1024,
+  }),
 }));
 
 vi.mock('../src/utils/dataCustody.js', () => ({
@@ -21,7 +28,7 @@ vi.mock('../src/utils/dataCustody.js', () => ({
 }));
 
 import { query } from '../src/config/database.js';
-import { isPublicUrl, extractKey, getPresignedUrl } from '../src/config/r2.js';
+import { isPublicUrl, extractKey, getFileStream } from '../src/config/r2.js';
 import { descargarMapa, descargarDocumento } from '../src/modules/descargas/descargas.controller.js';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -68,6 +75,7 @@ function mockRes() {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
     redirect: vi.fn().mockReturnThis(),
+    setHeader: vi.fn().mockReturnThis(),
   };
   return res;
 }
@@ -117,15 +125,16 @@ describe('descargarMapa()', () => {
     expect(res.redirect).toHaveBeenCalledWith(302, MAPA_PUBLICO.archivo_pdf_url);
   });
 
-  it('genera URL prefirmada para mapa privado con admin', async () => {
+  it('reenvía el archivo directamente (stream) para mapa privado con admin, sin redirigir', async () => {
     query.mockResolvedValueOnce({ rows: [MAPA_ACREDITADOS] });
     isPublicUrl.mockReturnValueOnce(false);
     extractKey.mockReturnValueOnce('mapas/restricted.pdf');
     const res = mockRes();
     const req = mockReq({ params: { id: 'uuid-mapa-2' }, user: { rol: 'admin_sig' } });
     await descargarMapa(req, res, mockNext);
-    expect(getPresignedUrl).toHaveBeenCalledWith('mapas/restricted.pdf', 120);
-    expect(res.redirect).toHaveBeenCalledWith(302, 'https://presigned.r2.local/signed-url');
+    expect(getFileStream).toHaveBeenCalledWith('mapas/restricted.pdf');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 
   it('sirve imagen cuando campo=archivo_img', async () => {
@@ -237,7 +246,7 @@ describe('descargarDocumento()', () => {
     expect(res.redirect).toHaveBeenCalledWith(302, DOC_PUBLICO.archivo_url);
   });
 
-  it('genera URL prefirmada para documento privado con admin', async () => {
+  it('reenvía el archivo directamente (stream) para documento privado con admin, sin redirigir', async () => {
     const docPrivado = { ...DOC_PUBLICO, visibilidad: 'acreditados', archivo_url: 'https://private.r2.local/docs/private.pdf' };
     query.mockResolvedValueOnce({ rows: [docPrivado] });
     isPublicUrl.mockReturnValueOnce(false);
@@ -245,8 +254,9 @@ describe('descargarDocumento()', () => {
     const res = mockRes();
     const req = mockReq({ params: { id: 'uuid-doc-1' }, user: { rol: 'admin_sig' } });
     await descargarDocumento(req, res, mockNext);
-    expect(getPresignedUrl).toHaveBeenCalledWith('docs/private.pdf', 120);
-    expect(res.redirect).toHaveBeenCalledWith(302, 'https://presigned.r2.local/signed-url');
+    expect(getFileStream).toHaveBeenCalledWith('docs/private.pdf');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 
   it('retorna 404 cuando archivo_url es null', async () => {
