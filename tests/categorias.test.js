@@ -23,7 +23,15 @@ vi.mock('../src/config/r2.js', () => ({
   deleteFile:      vi.fn().mockResolvedValue(undefined),
   extractKey:      vi.fn((url) => url?.split('/').pop() ?? null),
   isPublicUrl:     vi.fn(() => true),
-  getPresignedUrl: vi.fn(),
+}));
+
+// optimizeImage() usa sharp() de verdad -- los fixtures de este archivo son
+// solo magic bytes (no imágenes decodificables), así que se mockea igual
+// que r2.js. La transformación real se prueba en imageOptimize.test.js.
+vi.mock('../src/utils/imageOptimize.js', () => ({
+  optimizeImage: vi.fn().mockResolvedValue({
+    buffer: Buffer.from('imagen-optimizada'), mimetype: 'image/webp', ext: 'webp',
+  }),
 }));
 
 vi.mock('../src/utils/auditLog.js', () => ({
