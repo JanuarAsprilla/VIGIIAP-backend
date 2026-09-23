@@ -3,16 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
   getAll: vi.fn(), getMine: vi.fn(), create: vi.fn(), updateEstado: vi.fn(),
   responder: vi.fn(),
-  getById:               vi.fn(),
-  getArchivos:           vi.fn(),
-  addArchivo:            vi.fn(),
-  removeArchivo:         vi.fn(),
-  getArchivoPresignedUrl: vi.fn(),
+  getById:       vi.fn(),
+  getArchivos:   vi.fn(),
+  addArchivo:    vi.fn(),
+  removeArchivo: vi.fn(),
+  getArchivoInfo: vi.fn(),
 }));
 vi.mock('../src/config/database.js', () => ({ query: vi.fn().mockResolvedValue({ rows: [] }), getClient: vi.fn() }));
 vi.mock('../src/config/r2.js', () => ({
   uploadFile: vi.fn(), extractKey: vi.fn(), isPublicUrl: vi.fn(),
-  getPresignedUrl: vi.fn(), deleteFile: vi.fn(), deleteFileByUrl: vi.fn(),
+  deleteFile: vi.fn(), deleteFileByUrl: vi.fn(),
+}));
+vi.mock('../src/utils/streamFile.js', () => ({
+  streamPrivateFile: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/utils/auditLog.js', () => ({ registrarAuditoria: vi.fn() }));
 vi.mock('../src/utils/mailer.js', () => ({
@@ -40,6 +43,7 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 import * as solService from '../src/modules/solicitudes/solicitudes.service.js';
+import { streamPrivateFile } from '../src/utils/streamFile.js';
 import { query } from '../src/config/database.js';
 import { notifySolicitudEstado, notifySolicitudRecibida, notifyAdminNuevaSolicitud, notifySolicitudRespuesta } from '../src/utils/mailer.js';
 import { getAdminEmails } from '../src/modules/admin/admin.service.js';
@@ -154,16 +158,17 @@ describe('deleteArchivo()', () => {
 describe('downloadArchivo()', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna la URL de descarga', async () => {
-    solService.getArchivoPresignedUrl.mockResolvedValue({ url: 'https://presigned.test/doc.pdf' });
+  it('reenvía el archivo directamente vía streamPrivateFile, sin exponer una URL prefirmada', async () => {
+    solService.getArchivoInfo.mockResolvedValue({ url: 'https://files.test/doc.pdf', nombre: 'doc.pdf' });
     const r = res();
     await downloadArchivo({ params: { id: SOL.id, archivoId: 'a1' }, user: USER }, r, mockNext);
-    expect(solService.getArchivoPresignedUrl).toHaveBeenCalledWith(SOL.id, 'a1', USER.id, false);
-    expect(r.json).toHaveBeenCalledWith({ url: 'https://presigned.test/doc.pdf' });
+    expect(solService.getArchivoInfo).toHaveBeenCalledWith(SOL.id, 'a1', USER.id, false);
+    expect(streamPrivateFile).toHaveBeenCalledWith(r, mockNext, 'https://files.test/doc.pdf', 'doc.pdf');
+    expect(r.json).not.toHaveBeenCalled();
   });
 
-  it('llama next(err) si getArchivoPresignedUrl lanza', async () => {
-    solService.getArchivoPresignedUrl.mockRejectedValue(new Error('err'));
+  it('llama next(err) si getArchivoInfo lanza', async () => {
+    solService.getArchivoInfo.mockRejectedValue(new Error('err'));
     await downloadArchivo({ params: { id: SOL.id, archivoId: 'no' }, user: USER }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });

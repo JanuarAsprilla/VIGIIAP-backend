@@ -19,7 +19,6 @@ vi.mock('../src/config/r2.js', () => ({
   deleteFileByUrl: vi.fn().mockResolvedValue(undefined),
   extractKey:      vi.fn((url) => url?.split('/').pop() ?? null),
   isPublicUrl:     vi.fn((url) => !!url?.startsWith('https://files.test.local')),
-  getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.test.local/file'),
 }));
 
 import { query } from '../src/config/database.js';
@@ -550,17 +549,19 @@ describe('solicitudes.service → addArchivo()', () => {
   });
 });
 
-// ─── getArchivoPresignedUrl() ─────────────────────────────────────────────────
+// ─── getArchivoInfo() ─────────────────────────────────────────────────────────
+// Ya no genera una URL prefirmada -- solo verifica acceso y retorna la URL
+// guardada + nombre original. El controlador la reenvía con streamPrivateFile()
+// (ver src/utils/streamFile.js) en vez de exponerla directo al cliente.
 
-import { getArchivoPresignedUrl } from '../src/modules/solicitudes/solicitudes.service.js';
-import { extractKey, getPresignedUrl } from '../src/config/r2.js';
+import { getArchivoInfo } from '../src/modules/solicitudes/solicitudes.service.js';
 
-describe('solicitudes.service → getArchivoPresignedUrl()', () => {
+describe('solicitudes.service → getArchivoInfo()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('lanza 404 si la solicitud no existe', async () => {
     query.mockResolvedValueOnce({ rows: [] });
-    await expect(getArchivoPresignedUrl('s1', 'a1', 'u1', false))
+    await expect(getArchivoInfo('s1', 'a1', 'u1', false))
       .rejects.toMatchObject({ status: 404 });
   });
 
@@ -568,43 +569,30 @@ describe('solicitudes.service → getArchivoPresignedUrl()', () => {
     query
       .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
       .mockResolvedValueOnce({ rows: [] });
-    await expect(getArchivoPresignedUrl('s1', 'a1', 'u1', false))
+    await expect(getArchivoInfo('s1', 'a1', 'u1', false))
       .rejects.toMatchObject({ status: 404 });
-  });
-
-  it('lanza 500 si extractKey retorna null', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
-      .mockResolvedValueOnce({ rows: [{ url: 'https://bad-url', nombre: 'doc.pdf' }] });
-    extractKey.mockReturnValueOnce(null);
-    await expect(getArchivoPresignedUrl('s1', 'a1', 'u1', false))
-      .rejects.toMatchObject({ status: 500 });
   });
 
   it('retorna url y nombre en path de admin (isAdmin=true, sin userId en query)', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
       .mockResolvedValueOnce({ rows: [{ url: 'https://files.test/key', nombre: 'mapa.pdf' }] });
-    extractKey.mockReturnValueOnce('key');
-    getPresignedUrl.mockResolvedValueOnce('https://presigned.test/key');
 
-    const result = await getArchivoPresignedUrl('s1', 'a1', 'u1', true);
+    const result = await getArchivoInfo('s1', 'a1', 'u1', true);
     const firstParams = query.mock.calls[0][1];
     expect(firstParams).toHaveLength(1);
-    expect(result).toEqual({ url: 'https://presigned.test/key', nombre: 'mapa.pdf' });
+    expect(result).toEqual({ url: 'https://files.test/key', nombre: 'mapa.pdf' });
   });
 
   it('retorna url y nombre en path de usuario normal (isAdmin=false, userId en query)', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ id: 's1' }] })
       .mockResolvedValueOnce({ rows: [{ url: 'https://files.test/key2', nombre: 'doc.pdf' }] });
-    extractKey.mockReturnValueOnce('key2');
-    getPresignedUrl.mockResolvedValueOnce('https://presigned.test/key2');
 
-    const result = await getArchivoPresignedUrl('s1', 'a1', 'u1', false);
+    const result = await getArchivoInfo('s1', 'a1', 'u1', false);
     const firstParams = query.mock.calls[0][1];
     expect(firstParams).toHaveLength(2);
-    expect(result.url).toBe('https://presigned.test/key2');
+    expect(result.url).toBe('https://files.test/key2');
   });
 });
 

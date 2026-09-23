@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { validateFile, sha256 } from '../../middlewares/fileGuard.js';
-import { uploadFile, getPresignedUrl, deleteFileByUrl, extractKey } from '../../config/r2.js';
+import { uploadFile, deleteFileByUrl } from '../../config/r2.js';
 import { registrarScanArchivo } from '../../utils/dataCustody.js';
 
 const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'resuelta'];
@@ -293,7 +293,12 @@ export async function getArchivos(solicitudId, userId, isAdmin) {
   return rows;
 }
 
-export async function getArchivoPresignedUrl(solicitudId, archivoId, userId, isAdmin) {
+/**
+ * Verifica acceso y retorna la URL almacenada (no prefirmada) + nombre
+ * original del adjunto. El controlador la reenvía con streamPrivateFile()
+ * en vez de exponerla directo al cliente -- ver src/utils/streamFile.js.
+ */
+export async function getArchivoInfo(solicitudId, archivoId, userId, isAdmin) {
   const params = [solicitudId];
   if (!isAdmin) params.push(userId);
 
@@ -308,11 +313,7 @@ export async function getArchivoPresignedUrl(solicitudId, archivoId, userId, isA
   );
   if (!rows[0]) throw Object.assign(new Error('Archivo no encontrado'), { status: 404 });
 
-  const key = extractKey(rows[0].url);
-  if (!key) throw Object.assign(new Error('No se pudo generar el enlace de descarga'), { status: 500 });
-
-  const presignedUrl = await getPresignedUrl(key, 180);
-  return { url: presignedUrl, nombre: rows[0].nombre };
+  return { url: rows[0].url, nombre: rows[0].nombre };
 }
 
 export async function removeArchivo(solicitudId, archivoId, adminId) {

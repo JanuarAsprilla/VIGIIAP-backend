@@ -1,5 +1,4 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // S3_ENDPOINT permite apuntar a cualquier almacenamiento compatible con S3
 // (MinIO auto-hospedado, etc.) en vez de Cloudflare R2. Si no está definida,
@@ -63,11 +62,16 @@ export async function deleteFile(key) {
 }
 
 /**
- * Genera una URL prefirmada de descarga (GET) válida por expiresIn segundos.
- * Usar solo para archivos del bucket privado.
+ * Descarga un objeto del bucket privado y devuelve su stream directamente,
+ * para que el backend lo reenvíe al cliente en vez de redirigirlo a una URL
+ * prefirmada. Así el navegador solo ve el dominio del propio API -- nunca la
+ * IP/host real del almacenamiento S3, que una URL prefirmada sí revela.
  */
-export async function getPresignedUrl(key, expiresIn = 120) {
-  return getSignedUrl(r2, new GetObjectCommand({ Bucket: PRIVATE_BUCKET, Key: key }), { expiresIn });
+export async function getFileStream(key) {
+  const { Body, ContentType, ContentLength } = await r2.send(
+    new GetObjectCommand({ Bucket: PRIVATE_BUCKET, Key: key }),
+  );
+  return { stream: Body, contentType: ContentType, contentLength: ContentLength };
 }
 
 /**
