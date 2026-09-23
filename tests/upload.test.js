@@ -10,8 +10,21 @@ vi.mock('../src/utils/dataCustody.js', () => ({
   registrarScanArchivo: vi.fn(),
 }));
 
+// optimizeImage() usa sharp() de verdad, que necesita bytes de imagen
+// decodificables -- los fixtures de este archivo son solo magic bytes (no
+// imágenes válidas), así que se mockea igual que r2.js/dataCustody.js. La
+// transformación real de sharp se prueba en imageOptimize.test.js.
+vi.mock('../src/utils/imageOptimize.js', () => ({
+  optimizeImage: vi.fn().mockResolvedValue({
+    buffer: Buffer.from('imagen-optimizada'),
+    mimetype: 'image/webp',
+    ext: 'webp',
+  }),
+}));
+
 import { uploadFile } from '../src/config/r2.js';
 import { registrarScanArchivo } from '../src/utils/dataCustody.js';
+import { optimizeImage } from '../src/utils/imageOptimize.js';
 import { uploadFields, uploadSingle } from '../src/middlewares/upload.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -284,12 +297,42 @@ describe('uploadFields() — subida a R2', () => {
       .post('/upload')
       .attach('foto', jpegBuffer(), { filename: 'foto.jpg', contentType: 'image/jpeg' });
 
+    // mimetype es 'image/webp' (no 'image/jpeg') porque category='image' pasa
+    // por optimizeImage() antes de subir -- ver los dos tests siguientes.
     expect(uploadFile).toHaveBeenCalledWith(
       expect.stringContaining('fotos/'),
       expect.any(Buffer),
-      'image/jpeg',
+      'image/webp',
       true,
     );
+  });
+
+  it('categoría image/thumbnail pasa por optimizeImage() y sube el resultado, no el archivo original', async () => {
+    const app = buildApp([{ name: 'thumb', folder: 'miniaturas', category: 'thumbnail' }]);
+    const original = jpegBuffer();
+
+    const res = await request(app)
+      .post('/upload')
+      .attach('thumb', original, { filename: 'thumb.jpg', contentType: 'image/jpeg' });
+
+    expect(optimizeImage).toHaveBeenCalledWith(expect.any(Buffer), 'thumbnail');
+    expect(uploadFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.webp$/),
+      expect.any(Buffer),
+      'image/webp',
+      true,
+    );
+    expect(res.body.body.thumb_tamano_bytes).toBe(Buffer.from('imagen-optimizada').byteLength);
+  });
+
+  it('categoría document NO pasa por optimizeImage()', async () => {
+    const app = buildApp([{ name: 'documento', folder: 'docs' }]);
+
+    await request(app)
+      .post('/upload')
+      .attach('documento', pdfBuffer(), { filename: 'a.pdf', contentType: 'application/pdf' });
+
+    expect(optimizeImage).not.toHaveBeenCalled();
   });
 
   it('usa el bucket privado (isPublic=false) para categoría document por defecto', async () => {

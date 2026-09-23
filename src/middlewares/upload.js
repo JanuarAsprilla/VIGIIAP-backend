@@ -3,6 +3,7 @@ import multer from 'multer';
 import { uploadFile } from '../config/r2.js';
 import { validateFile, sha256 } from './fileGuard.js';
 import { registrarScanArchivo } from '../utils/dataCustody.js';
+import { optimizeImage } from '../utils/imageOptimize.js';
 
 const storage = multer.memoryStorage();
 
@@ -98,15 +99,31 @@ export function uploadFields(fields) {
           const fileArr = req.files[field.name];
           if (!fileArr?.length) continue;
 
-          const file = fileArr[0];
-          const ext  = file._sanitizedExt ?? file.originalname.split('.').pop().toLowerCase();
-          const key  = `${field.folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+          const file     = fileArr[0];
+          const category = field.category ?? 'document';
+
+          // Imágenes/thumbnails se re-codifican a WebP y se redimensionan
+          // ANTES de subir -- sin esto, el archivo original (hasta 5-10 MB)
+          // se serviría tal cual en cada tarjeta de cada grilla. Se valida
+          // el archivo original tal como llegó (paso anterior); esto solo
+          // cambia lo que efectivamente se sube y se sirve después.
+          let uploadBuffer = file.buffer;
+          let uploadMime   = file.mimetype;
+          let ext          = file._sanitizedExt ?? file.originalname.split('.').pop().toLowerCase();
+          if (category === 'image' || category === 'thumbnail') {
+            const optimized = await optimizeImage(file.buffer, category);
+            uploadBuffer = optimized.buffer;
+            uploadMime   = optimized.mimetype;
+            ext          = optimized.ext;
+          }
+
+          const key = `${field.folder}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
           // Imágenes y thumbnails van al bucket público; PDFs/documentos al privado
-          const isPublic = ['image', 'thumbnail'].includes(field.category ?? 'document');
-          const url = await uploadFile(key, file.buffer, file.mimetype, isPublic);
+          const isPublic = ['image', 'thumbnail'].includes(category);
+          const url = await uploadFile(key, uploadBuffer, uploadMime, isPublic);
           req.body[`${field.name}_url`]         = url;
-          req.body[`${field.name}_tamano_bytes`] = file.size;
+          req.body[`${field.name}_tamano_bytes`] = uploadBuffer.byteLength;
 
           registrarScanArchivo({
             archivoKey:   key,
