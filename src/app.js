@@ -41,6 +41,7 @@ import publicRoutes from './modules/public/public.routes.js';
 import geovisoresRoutes from './modules/geovisores/geovisores.routes.js';
 import conexionesGeoserverRoutes from './modules/geovisores/conexionesGeoserver.routes.js';
 import notificacionesRoutes from './modules/notificaciones/notificaciones.routes.js';
+import analiticaRoutes from './modules/analitica/analitica.routes.js';
 
 const app = express();
 
@@ -252,6 +253,7 @@ v1.use('/public',              maintenanceGate, publicRoutes);
 v1.use('/geovisores',           maintenanceGate, geovisoresRoutes);
 v1.use('/admin/conexiones-geoserver', noStore, conexionesGeoserverRoutes);
 v1.use('/notificaciones', noStore, notificacionesRoutes);
+v1.use('/analitica',   noStore, analiticaRoutes);
 
 app.use('/api/v1', v1);
 app.use('/api',    v1); // alias de transición — se retira en v2
