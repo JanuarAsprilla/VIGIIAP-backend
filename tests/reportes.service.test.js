@@ -36,11 +36,12 @@ const CONTEOS_VACIOS = {
   logins_exitosos: '0', logins_fallidos: '0',
 };
 
-function mockReporteQueries({ conteos = CONTEOS_VACIOS, porModulo = [], pendientes = '0' } = {}) {
+function mockReporteQueries({ conteos = CONTEOS_VACIOS, porModulo = [], pendientes = '0', eventosSerie = [] } = {}) {
   query
     .mockResolvedValueOnce({ rows: [conteos] })                    // agregación por acción
     .mockResolvedValueOnce({ rows: porModulo })                    // agregación por módulo
-    .mockResolvedValueOnce({ rows: [{ count: pendientes }] });     // solicitudes pendientes (snapshot actual)
+    .mockResolvedValueOnce({ rows: [{ count: pendientes }] })      // solicitudes pendientes (snapshot actual)
+    .mockResolvedValueOnce({ rows: eventosSerie });                // eventos crudos para la serie de tiempo
 }
 
 describe('admin.service → getReporte() — cálculo de rango por período', () => {
@@ -118,5 +119,70 @@ describe('admin.service → getReporte() — agregación de métricas', () => {
     // La tercera query (pendientes) no debe llevar parámetros de fecha
     const [, params] = query.mock.calls[2];
     expect(params).toBeUndefined();
+  });
+});
+
+describe('admin.service → getReporte() — serie de tiempo', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('período "dia" usa granularidad horaria con 24 puntos', async () => {
+    mockReporteQueries();
+    const result = await getReporte({ periodo: 'dia' });
+
+    expect(result.serieTiempo.granularidad).toBe('hora');
+    expect(result.serieTiempo.serie).toHaveLength(24);
+    expect(result.serieTiempo.serie[0].etiqueta).toBe('00:00');
+    expect(result.serieTiempo.serie[23].etiqueta).toBe('23:00');
+  });
+
+  it('período "semana" usa granularidad diaria (un punto por día en el rango)', async () => {
+    mockReporteQueries();
+    const result = await getReporte({ periodo: 'custom', desde: '2026-08-01', hasta: '2026-08-05' });
+
+    expect(result.serieTiempo.granularidad).toBe('dia');
+    expect(result.serieTiempo.serie.map((p) => p.etiqueta)).toEqual([
+      '2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05',
+    ]);
+  });
+
+  it('cada punto de la serie empieza en cero para las 4 métricas', async () => {
+    mockReporteQueries();
+    const result = await getReporte({ periodo: 'custom', desde: '2026-08-01', hasta: '2026-08-01' });
+
+    expect(result.serieTiempo.serie).toEqual([
+      { etiqueta: '2026-08-01', usuarios: 0, solicitudes: 0, documentos: 0, mapas: 0 },
+    ]);
+  });
+
+  it('agrupa eventos reales en el día correcto y en la métrica correcta', async () => {
+    mockReporteQueries({
+      eventosSerie: [
+        { accion: 'registro',          creado_en: '2026-08-02T10:00:00' },
+        { accion: 'registro',          creado_en: '2026-08-02T15:00:00' },
+        { accion: 'create_solicitud',  creado_en: '2026-08-03T09:00:00' },
+        { accion: 'publish_documento', creado_en: '2026-08-03T09:30:00' },
+        { accion: 'publish_mapa',      creado_en: '2026-08-04T09:30:00' },
+      ],
+    });
+    const result = await getReporte({ periodo: 'custom', desde: '2026-08-01', hasta: '2026-08-05' });
+
+    const porFecha = Object.fromEntries(result.serieTiempo.serie.map((p) => [p.etiqueta, p]));
+    expect(porFecha['2026-08-01']).toEqual({ etiqueta: '2026-08-01', usuarios: 0, solicitudes: 0, documentos: 0, mapas: 0 });
+    expect(porFecha['2026-08-02']).toEqual({ etiqueta: '2026-08-02', usuarios: 2, solicitudes: 0, documentos: 0, mapas: 0 });
+    expect(porFecha['2026-08-03']).toEqual({ etiqueta: '2026-08-03', usuarios: 0, solicitudes: 1, documentos: 1, mapas: 0 });
+    expect(porFecha['2026-08-04']).toEqual({ etiqueta: '2026-08-04', usuarios: 0, solicitudes: 0, documentos: 0, mapas: 1 });
+  });
+
+  it('agrupa eventos por hora local cuando el período es "dia"', async () => {
+    mockReporteQueries({
+      eventosSerie: [
+        { accion: 'registro', creado_en: new Date(new Date().setHours(9, 15, 0, 0)).toISOString() },
+        { accion: 'registro', creado_en: new Date(new Date().setHours(9, 45, 0, 0)).toISOString() },
+      ],
+    });
+    const result = await getReporte({ periodo: 'dia' });
+
+    const punto9am = result.serieTiempo.serie.find((p) => p.etiqueta === '09:00');
+    expect(punto9am.usuarios).toBe(2);
   });
 });
