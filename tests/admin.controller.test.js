@@ -243,6 +243,45 @@ describe('admin.controller → setConfiguracion()', () => {
     expect(r.status).toHaveBeenCalledWith(400);
     expect(adminService.setConfiguracion).not.toHaveBeenCalled();
   });
+
+  it('retorna 403 si admin_sig intenta modificar mail_remitente o mail_remitente_nombre', async () => {
+    const r = res();
+    await setConfiguracion({ body: { mail_remitente: 'notificaciones@iiap.org.co' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('super_admin sí puede guardar mail_remitente y mail_remitente_nombre', async () => {
+    adminService.setConfiguracion.mockResolvedValue(undefined);
+    const r = res();
+    await setConfiguracion({
+      body: { mail_remitente: 'notificaciones@iiap.org.co', mail_remitente_nombre: 'VIGIIAP' },
+      user: SUPERADMIN,
+    }, r, mockNext);
+    expect(adminService.setConfiguracion).toHaveBeenCalledOnce();
+  });
+
+  it.each(['email', 'mail_remitente', 'mail_user'])('retorna 400 si %s no tiene formato de correo válido', async (campo) => {
+    const r = res();
+    await setConfiguracion({ body: { [campo]: 'no-es-un-correo' }, user: SUPERADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0].error).toMatch(/formato inválido/i);
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
+  it('acepta un correo con formato válido en email', async () => {
+    adminService.setConfiguracion.mockResolvedValue(undefined);
+    const r = res();
+    await setConfiguracion({ body: { email: 'info@iiap.org.co' }, user: ADMIN }, r, mockNext);
+    expect(adminService.setConfiguracion).toHaveBeenCalledOnce();
+  });
+
+  it('email vacío no dispara el error de formato (campo opcional)', async () => {
+    adminService.setConfiguracion.mockResolvedValue(undefined);
+    const r = res();
+    await setConfiguracion({ body: { email: '' }, user: ADMIN }, r, mockNext);
+    expect(adminService.setConfiguracion).toHaveBeenCalledOnce();
+  });
 });
 
 // ── probarCorreo() ────────────────────────────────────────────────────────
