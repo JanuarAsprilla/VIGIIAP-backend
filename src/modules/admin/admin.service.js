@@ -504,11 +504,68 @@ function calcularRango({ periodo, desde, hasta }) {
   throw Object.assign(new Error('Período inválido'), { status: 400 });
 }
 
+// Mismo mapeo de acciones que getDashboardTendencias -- una fila por KPI que
+// tiene sentido graficar como evolución en el tiempo (se deja fuera
+// "solicitudes resueltas"/"documentos creados"/etc. para no saturar el
+// gráfico con líneas redundantes de las mismas 4 entidades).
+const KPI_ACCION = {
+  usuarios:    'registro',
+  solicitudes: 'create_solicitud',
+  documentos:  'publish_documento',
+  mapas:       'publish_mapa',
+};
+
+/**
+ * Serie de tiempo del reporte -- un punto por hora si el período es "hoy"
+ * (un solo día no da suficientes puntos para una serie diaria), un punto por
+ * día en cualquier otro período (semana/mes/año/rango personalizado, hasta
+ * ~366 puntos para un año completo).
+ */
+async function serieTiempoReporte({ desde, hasta, periodo }) {
+  const { rows } = await query(
+    `SELECT accion, creado_en FROM audit_log
+     WHERE creado_en BETWEEN $1 AND $2 AND accion = ANY($3::text[])`,
+    [desde, hasta, Object.values(KPI_ACCION)],
+  );
+
+  const granularidad = periodo === 'dia' ? 'hora' : 'dia';
+  const etiquetas = granularidad === 'hora'
+    ? Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0') + ':00')
+    : (() => {
+        const dias = [];
+        const cursor = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
+        const fin = new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate());
+        while (cursor <= fin) {
+          dias.push(fmtLocalDate(cursor));
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        return dias;
+      })();
+
+  const claveDe = (fecha) => (granularidad === 'hora'
+    ? String(fecha.getHours()).padStart(2, '0') + ':00'
+    : fmtLocalDate(fecha));
+
+  const contadores = new Map(etiquetas.map((e) => [e, { usuarios: 0, solicitudes: 0, documentos: 0, mapas: 0 }]));
+  const kpiPorAccion = Object.fromEntries(Object.entries(KPI_ACCION).map(([kpi, accion]) => [accion, kpi]));
+  rows.forEach((r) => {
+    const kpi = kpiPorAccion[r.accion];
+    const clave = claveDe(new Date(r.creado_en));
+    const bucket = contadores.get(clave);
+    if (bucket) bucket[kpi] += 1;
+  });
+
+  return {
+    granularidad,
+    serie: etiquetas.map((etiqueta) => ({ etiqueta, ...contadores.get(etiqueta) })),
+  };
+}
+
 /** Reporte de actividad bajo demanda — agrega sobre audit_log + solicitudes. */
 export async function getReporte(reqQuery) {
   const { desde, hasta } = calcularRango(reqQuery);
 
-  const [conteos, porModulo, pendientes] = await Promise.all([
+  const [conteos, porModulo, pendientes, serieTiempo] = await Promise.all([
     query(`
       SELECT
         COUNT(*) FILTER (WHERE accion = 'registro')                        AS usuarios_nuevos,
@@ -529,6 +586,7 @@ export async function getReporte(reqQuery) {
       [desde, hasta]
     ),
     query(`SELECT COUNT(*) FROM solicitudes WHERE estado IN ('pendiente', 'en_revision')`),
+    serieTiempoReporte({ desde, hasta, periodo: reqQuery.periodo }),
   ]);
 
   const c = conteos.rows[0];
@@ -542,6 +600,7 @@ export async function getReporte(reqQuery) {
     mapas:       { creados: Number(c.mapas_creados), publicados: Number(c.mapas_publicados) },
     logins:      { exitosos: Number(c.logins_exitosos), fallidos: Number(c.logins_fallidos) },
     actividadPorModulo: porModulo.rows.map((r) => ({ modulo: r.modulo, total: Number(r.total) })),
+    serieTiempo,
   };
 }
 
@@ -566,13 +625,8 @@ export async function getErrorLog(reqQuery) {
 // ── Tendencias del dashboard ────────────────────────────────────────────────
 // Deltas semana-vs-semana-anterior + serie de 7 días por KPI, derivadas de
 // audit_log (mismo enfoque que getReporte, sin tabla ni agregación nueva).
-const KPI_ACCION = {
-  usuarios:    'registro',
-  solicitudes: 'create_solicitud',
-  documentos:  'publish_documento',
-  mapas:       'publish_mapa',
-};
-
+// Declarado antes de getReporte (más arriba en el archivo) -- también lo usa
+// la serie de tiempo de ese reporte, ver serieTiempoReporte().
 export async function getDashboardTendencias() {
   const desde = new Date();
   desde.setDate(desde.getDate() - 14);
