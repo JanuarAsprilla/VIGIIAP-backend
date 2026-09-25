@@ -18,6 +18,13 @@ export async function streamPrivateFile(res, next, fileUrl, filename) {
   res.setHeader('Content-Type', contentType || 'application/octet-stream');
   if (contentLength) res.setHeader('Content-Length', String(contentLength));
   res.setHeader('Content-Disposition', `inline; filename="${filename || key.split('/').pop()}"`);
+  // private: nunca un caché compartido/CDN, solo el navegador de quien ya
+  // pasó la autorización de esta ruta. max-age corto (5 min) porque el
+  // control de acceso se revalida en cada request real -- una ventana larga
+  // dejaría a un usuario con acceso revocado seguir viendo su copia cacheada
+  // más tiempo del razonable. Sin esto, re-abrir el mismo documento (ej.
+  // volver atrás y adelante) volvía a bajar el archivo completo cada vez.
+  res.setHeader('Cache-Control', 'private, max-age=300');
   stream.on('error', (err) => {
     if (res.headersSent) { res.destroy(err); return; }
     next(err);
