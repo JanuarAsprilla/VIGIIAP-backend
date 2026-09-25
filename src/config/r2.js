@@ -38,7 +38,15 @@ const PUBLIC_URL     = process.env.R2_PUBLIC_BUCKET_URL;
 export async function uploadFile(key, body, contentType, isPublic = false) {
   const bucket  = isPublic ? PUBLIC_BUCKET  : PRIVATE_BUCKET;
   const baseUrl = isPublic ? PUBLIC_URL     : PRIVATE_URL;
-  await r2.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }));
+  // El público (thumbnails/imágenes) se sirve directo desde el almacenamiento,
+  // sin pasar por el backend -- a diferencia del privado, acá no hay ningún
+  // punto donde poner un header de caché aparte, así que se fija como
+  // metadata del propio objeto. Cada key es única (timestamp + UUID, ver
+  // middlewares/upload.js) -- nunca se reescribe una URL existente, así que
+  // "immutable" + un año es seguro: editar un thumbnail genera una URL nueva,
+  // nunca cambia el contenido detrás de una ya cacheada.
+  const cacheControl = isPublic ? 'public, max-age=31536000, immutable' : undefined;
+  await r2.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: cacheControl }));
   return `${baseUrl}/${key}`;
 }
 
