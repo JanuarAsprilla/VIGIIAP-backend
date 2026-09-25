@@ -5,18 +5,24 @@
  * su propio archivo para que ninguno de los dos tenga que importar del otro.
  */
 
+// Formato de correo básico -- rechaza lo obviamente inválido ("sin arroba",
+// "sin dominio") sin ser tan estricto como el RFC completo (que rechazaría
+// direcciones reales válidas). Vacío pasa sin tocar este pattern -- ver el
+// `if (rule.pattern && value && ...)` en admin.controller.js.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Claves permitidas para configuración del sistema (ver migración 005_configuracion.sql)
 export const CONFIG_SCHEMA = {
   siteName:             { type: 'string', maxLength: 100 },
   siteDesc:             { type: 'string', maxLength: 500 },
   region:               { type: 'string', maxLength: 200 },
-  email:                { type: 'string', maxLength: 254 },
+  email:                { type: 'string', maxLength: 254, pattern: EMAIL_PATTERN },
   phone:                { type: 'string', maxLength: 50 },
   address:              { type: 'string', maxLength: 300 },
   modoMantenimiento:    { type: 'boolean' },
   mensajeMantenimiento: { type: 'string', maxLength: 1000 },
   // Correo remitente — editable desde el panel del super_admin
-  mail_remitente:       { type: 'string', maxLength: 254 },
+  mail_remitente:       { type: 'string', maxLength: 254, pattern: EMAIL_PATTERN },
   mail_remitente_nombre: { type: 'string', maxLength: 100 },
   // SMTP — el instituto cambia de proveedor de correo de vez en cuando; antes
   // requería tocar env vars y redesplegar. mail_pass nunca se devuelve en el
@@ -24,7 +30,7 @@ export const CONFIG_SCHEMA = {
   mail_host:            { type: 'string', maxLength: 255 },
   mail_port:            { type: 'string', maxLength: 5, pattern: /^\d{1,5}$/ },
   mail_secure:          { type: 'boolean' },
-  mail_user:            { type: 'string', maxLength: 254 },
+  mail_user:            { type: 'string', maxLength: 254, pattern: EMAIL_PATTERN },
   mail_pass:            { type: 'string', maxLength: 500 },
   // Preferencias de notificaciones y permisos — panel de Configuración
   emailNotifs:           { type: 'boolean' },
@@ -64,6 +70,11 @@ export const SUPER_ADMIN_ONLY_KEYS = new Set([
   'politicaPrivacidad', 'terminosUso',
   'modoMantenimiento', 'mensajeMantenimiento',
   'mail_host', 'mail_port', 'mail_secure', 'mail_user', 'mail_pass',
+  // Antes faltaban acá pese a que el comentario de CONFIG_SCHEMA ya decía
+  // "editable desde el panel del super_admin" -- un admin_sig podía cambiar
+  // el remitente de TODOS los correos salientes de la plataforma armando la
+  // petición PUT a mano, aunque la UI nunca se lo ofreciera.
+  'mail_remitente', 'mail_remitente_nombre',
   'cors_extra_origins', 'rate_limit_max', 'admin_email_fallback',
   'passwordExpiryDays', 'passwordMinLength', 'require2faAdmins',
 ]);
@@ -80,6 +91,8 @@ export const CONFIG_LABELS = {
   mail_secure:           'SMTP seguro (TLS)',
   mail_user:             'Usuario SMTP',
   mail_pass:             'Contraseña SMTP',
+  mail_remitente:        'Correo remitente',
+  mail_remitente_nombre: 'Nombre del remitente',
   cors_extra_origins:    'Dominios adicionales permitidos (CORS)',
   rate_limit_max:        'Límite de peticiones (rate limit)',
   admin_email_fallback:  'Correo de respaldo para alertas admin',
