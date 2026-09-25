@@ -31,9 +31,6 @@ jobs:
             source .env.backend
             set +a
 
-            echo "Servicios definidos en docker-compose:"
-            docker compose config --services
-
             mkdir -p backups
             ARCHIVO="vigiiap_$(date +%F_%H%M).sql.gz"
 
@@ -41,7 +38,7 @@ jobs:
             # autenticación por contraseña que ya usa la app (ver
             # src/config/database.js), en vez de depender de las reglas de
             # confianza local del contenedor.
-            docker compose exec -T -e PGPASSWORD="$DB_PASSWORD" db \
+            docker compose exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
               pg_dump -h 127.0.0.1 -U "$DB_USER" "$DB_NAME" | gzip > "backups/$ARCHIVO"
 
             # Verificación real, no solo "el comando no falló": un pg_dump
