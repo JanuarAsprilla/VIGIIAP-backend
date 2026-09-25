@@ -610,7 +610,8 @@ export async function getErrorLog(reqQuery) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, mensaje, stack, metodo, ruta, status_code, ocurrencias, primera_vez, ultima_vez
+      `SELECT id, mensaje, stack, metodo, ruta, status_code, ocurrencias, primera_vez, ultima_vez,
+              estado, estado_actualizado_en, estado_actualizado_por
        FROM error_log
        ORDER BY ultima_vez DESC
        LIMIT $1 OFFSET $2`,
@@ -620,6 +621,30 @@ export async function getErrorLog(reqQuery) {
   ]);
 
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
+}
+
+const ESTADOS_ERROR = new Set(['pendiente', 'revisando', 'resuelto']);
+
+/** Cambia el seguimiento manual de un error (pendiente/revisando/resuelto) —
+ *  ver comentario de la columna en 052_error_log_estado.sql sobre por qué no
+ *  se resetea aquí: el reset automático a "pendiente" cuando el error vuelve
+ *  a ocurrir vive en errorTracking.js#registrarError, no en esta función. */
+export async function actualizarEstadoError(id, estado, adminEmail) {
+  if (!ESTADOS_ERROR.has(estado)) {
+    throw Object.assign(new Error('Estado inválido'), { status: 400 });
+  }
+  const { rows } = await query(
+    `UPDATE error_log
+     SET estado = $1, estado_actualizado_en = NOW(), estado_actualizado_por = $2
+     WHERE id = $3
+     RETURNING id, mensaje, metodo, ruta, status_code, ocurrencias, primera_vez, ultima_vez,
+               estado, estado_actualizado_en, estado_actualizado_por`,
+    [estado, adminEmail, id],
+  );
+  if (rows.length === 0) {
+    throw Object.assign(new Error('Error no encontrado'), { status: 404 });
+  }
+  return rows[0];
 }
 
 // ── Tendencias del dashboard ────────────────────────────────────────────────

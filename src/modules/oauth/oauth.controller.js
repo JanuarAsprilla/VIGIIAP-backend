@@ -5,7 +5,7 @@ import {
 } from '../../utils/cookieOptions.js';
 import logger from '../../utils/logger.js';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co';
 
 function redirectUriFor(req, providerId) {
   // Debe coincidir exacto (esquema+host+path) con el registrado en la

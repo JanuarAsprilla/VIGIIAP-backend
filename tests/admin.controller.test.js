@@ -12,6 +12,7 @@ vi.mock('../src/modules/admin/admin.service.js', () => ({
   eliminarUsuario:    vi.fn(),
   getAuditLog:        vi.fn(),
   getErrorLog:        vi.fn(),
+  actualizarEstadoError: vi.fn(),
   getSuperStats:      vi.fn(),
   crearAdminSig:      vi.fn(),
   getReporte:         vi.fn(),
@@ -66,7 +67,7 @@ import {
   getConfiguracion, setConfiguracion, probarCorreo, stats, resetStatsCache,
   dashboardTendencias,
   listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario,
-  auditLog, errorLog, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
+  auditLog, errorLog, actualizarEstadoError, superStats, crearAdmin, custodiaRecurso, descargasRecurso,
   descargasStats, scanLog, batchUsuarios, reportes,
   listarAdministradores, setPermisosAdminController,
 } from '../src/modules/admin/admin.controller.js';
@@ -495,6 +496,39 @@ describe('admin.controller → errorLog()', () => {
     adminService.getErrorLog.mockRejectedValue(new Error('db'));
     await errorLog({ query: {} }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+// ── actualizarEstadoError() ──────────────────────────────────────────────────
+
+describe('admin.controller → actualizarEstadoError()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('actualiza el estado y registra auditoría', async () => {
+    adminService.actualizarEstadoError.mockResolvedValue({ id: 7, estado: 'revisando' });
+    const r = res();
+    await actualizarEstadoError({ params: { id: '7' }, body: { estado: 'revisando' }, user: ADMIN }, r, mockNext);
+
+    expect(adminService.actualizarEstadoError).toHaveBeenCalledWith('7', 'revisando', ADMIN.email);
+    expect(r.json).toHaveBeenCalledWith({ id: 7, estado: 'revisando' });
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({
+      accion: 'update_error_estado', modulo: 'errores', entidadId: '7',
+    }));
+  });
+
+  it('rechaza un estado fuera del enum antes de llegar al servicio', async () => {
+    await actualizarEstadoError({ params: { id: '7' }, body: { estado: 'archivado' }, user: ADMIN }, res(), mockNext);
+
+    expect(adminService.actualizarEstadoError).not.toHaveBeenCalled();
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('llama next(err) si el servicio lanza (ej. 404 error no encontrado)', async () => {
+    adminService.actualizarEstadoError.mockRejectedValue(Object.assign(new Error('Error no encontrado'), { status: 404 }));
+    await actualizarEstadoError({ params: { id: '999' }, body: { estado: 'resuelto' }, user: ADMIN }, res(), mockNext);
+
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(registrarAuditoria).not.toHaveBeenCalled();
   });
 });
 

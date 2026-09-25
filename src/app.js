@@ -263,12 +263,12 @@ app.use('/api',    v1); // alias de transición — se retira en v2
 const HEX_TOKEN_RE = /^[A-Fa-f0-9]{40,128}$/;
 app.get('/verificar-email/:token', (req, res) => {
   if (!HEX_TOKEN_RE.test(req.params.token)) return res.status(400).json({ error: 'Token inválido' });
-  const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co').replace(/\/$/, '');
+  const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co').replace(/\/$/, '');
   res.redirect(302, `${base}/verificar-email/${req.params.token}`);
 });
 app.get('/reset-password/:token', (req, res) => {
   if (!HEX_TOKEN_RE.test(req.params.token)) return res.status(400).json({ error: 'Token inválido' });
-  const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co').replace(/\/$/, '');
+  const base = (process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co').replace(/\/$/, '');
   res.redirect(302, `${base}/reset-password/${req.params.token}`);
 });
 

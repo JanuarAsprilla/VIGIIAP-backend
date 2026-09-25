@@ -141,6 +141,26 @@ async function send({ to, subject, html }) {
 }
 
 /**
+ * Traduce errores SMTP comunes y ya vistos en producción a una sugerencia
+ * accionable en español, SIN ocultar el mensaje original (el super_admin
+ * también necesita el texto crudo si esto no alcanza) -- ver comentario de
+ * sendTestEmail sobre por qué el error nunca se traga en silencio.
+ */
+function sugerenciaErrorSMTP(err) {
+  const texto = `${err.message || ''} ${err.response || ''}`;
+  if (err.responseCode === 534 || /application-specific password required/i.test(texto)) {
+    return 'Gmail exige una "contraseña de aplicación" en vez de tu contraseña normal cuando la cuenta '
+      + 'tiene verificación en dos pasos activada. Genera una en '
+      + 'https://myaccount.google.com/apppasswords y úsala como contraseña SMTP en este panel.';
+  }
+  if (err.responseCode === 535 || err.code === 'EAUTH') {
+    return 'El servidor rechazó el usuario o la contraseña SMTP. Verifica que ambos sean correctos '
+      + '(si es Gmail con verificación en dos pasos, la contraseña debe ser una "contraseña de aplicación", no la normal).';
+  }
+  return null;
+}
+
+/**
  * Envía un correo de prueba real usando la config SMTP actual (panel o env
  * vars) — a diferencia de send(), SÍ propaga el error: el super_admin necesita
  * saber exactamente por qué falló (host incorrecto, credenciales rechazadas,
@@ -151,14 +171,22 @@ export async function sendTestEmail(to) {
   if (!transporter) {
     throw Object.assign(new Error('SMTP no configurado — completa host, usuario y contraseña primero'), { status: 400 });
   }
-  await transporter.sendMail({
-    from: await getFromAddress(),
-    to,
-    subject: 'VIGIIAP — Correo de prueba',
-    html: `<p>Este es un correo de prueba enviado desde el panel de administración de VIGIIAP.</p>
-           <p>Si lo recibiste, la configuración SMTP actual funciona correctamente.</p>
-           <p style="color:#5A6675;font-size:0.85rem">Enviado el ${new Date().toLocaleString('es-CO')}</p>`,
-  });
+  try {
+    await transporter.sendMail({
+      from: await getFromAddress(),
+      to,
+      subject: 'VIGIIAP — Correo de prueba',
+      html: `<p>Este es un correo de prueba enviado desde el panel de administración de VIGIIAP.</p>
+             <p>Si lo recibiste, la configuración SMTP actual funciona correctamente.</p>
+             <p style="color:#5A6675;font-size:0.85rem">Enviado el ${new Date().toLocaleString('es-CO')}</p>`,
+    });
+  } catch (err) {
+    const sugerencia = sugerenciaErrorSMTP(err);
+    if (sugerencia) {
+      throw Object.assign(new Error(`${err.message} — ${sugerencia}`), { status: 502 });
+    }
+    throw err;
+  }
 }
 
 // ─── Paleta institucional (misma que el frontend — ver src/index.css) ─────────

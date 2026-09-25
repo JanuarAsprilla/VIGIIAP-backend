@@ -731,4 +731,35 @@ describe('sendTestEmail()', () => {
 
     await expect(mailer.sendTestEmail('super@iiap.org.co')).rejects.toThrow(/SMTP no configurado/);
   });
+
+  it('agrega la sugerencia de "contraseña de aplicación" cuando Gmail rechaza por 534-5.7.9, sin perder el mensaje original', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    const errorGmail = Object.assign(
+      new Error('Invalid login: 534-5.7.9 Application-specific password required'),
+      { responseCode: 534 },
+    );
+    sendMailSpy.mockRejectedValueOnce(errorGmail);
+
+    const error = await mailer.sendTestEmail('super@iiap.org.co').catch((e) => e);
+    // El mensaje original nunca se descarta -- el super_admin también lo necesita.
+    expect(error.message).toContain('Application-specific password required');
+    expect(error.message).toContain('myaccount.google.com/apppasswords');
+  });
+
+  it('agrega una sugerencia genérica de usuario/contraseña para un EAUTH sin código Gmail específico', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    sendMailSpy.mockRejectedValueOnce(Object.assign(new Error('Invalid credentials'), { code: 'EAUTH' }));
+
+    await expect(mailer.sendTestEmail('super@iiap.org.co')).rejects.toThrow(/rechazó el usuario o la contraseña/);
+  });
+
+  it('propaga el error tal cual cuando no coincide con ningún caso conocido', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    sendMailSpy.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:587'));
+
+    await expect(mailer.sendTestEmail('super@iiap.org.co')).rejects.toThrow('connect ECONNREFUSED 127.0.0.1:587');
+  });
 });

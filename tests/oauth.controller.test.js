@@ -32,7 +32,7 @@ function req(overrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.FRONTEND_URL = 'https://vigiiap.iiap.gov.co';
+  process.env.FRONTEND_URL = 'https://vigiiap.iiap.org.co';
 });
 
 describe('oauth.controller → listProviders()', () => {
@@ -76,7 +76,7 @@ describe('oauth.controller → callback()', () => {
     await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
 
     expect(r.cookie).toHaveBeenCalledTimes(2);
-    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.gov.co/');
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/');
   });
 
   it('agrega ?completarPerfil=1 cuando el perfil quedó incompleto (cuenta nueva sin institución)', async () => {
@@ -87,20 +87,20 @@ describe('oauth.controller → callback()', () => {
 
     await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
 
-    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.gov.co/?completarPerfil=1');
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?completarPerfil=1');
   });
 
   it('redirige con oauthError si el proveedor devuelve un error (usuario canceló el consentimiento)', async () => {
     const r = res();
     await callback(req({ params: { provider: 'google' }, query: { error: 'access_denied' } }), r);
-    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.gov.co/?oauthError=access_denied');
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?oauthError=access_denied');
     expect(oauthService.handleCallback).not.toHaveBeenCalled();
   });
 
   it('redirige con oauthError=missing_code si faltan code o state', async () => {
     const r = res();
     await callback(req({ params: { provider: 'google' }, query: {} }), r);
-    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.gov.co/?oauthError=missing_code');
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?oauthError=missing_code');
   });
 
   it('redirige con oauthError cuando handleCallback lanza (no navega al frontend con la sesión a medias)', async () => {
@@ -109,7 +109,7 @@ describe('oauth.controller → callback()', () => {
 
     await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
 
-    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.gov.co/?oauthError=ACCOUNT_INACTIVE');
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?oauthError=ACCOUNT_INACTIVE');
     expect(r.cookie).not.toHaveBeenCalled();
   });
 });
