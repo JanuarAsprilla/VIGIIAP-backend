@@ -1,9 +1,11 @@
 name: Backup de base de datos
 
-# Respaldo diario de PostgreSQL a Cloudflare R2 (bucket separado, privado).
-# Antes de esto no existía ningún backup automatizado -- una falla del VPS
-# significaba pérdida total de datos. Reutiliza las credenciales R2 que ya
-# viven en el .env del servidor (las mismas que usa la app para archivos),
+# Respaldo diario de PostgreSQL al almacenamiento S3-compatible ya
+# configurado (MinIO auto-hospedado o Cloudflare R2 real, según el
+# servidor), en un bucket separado y privado. Antes de esto no existía
+# ningún backup automatizado -- una falla del VPS significaba pérdida
+# total de datos. Reutiliza las credenciales que ya viven en
+# /root/vigiiap/.env.backend (las mismas que usa la app para archivos),
 # no hace falta duplicarlas como secrets de GitHub.
 on:
   schedule:
