@@ -28,8 +28,11 @@ jobs:
             set -e
             cd /root/vigiiap
             set -a
-            source .env
+            source .env.backend
             set +a
+
+            echo "Servicios definidos en docker-compose:"
+            docker compose config --services
 
             mkdir -p backups
             ARCHIVO="vigiiap_$(date +%F_%H%M).sql.gz"
