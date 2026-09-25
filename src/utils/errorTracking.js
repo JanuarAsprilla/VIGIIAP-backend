@@ -87,7 +87,12 @@ export async function registrarError({ err, metodo, ruta }) {
       `INSERT INTO error_log (fingerprint, mensaje, stack, metodo, ruta, status_code, ocurrencias, primera_vez, ultima_vez)
        VALUES ($1, $2, $3, $4, $5, $6, 1, NOW(), NOW())
        ON CONFLICT (fingerprint) DO UPDATE
-         SET ocurrencias = error_log.ocurrencias + 1, ultima_vez = NOW()
+         SET ocurrencias = error_log.ocurrencias + 1,
+             ultima_vez = NOW(),
+             -- Un error marcado "resuelto" que vuelve a ocurrir demuestra que la
+             -- resolución no fue efectiva -- se reabre solo; "revisando" y
+             -- "pendiente" se dejan tal cual (no hay nada que reabrir).
+             estado = CASE WHEN error_log.estado = 'resuelto' THEN 'pendiente' ELSE error_log.estado END
        RETURNING ocurrencias, notificado_en`,
       [fingerprint, mensaje, stack, metodo, ruta, statusCode],
     );

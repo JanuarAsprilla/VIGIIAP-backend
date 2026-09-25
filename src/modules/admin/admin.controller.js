@@ -229,6 +229,26 @@ export async function errorLog(req, res, next) {
   }
 }
 
+const estadoErrorSchema = z.object({ estado: z.enum(['pendiente', 'revisando', 'resuelto']) });
+
+/** PATCH /api/admin/errores/:id/estado */
+export async function actualizarEstadoError(req, res, next) {
+  try {
+    const { estado } = estadoErrorSchema.parse(req.body);
+    const error = await adminService.actualizarEstadoError(req.params.id, estado, req.user.email);
+    registrarAuditoria({
+      accion:       'update_error_estado',
+      modulo:       'errores',
+      entidadId:    String(req.params.id),
+      descripcion:  `Error #${req.params.id} marcado como "${estado}"`,
+      usuarioId:    req.user.id,
+      usuarioEmail: req.user.email,
+      ip:           req.ip,
+    });
+    res.json(error);
+  } catch (err) { next(err); }
+}
+
 /** GET /api/admin/administradores — exclusivo super_admin */
 export async function listarAdministradores(req, res, next) {
   try {

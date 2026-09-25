@@ -3,6 +3,7 @@ import { getPapelera, restaurar, purgar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
   stats, dashboardTendencias, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, errorLog,
+  actualizarEstadoError,
   getConfiguracion, setConfiguracion, probarCorreo, reportes,
   superStats, crearAdmin, listarAdministradores, setPermisosAdminController,
   custodiaRecurso, descargasRecurso, descargasStats, scanLog,
@@ -31,6 +32,7 @@ router.patch('/usuarios/:id',   requireModulo('usuarios', 'editar'), actualizarU
 router.delete('/usuarios/:id',  requireModulo('usuarios', 'editar'), eliminarUsuario);
 router.get('/audit',            requireModulo('actividad', 'ver'), auditLog);
 router.get('/errores',          requireModulo('errores', 'ver'), errorLog);
+router.patch('/errores/:id/estado', requireModulo('errores', 'editar'), actualizarEstadoError);
 router.get('/configuracion',    requireModulo('configuracion', 'ver'), getConfiguracion);
 router.put('/configuracion',    requireModulo('configuracion', 'editar'), setConfiguracion);
 

@@ -192,7 +192,7 @@ export async function verifyEmail(req, res, next) {
 
     // Notificar solo si es verificación nueva (no si ya estaba verificado)
     if (!result.alreadyVerified) {
-      const activationUrl = `${process.env.FRONTEND_URL || 'https://vigiiap.iiap.gov.co'}/admin/usuarios`;
+      const activationUrl = `${process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co'}/admin/usuarios`;
 
       // 1. Confirmar al usuario que su correo fue verificado y que espere activación
       notifyRegistroRecibido({ email: result.email, nombre: result.nombre })

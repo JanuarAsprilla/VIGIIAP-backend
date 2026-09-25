@@ -91,7 +91,7 @@ describe('app.js — CORS, redirects, docs, 404 (NODE_ENV=test)', () => {
   it('redirige /verificar-email/:token válido al frontend', async () => {
     const res = await request(app).get(`/verificar-email/${HEX_TOKEN}`);
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe(`https://vigiiap.iiap.gov.co/verificar-email/${HEX_TOKEN}`);
+    expect(res.headers.location).toBe(`https://vigiiap.iiap.org.co/verificar-email/${HEX_TOKEN}`);
   });
 
   it('rechaza /verificar-email/:token con formato inválido', async () => {
@@ -103,7 +103,7 @@ describe('app.js — CORS, redirects, docs, 404 (NODE_ENV=test)', () => {
   it('redirige /reset-password/:token válido al frontend', async () => {
     const res = await request(app).get(`/reset-password/${HEX_TOKEN}`);
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe(`https://vigiiap.iiap.gov.co/reset-password/${HEX_TOKEN}`);
+    expect(res.headers.location).toBe(`https://vigiiap.iiap.org.co/reset-password/${HEX_TOKEN}`);
   });
 
   it('rechaza /reset-password/:token con formato inválido', async () => {

@@ -572,7 +572,7 @@ describe('admin.service → setConfiguracion()', () => {
 });
 
 // ─── Additional imports ────────────────────────────────────────────────────
-import { getAuditLog, getErrorLog, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
+import { getAuditLog, getErrorLog, actualizarEstadoError, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
 
 describe('admin.service → getAuditLog()', () => {
@@ -665,6 +665,39 @@ describe('admin.service → getErrorLog()', () => {
     expect(result.data).toHaveLength(1);
     expect(result.meta.total).toBe(1);
     expect(query.mock.calls[0][0]).toContain('ORDER BY ultima_vez DESC');
+  });
+
+  it('incluye el estado de seguimiento en la selección', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getErrorLog({});
+    expect(query.mock.calls[0][0]).toContain('estado, estado_actualizado_en, estado_actualizado_por');
+  });
+});
+
+describe('admin.service → actualizarEstadoError()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('actualiza el estado y devuelve la fila actualizada', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 7, estado: 'revisando' }] });
+    const result = await actualizarEstadoError(7, 'revisando', 'admin@iiap.org.co');
+
+    expect(result).toEqual({ id: 7, estado: 'revisando' });
+    expect(query.mock.calls[0][0]).toContain('UPDATE error_log');
+    expect(query.mock.calls[0][1]).toEqual(['revisando', 'admin@iiap.org.co', 7]);
+  });
+
+  it('rechaza un estado que no está en el enum permitido, sin llegar a la BD', async () => {
+    await expect(actualizarEstadoError(7, 'archivado', 'admin@iiap.org.co'))
+      .rejects.toMatchObject({ status: 400 });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('lanza 404 cuando el id no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(actualizarEstadoError(999, 'resuelto', 'admin@iiap.org.co'))
+      .rejects.toMatchObject({ status: 404 });
   });
 });
 

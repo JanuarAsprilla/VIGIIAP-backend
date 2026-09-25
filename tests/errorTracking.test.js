@@ -93,6 +93,16 @@ describe('registrarError()', () => {
     expect(notifyErrorCritico).not.toHaveBeenCalled();
   });
 
+  it('el UPDATE reabre a "pendiente" solo un error que estaba "resuelto" -- revisando/pendiente no se tocan', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ocurrencias: 2, notificado_en: null }] });
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await registrarError({ err: new Error('boom'), metodo: 'GET', ruta: '/x' });
+
+    const sql = query.mock.calls[0][0];
+    expect(sql).toContain("estado = CASE WHEN error_log.estado = 'resuelto' THEN 'pendiente' ELSE error_log.estado END");
+  });
+
   it('un admin que falla al recibir la alerta no bloquea a los demás', async () => {
     query.mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] });
     query.mockResolvedValueOnce({ rows: [] });
