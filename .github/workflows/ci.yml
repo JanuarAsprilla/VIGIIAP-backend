@@ -50,10 +50,71 @@ jobs:
           path: coverage/
           retention-days: 7
 
+  integration-test:
+    name: Tests de integración (Postgres real)
+    runs-on: ubuntu-latest
+    # postgis/postgis, no postgres a secas: 001_init.sql hace
+    # CREATE EXTENSION postgis, y esa extensión no existe en la imagen
+    # oficial de postgres -- misma imagen que docker-compose.yml usa para
+    # desarrollo/producción, para que la BD de CI sea equivalente a la real.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: vigiiap_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      # Probado localmente: en el primer arranque de un contenedor postgis
+      # nuevo (sin volumen), Postgres se reinicia solo una vez durante su
+      # propio initdb -- pg_isready puede devolver "listo" justo antes de
+      # ese reinicio interno y una conexión real en ese instante exacto
+      # termina abruptamente. El healthcheck de arriba ya reintenta, pero
+      # esta espera extra (barata, unos segundos) es un margen adicional
+      # antes de correr la suite real.
+      - name: Esperar a que Postgres esté realmente listo
+        run: |
+          for i in $(seq 1 10); do
+            if pg_isready -h localhost -p 5432 -U postgres > /dev/null 2>&1; then
+              echo "Postgres listo (intento $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Postgres nunca respondió pg_isready" >&2
+          exit 1
+      - name: Ejecutar tests de integración
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_PORT: 5432
+          # setup.js exige que DB_NAME contenga "test" -- guarda de seguridad
+          # real (tests/integration/setup.js:18-23) contra correr TRUNCATE
+          # de cleanDatabase() por accidente sobre una BD de producción.
+          DB_NAME: vigiiap_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres_ci_test
+          DB_SSL: false
+          JWT_SECRET: ${{ secrets.JWT_SECRET_TEST || 'ci_test_secret_key_min_32_chars!!' }}
+
   docker-build:
     name: Docker Build Check
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, integration-test]
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
