@@ -1,6 +1,7 @@
 import { createConexionGeoserverSchema, updateConexionGeoserverSchema } from './geovisores.schema.js';
 import * as conexionService from './conexionesGeoserver.service.js';
 import { listarWorkspacesDeConexion } from './geovisores.service.js';
+import { listarAtributos } from '../fichas/fichas.service.js';
 import { esGeometriaValida } from '../../utils/geometry.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
@@ -58,6 +59,14 @@ export async function update(req, res, next) {
 export async function workspaces(req, res, next) {
   try {
     res.json(await listarWorkspacesDeConexion(req.params.id));
+  } catch (err) { next(err); }
+}
+
+/** GET /admin/conexiones-geoserver/:id/capas/:capaId/atributos — atributos reales
+ *  de la capa (nombre + tipo), para elegir el identificador/etiqueta de fichas por punto. */
+export async function atributosCapa(req, res, next) {
+  try {
+    res.json(await listarAtributos(req.params.id, req.params.capaId));
   } catch (err) { next(err); }
 }
 

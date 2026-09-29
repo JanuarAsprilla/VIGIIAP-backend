@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { obtenerCapacidadesWfs, proxyWms, consultarWfs } from '../src/modules/geovisores/geoserver.connector.js';
+import {
+  obtenerCapacidadesWfs, proxyWms, consultarWfs,
+  obtenerAtributosCapa, contarFeaturesCapa, listarFeaturesCapa,
+} from '../src/modules/geovisores/geoserver.connector.js';
 
 const conexion = {
   id: 'conexion-test-1',
@@ -155,5 +158,76 @@ describe('consultarWfs', () => {
     const url = new URL(fetchMock.mock.calls.at(-1)[0]);
     expect(url.searchParams.get('CQL_FILTER')).toContain('SRID=4326;POLYGON');
     expect(url.searchParams.get('srsName')).toBe('EPSG:4326');
+  });
+});
+
+describe('obtenerAtributosCapa', () => {
+  it('excluye las columnas de geometría (gml:*PropertyType)', async () => {
+    stubFetchPorOperacion({
+      DescribeFeatureType: () => `<?xml version="1.0"?><xsd:schema>
+        <xsd:element name="codigo_estacion" type="xsd:string"/>
+        <xsd:element name="nombre_estacion" type="xsd:string"/>
+        <xsd:element name="the_geom" type="gml:PointPropertyType"/>
+      </xsd:schema>`,
+    });
+
+    const atributos = await obtenerAtributosCapa(conexion, 't_19_clima:Estaciones');
+
+    expect(atributos).toEqual([
+      { nombre: 'codigo_estacion', tipo: 'xsd:string' },
+      { nombre: 'nombre_estacion', tipo: 'xsd:string' },
+    ]);
+  });
+
+  it('propaga GEOSERVER_NO_DISPONIBLE si GeoServer responde con error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500 })));
+
+    await expect(obtenerAtributosCapa(conexion, 't_19_clima:Estaciones'))
+      .rejects.toMatchObject({ status: 502, code: 'GEOSERVER_NO_DISPONIBLE' });
+  });
+});
+
+describe('contarFeaturesCapa', () => {
+  it('pide resultType=hits y devuelve totalFeatures', async () => {
+    const fetchMock = stubFetchPorOperacion({
+      GetFeature: () => ({ type: 'FeatureCollection', totalFeatures: 42, features: [] }),
+    });
+
+    const total = await contarFeaturesCapa(conexion, 't_19_clima:Estaciones');
+
+    expect(total).toBe(42);
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.searchParams.get('resultType')).toBe('hits');
+  });
+
+  it('devuelve 0 si la respuesta no trae totalFeatures', async () => {
+    stubFetchPorOperacion({ GetFeature: () => ({ type: 'FeatureCollection', features: [] }) });
+
+    expect(await contarFeaturesCapa(conexion, 't_19_clima:Estaciones')).toBe(0);
+  });
+});
+
+describe('listarFeaturesCapa', () => {
+  it('restringe propertyName al identificador + etiqueta, con srsName EPSG:4326', async () => {
+    const fetchMock = stubFetchPorOperacion({
+      GetFeature: () => ({ type: 'FeatureCollection', features: [] }),
+    });
+
+    await listarFeaturesCapa(conexion, 't_19_clima:Estaciones', 'codigo_estacion', 'nombre_estacion');
+
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.searchParams.get('propertyName')).toBe('codigo_estacion,nombre_estacion');
+    expect(url.searchParams.get('srsName')).toBe('EPSG:4326');
+  });
+
+  it('sin campoEtiqueta, propertyName solo trae el identificador', async () => {
+    const fetchMock = stubFetchPorOperacion({
+      GetFeature: () => ({ type: 'FeatureCollection', features: [] }),
+    });
+
+    await listarFeaturesCapa(conexion, 't_19_clima:Estaciones', 'codigo_estacion', undefined);
+
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.searchParams.get('propertyName')).toBe('codigo_estacion');
   });
 });

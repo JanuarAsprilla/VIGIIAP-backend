@@ -73,6 +73,7 @@ function filaAGeovisor(fila) {
     conexionGeoserverId: fila.conexion_geoserver_id,
     workspacesGeoserver: fila.workspaces_geoserver,
     capasSeleccionadas: fila.capas_seleccionadas,
+    capasConFicha: fila.capas_con_ficha,
     colorPorTema: fila.color_por_tema,
     centro: { lat: fila.centro_lat, lng: fila.centro_lng },
     zoomInicial: fila.zoom_inicial,
@@ -156,15 +157,15 @@ export async function create(data, userId) {
   const { rows } = await query(
     `INSERT INTO geovisores (
        slug, titulo, subtitulo, descripcion, cita, categoria, conexion_geoserver_id,
-       workspaces_geoserver, capas_seleccionadas, color_por_tema, centro_lat, centro_lng, zoom_inicial,
+       workspaces_geoserver, capas_seleccionadas, capas_con_ficha, color_por_tema, centro_lat, centro_lng, zoom_inicial,
        basemap_defecto, area_max_ha, presets_area, visibilidad, presentacion,
        thumbnail_url, creado_por
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
      RETURNING *`,
     [
       slug, data.titulo, data.subtitulo ?? null, data.descripcion ?? null, data.cita ?? null,
       data.categoria ?? null, data.conexionGeoserverId, data.workspacesGeoserver ?? [],
-      data.capasSeleccionadas ?? [], JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
+      data.capasSeleccionadas ?? [], data.capasConFicha ?? [], JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
       data.basemapDefecto ?? 'calles', data.areaMaxHa ?? null, JSON.stringify(data.presetsArea ?? []),
       data.visibilidad ?? 'publico',
       JSON.stringify(data.presentacion ?? { mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] }),
@@ -180,6 +181,7 @@ const MAPA_CAMPOS = {
   titulo: 'titulo', subtitulo: 'subtitulo', descripcion: 'descripcion', cita: 'cita',
   categoria: 'categoria', conexionGeoserverId: 'conexion_geoserver_id',
   workspacesGeoserver: 'workspaces_geoserver', capasSeleccionadas: 'capas_seleccionadas',
+  capasConFicha: 'capas_con_ficha',
   zoomInicial: 'zoom_inicial',
   basemapDefecto: 'basemap_defecto', areaMaxHa: 'area_max_ha',
   visibilidad: 'visibilidad', thumbnailUrl: 'thumbnail_url', centroLat: 'centro_lat', centroLng: 'centro_lng',

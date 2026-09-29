@@ -38,6 +38,9 @@ export function errorHandler(err, _req, res, _next) {
     if (err.constraint === 'categorias_modulos_check') {
       return res.status(422).json({ error: 'La categoría debe pertenecer al menos a un módulo válido (documentos, mapas o geovisores)' });
     }
+    if (err.constraint === 'geovisores_capas_con_ficha_subset_check') {
+      return res.status(422).json({ error: 'Las capas con fichas por punto deben ser un subconjunto de las capas seleccionadas del geovisor' });
+    }
   }
 
   const status = err.status || err.statusCode || 500;
