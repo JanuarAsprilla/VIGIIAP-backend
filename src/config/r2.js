@@ -109,4 +109,13 @@ export function isPublicUrl(url) {
   return Boolean(PUBLIC_URL && url?.startsWith(PUBLIC_URL));
 }
 
+/**
+ * Construye la URL pública de una key ya subida al bucket público a partir
+ * de la key cruda guardada en BD (fichas_punto_medios.object_key/miniatura_key)
+ * -- null si no hay key (video en estado 'procesando' todavía no tiene objeto).
+ */
+export function publicUrl(key) {
+  return key ? `${PUBLIC_URL}/${key}` : null;
+}
+
 export default r2;

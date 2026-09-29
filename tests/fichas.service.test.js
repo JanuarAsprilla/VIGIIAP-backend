@@ -22,6 +22,7 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
 vi.mock('../src/config/r2.js', () => ({
   uploadFile: vi.fn(),
   deletePublicFile: vi.fn().mockResolvedValue(undefined),
+  publicUrl: vi.fn((key) => (key ? `https://files.test.local/${key}` : null)),
 }));
 vi.mock('../src/modules/fichas/video.transcode.js', () => ({
   transcodificarVideo: vi.fn(),
@@ -42,7 +43,7 @@ import {
   listarAtributos, obtenerConfig, upsertConfig, obtenerFicha, upsertFicha,
   eliminarFicha, listarFeaturesConCompletitud,
   crearMedioImagen, crearMedioVideo, actualizarMedio, reordenarMedios, eliminarMedio,
-  procesarVideoEnSegundoPlano,
+  procesarVideoEnSegundoPlano, adjuntarFichasAFeatures,
 } from '../src/modules/fichas/fichas.service.js';
 
 function crearArchivoTemporal(contenido = 'contenido de prueba') {
@@ -503,5 +504,63 @@ describe('eliminarMedio()', () => {
 
     expect(deletePublicFile).toHaveBeenCalledWith('k1');
     expect(deletePublicFile).toHaveBeenCalledWith('k1-thumb');
+  });
+});
+
+describe('adjuntarFichasAFeatures() (visor público)', () => {
+  const coleccionBase = {
+    type: 'FeatureCollection',
+    features: [
+      { properties: { codigo_estacion: 'EST-001' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } },
+      { properties: { codigo_estacion: 'EST-002' }, geometry: { type: 'Point', coordinates: [-76.7, 5.56] } },
+    ],
+  };
+
+  it('devuelve la colección tal cual si la capa no tiene config (invariante rota, sin romper el visor)', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // sin config
+
+    const resultado = await adjuntarFichasAFeatures('conexion-1', 't_19_clima:estaciones', coleccionBase);
+
+    expect(resultado).toBe(coleccionBase);
+  });
+
+  it('devuelve la colección tal cual si no hay features', async () => {
+    const resultado = await adjuntarFichasAFeatures('conexion-1', 't_19_clima:estaciones', { type: 'FeatureCollection', features: [] });
+    expect(query).not.toHaveBeenCalled();
+    expect(resultado).toEqual({ type: 'FeatureCollection', features: [] });
+  });
+
+  it('adjunta ficha:null a los features sin ficha guardada', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] }) // config
+      .mockResolvedValueOnce({ rows: [] }); // sin fichas para esos identificadores
+
+    const resultado = await adjuntarFichasAFeatures('conexion-1', 't_19_clima:estaciones', coleccionBase);
+
+    expect(resultado.features.every((f) => f.ficha === null)).toBe(true);
+  });
+
+  it('adjunta la ficha con medios convertidos a URL pública, y null en el resto', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ id: 'ficha-1', valor_identificador: 'EST-001', titulo: 'Estación 1', descripcion: 'Una estación climática' }] })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'medio-1', ficha_id: 'ficha-1', tipo: 'imagen', estado: 'listo', object_key: 'fichas/1/foto.webp', miniatura_key: 'fichas/1/thumb.webp', mime: 'image/webp', bytes: 100, ancho: 2000, alto: 1500, duracion_s: null, leyenda: 'una leyenda', creditos: null, orden: 0 },
+          { id: 'medio-2', ficha_id: 'ficha-1', tipo: 'video', estado: 'procesando', object_key: null, miniatura_key: null, mime: null, bytes: 500, ancho: null, alto: null, duracion_s: null, leyenda: null, creditos: null, orden: 1 },
+        ],
+      });
+
+    const resultado = await adjuntarFichasAFeatures('conexion-1', 't_19_clima:estaciones', coleccionBase);
+
+    const feature1 = resultado.features.find((f) => f.properties.codigo_estacion === 'EST-001');
+    const feature2 = resultado.features.find((f) => f.properties.codigo_estacion === 'EST-002');
+
+    expect(feature1.ficha).toMatchObject({ id: 'ficha-1', titulo: 'Estación 1', descripcion: 'Una estación climática' });
+    expect(feature1.ficha.medios).toHaveLength(2);
+    expect(feature1.ficha.medios[0]).toMatchObject({ tipo: 'imagen', estado: 'listo', url: 'https://files.test.local/fichas/1/foto.webp', miniaturaUrl: 'https://files.test.local/fichas/1/thumb.webp' });
+    // Video en 'procesando': sin object_key todavía -> url null (el frontend filtra por estado, esto solo convierte la key).
+    expect(feature1.ficha.medios[1]).toMatchObject({ tipo: 'video', estado: 'procesando', url: null, miniaturaUrl: null });
+    expect(feature2.ficha).toBeNull();
   });
 });

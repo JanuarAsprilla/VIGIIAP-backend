@@ -13,7 +13,7 @@ import * as turf from '@turf/turf';
 import { query } from '../../config/database.js';
 import { obtenerConexionParaConector } from '../geovisores/conexionesGeoserver.service.js';
 import * as geoserver from '../geovisores/geoserver.connector.js';
-import { uploadFile, deletePublicFile } from '../../config/r2.js';
+import { uploadFile, deletePublicFile, publicUrl } from '../../config/r2.js';
 import { optimizeImage } from '../../utils/imageOptimize.js';
 import * as video from './video.transcode.js';
 import logger from '../../utils/logger.js';
@@ -483,4 +483,87 @@ export async function eliminarMedio(medioId) {
   );
   if (!rows[0]) throw Object.assign(new Error('Medio no encontrado'), { status: 404 });
   await borrarKeysDeR2(rows);
+}
+
+function filaAMedioPublico(fila) {
+  return {
+    id: fila.id,
+    tipo: fila.tipo,
+    estado: fila.estado,
+    // url:null mientras estado='procesando' (object_key todavía no existe) -- el
+    // visor público filtra por estado='listo' antes de renderizar (ver
+    // PopupCapaContenido.tsx/FichaPuntoPanel.tsx en el frontend), esto solo
+    // convierte la key cruda a URL pública, nunca decide qué mostrar.
+    url: publicUrl(fila.object_key),
+    miniaturaUrl: publicUrl(fila.miniatura_key),
+    ancho: fila.ancho,
+    alto: fila.alto,
+    duracionS: fila.duracion_s,
+    leyenda: fila.leyenda,
+    creditos: fila.creditos,
+  };
+}
+
+/**
+ * Adjunta `ficha: {...} | null` a cada feature de una colección WFS ya
+ * consultada por el visor público -- llamado desde
+ * geovisores.service.js#consultarCapaDeGeovisor solo cuando la capa tiene el
+ * modo "fichas por punto" habilitado (capasConFicha). Si la capa no tiene
+ * config todavía (invariante rota, o config borrada manualmente) devuelve la
+ * colección tal cual, sin romper el visor -- compatibilidad hacia atrás.
+ *
+ * Batch (nunca N+1): una sola query para las fichas + una para sus medios,
+ * sin importar cuántos features traiga la colección.
+ */
+export async function adjuntarFichasAFeatures(conexionGeoserverId, capaId, coleccion) {
+  if (!coleccion?.features?.length) return coleccion;
+
+  const { rows: configRows } = await query(
+    'SELECT * FROM capas_fichas_config WHERE conexion_geoserver_id = $1 AND capa_id = $2',
+    [conexionGeoserverId, capaId],
+  );
+  const config = configRows[0];
+  if (!config) return coleccion;
+
+  const valores = [...new Set(
+    coleccion.features
+      .map((feature) => feature.properties?.[config.campo_identificador])
+      .filter((v) => v !== null && v !== undefined)
+      .map((v) => String(v).trim())
+      .filter(Boolean),
+  )];
+
+  // Ojo: aunque no haya ninguna ficha guardada (o ningún feature con
+  // identificador), el contrato dice que TODO feature gana un miembro
+  // `ficha` (objeto o null) cuando la capa tiene el modo habilitado -- por
+  // eso estos casos vacíos solo saltan las queries, nunca el mapeo final.
+  const fichas = valores.length
+    ? (await query('SELECT * FROM fichas_punto WHERE capa_config_id = $1 AND valor_identificador = ANY($2)', [config.id, valores])).rows
+    : [];
+
+  const medios = fichas.length
+    ? (await query('SELECT * FROM fichas_punto_medios WHERE ficha_id = ANY($1) ORDER BY orden, creado_en', [fichas.map((f) => f.id)])).rows
+    : [];
+  const mediosPorFicha = new Map();
+  for (const medio of medios) {
+    const lista = mediosPorFicha.get(medio.ficha_id) ?? [];
+    lista.push(filaAMedioPublico(medio));
+    mediosPorFicha.set(medio.ficha_id, lista);
+  }
+
+  const fichaPorValor = new Map(fichas.map((f) => [f.valor_identificador, f]));
+
+  const features = coleccion.features.map((feature) => {
+    const valorCrudo = feature.properties?.[config.campo_identificador];
+    const valor = valorCrudo === null || valorCrudo === undefined ? '' : String(valorCrudo).trim();
+    const fichaFila = valor ? fichaPorValor.get(valor) : undefined;
+    return {
+      ...feature,
+      ficha: fichaFila
+        ? { id: fichaFila.id, titulo: fichaFila.titulo, descripcion: fichaFila.descripcion, medios: mediosPorFicha.get(fichaFila.id) ?? [] }
+        : null,
+    };
+  });
+
+  return { ...coleccion, features };
 }
