@@ -47,13 +47,24 @@ function filaAFicha(fila) {
   };
 }
 
+/**
+ * El contrato MedioFicha (VIGIIAP/src/types/index.ts) usa `url`/`miniaturaUrl`
+ * en TODAS partes -- admin y visor público por igual -- nunca las keys
+ * crudas de R2. Antes esta función devolvía `objectKey`/`miniaturaKey` sin
+ * convertir, lo que dejaba el `<img>` del editor admin con `src` vacío
+ * (descubierto en la prueba end-to-end real: la miniatura nunca cargaba
+ * aunque la subida había funcionado). `url`/`miniaturaUrl` son null
+ * mientras estado='procesando' (object_key todavía no existe) -- el
+ * visor público y el admin filtran/ocultan según estado, esto solo
+ * convierte la key a URL, nunca decide qué mostrar.
+ */
 function filaAMedio(fila) {
   return {
     id: fila.id,
     tipo: fila.tipo,
     estado: fila.estado,
-    objectKey: fila.object_key,
-    miniaturaKey: fila.miniatura_key,
+    url: publicUrl(fila.object_key),
+    miniaturaUrl: publicUrl(fila.miniatura_key),
     mime: fila.mime,
     bytes: fila.bytes,
     ancho: fila.ancho,
@@ -536,25 +547,6 @@ export async function eliminarMedio(medioId) {
   await borrarKeysDeR2(rows);
 }
 
-function filaAMedioPublico(fila) {
-  return {
-    id: fila.id,
-    tipo: fila.tipo,
-    estado: fila.estado,
-    // url:null mientras estado='procesando' (object_key todavía no existe) -- el
-    // visor público filtra por estado='listo' antes de renderizar (ver
-    // PopupCapaContenido.tsx/FichaPuntoPanel.tsx en el frontend), esto solo
-    // convierte la key cruda a URL pública, nunca decide qué mostrar.
-    url: publicUrl(fila.object_key),
-    miniaturaUrl: publicUrl(fila.miniatura_key),
-    ancho: fila.ancho,
-    alto: fila.alto,
-    duracionS: fila.duracion_s,
-    leyenda: fila.leyenda,
-    creditos: fila.creditos,
-  };
-}
-
 /**
  * Adjunta `ficha: {...} | null` a cada feature de una colección WFS ya
  * consultada por el visor público -- llamado desde
@@ -598,7 +590,7 @@ export async function adjuntarFichasAFeatures(conexionGeoserverId, capaId, colec
   const mediosPorFicha = new Map();
   for (const medio of medios) {
     const lista = mediosPorFicha.get(medio.ficha_id) ?? [];
-    lista.push(filaAMedioPublico(medio));
+    lista.push(filaAMedio(medio));
     mediosPorFicha.set(medio.ficha_id, lista);
   }
 
