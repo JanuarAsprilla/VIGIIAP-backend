@@ -59,6 +59,21 @@ describe('errorHandler middleware', () => {
     expect(r.json.mock.calls[0][0]).toHaveProperty('code', 'DUPLICATE');
   });
 
+  it('incluye fields en la respuesta si el error tiene fields (ej. GEOVISOR_INCOMPLETO)', () => {
+    const fields = { publicable: false, capas: [{ capaId: 't_19_clima:estaciones', bloqueantes: 3 }] };
+    const err = Object.assign(new Error('incompleto'), { status: 409, code: 'GEOVISOR_INCOMPLETO', fields });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.json.mock.calls[0][0]).toMatchObject({ code: 'GEOVISOR_INCOMPLETO', fields });
+  });
+
+  it('no incluye la clave fields si el error no la tiene', () => {
+    const err = Object.assign(new Error('no encontrado'), { status: 404 });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.json.mock.calls[0][0]).not.toHaveProperty('fields');
+  });
+
   it('en producción oculta detalles del error 500', () => {
     process.env.NODE_ENV = 'production';
     const internalErr = new Error('Detalles internos sensibles');
