@@ -159,6 +159,12 @@ export async function obtenerAtributosCapa(conexion, capaId) {
  * sin traer ninguna fila) -- usado para rechazar capas demasiado grandes
  * (>2000 features, ver LIMITE_FEATURES en fichas.service.js) antes de pedir
  * el listado completo.
+ *
+ * Varias versiones de GeoServer (confirmado contra geo.siatpc.co en
+ * producción) IGNORAN outputFormat=application/json cuando resultType=hits y
+ * siempre devuelven la respuesta WFS 2.0 estándar en XML, con el conteo en el
+ * atributo numberMatched del elemento raíz -- nunca se puede asumir que la
+ * respuesta sea JSON solo porque se pidió.
  */
 export async function contarFeaturesCapa(conexion, capaId) {
   const url = new URL(`${conexion.url}/wfs`);
@@ -169,15 +175,19 @@ export async function contarFeaturesCapa(conexion, capaId) {
   url.searchParams.set('resultType', 'hits');
   url.searchParams.set('outputFormat', 'application/json');
 
-  const respuesta = await solicitarConTimeout(conexion, url);
+  const respuesta = await solicitarConTimeout(conexion, url, 'application/json, text/xml, application/xml');
   if (!respuesta.ok) {
     throw Object.assign(
       new Error(`GeoServer respondió ${respuesta.status} al contar features de ${capaId}`),
       { status: 502, code: 'GEOSERVER_NO_DISPONIBLE' },
     );
   }
-  const data = await respuesta.json();
-  return data.totalFeatures ?? 0;
+  const texto = await respuesta.text();
+  if (texto.trimStart().startsWith('{')) {
+    return JSON.parse(texto).totalFeatures ?? 0;
+  }
+  const numberMatched = texto.match(/\bnumberMatched="(\d+)"/)?.[1];
+  return numberMatched ? Number(numberMatched) : 0;
 }
 
 /**
@@ -186,9 +196,16 @@ export async function contarFeaturesCapa(conexion, capaId) {
  * fichas por punto, que nunca debe traer los atributos completos de cada
  * feature (potencialmente cientos), solo lo mínimo para identificar el punto
  * y calcular su centroide.
+ *
+ * La columna de geometría SIEMPRE se agrega al propertyName -- sin ella,
+ * GeoServer devuelve cada feature con geometry:null (propertyName es una
+ * lista exacta, no un "además de la geometría" implícito). Verificado
+ * contra geo.siatpc.co en producción: sin esto, ninguna ficha tendría
+ * centroide para el mini-mapa del checklist admin.
  */
 export async function listarFeaturesCapa(conexion, capaId, campoIdentificador, campoEtiqueta) {
-  const propiedades = [campoIdentificador, campoEtiqueta].filter(Boolean).join(',');
+  const propiedadGeometria = await obtenerNombrePropiedadGeometria(conexion, capaId);
+  const propiedades = [campoIdentificador, campoEtiqueta, propiedadGeometria].filter(Boolean).join(',');
 
   const url = new URL(`${conexion.url}/wfs`);
   url.searchParams.set('service', 'WFS');
