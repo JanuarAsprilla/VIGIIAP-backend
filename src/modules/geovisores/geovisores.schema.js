@@ -57,6 +57,12 @@ const geovisorBase = z.object({
   // toda la conexión si workspacesGeoserver también está vacío) — ver
   // obtenerCatalogoDeGeovisor() y capaPermitidaEnGeovisor() en geovisores.service.js.
   capasSeleccionadas: z.array(z.string()).default([]),
+  // Subconjunto de capasSeleccionadas con el modo "fichas por punto" habilitado --
+  // el subconjunto se valida en BD (CHECK capas_con_ficha <@ capas_seleccionadas,
+  // migración 053), no aquí: en update() cada campo llega de forma independiente
+  // y validar el subconjunto contra un valor que puede no venir en este payload
+  // produciría falsos rechazos.
+  capasConFicha: z.array(z.string()).default([]),
   colorPorTema: z.record(z.string(), z.string()).default({}),
   centroLat: z.coerce.number().min(-90).max(90),
   centroLng: z.coerce.number().min(-180).max(180),

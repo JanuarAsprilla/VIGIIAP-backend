@@ -39,7 +39,10 @@ import herramientasRoutes from './modules/herramientas/herramientas.routes.js';
 import descargasRoutes from './modules/descargas/descargas.routes.js';
 import publicRoutes from './modules/public/public.routes.js';
 import geovisoresRoutes from './modules/geovisores/geovisores.routes.js';
+import geovisoresAdminRoutes from './modules/geovisores/geovisoresAdmin.routes.js';
 import conexionesGeoserverRoutes from './modules/geovisores/conexionesGeoserver.routes.js';
+import fichasRoutes from './modules/fichas/fichas.routes.js';
+import fichasMediosRoutes from './modules/fichas/fichasMedios.routes.js';
 import notificacionesRoutes from './modules/notificaciones/notificaciones.routes.js';
 import analiticaRoutes from './modules/analitica/analitica.routes.js';
 
@@ -251,7 +254,10 @@ v1.use('/herramientas',        maintenanceGate, herramientasRoutes);
 v1.use('/descargar',   noStore, maintenanceGate, descargasRoutes);
 v1.use('/public',              maintenanceGate, publicRoutes);
 v1.use('/geovisores',           maintenanceGate, geovisoresRoutes);
+v1.use('/admin/geovisores', noStore, geovisoresAdminRoutes);
 v1.use('/admin/conexiones-geoserver', noStore, conexionesGeoserverRoutes);
+v1.use('/admin/fichas-capa', noStore, fichasRoutes);
+v1.use('/admin/fichas-medios', noStore, fichasMediosRoutes);
 v1.use('/notificaciones', noStore, notificacionesRoutes);
 v1.use('/analitica',   noStore, analiticaRoutes);
 

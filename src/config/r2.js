@@ -69,6 +69,12 @@ export async function deleteFile(key) {
   await r2.send(new DeleteObjectCommand({ Bucket: PRIVATE_BUCKET, Key: key }));
 }
 
+/** Igual que deleteFile() pero contra el bucket PÚBLICO -- ver uploadFile(isPublic=true). */
+export async function deletePublicFile(key) {
+  if (!key) return;
+  await r2.send(new DeleteObjectCommand({ Bucket: PUBLIC_BUCKET, Key: key }));
+}
+
 /**
  * Descarga un objeto del bucket privado y devuelve su stream directamente,
  * para que el backend lo reenvíe al cliente en vez de redirigirlo a una URL
@@ -101,6 +107,15 @@ export function extractKey(url) {
 /** Retorna true si la URL pertenece al bucket público. */
 export function isPublicUrl(url) {
   return Boolean(PUBLIC_URL && url?.startsWith(PUBLIC_URL));
+}
+
+/**
+ * Construye la URL pública de una key ya subida al bucket público a partir
+ * de la key cruda guardada en BD (fichas_punto_medios.object_key/miniatura_key)
+ * -- null si no hay key (video en estado 'procesando' todavía no tiene objeto).
+ */
+export function publicUrl(key) {
+  return key ? `${PUBLIC_URL}/${key}` : null;
 }
 
 export default r2;

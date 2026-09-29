@@ -38,6 +38,9 @@ export function errorHandler(err, _req, res, _next) {
     if (err.constraint === 'categorias_modulos_check') {
       return res.status(422).json({ error: 'La categoría debe pertenecer al menos a un módulo válido (documentos, mapas o geovisores)' });
     }
+    if (err.constraint === 'geovisores_capas_con_ficha_subset_check') {
+      return res.status(422).json({ error: 'Las capas con fichas por punto deben ser un subconjunto de las capas seleccionadas del geovisor' });
+    }
   }
 
   const status = err.status || err.statusCode || 500;
@@ -64,5 +67,9 @@ export function errorHandler(err, _req, res, _next) {
   res.status(status).json({
     error: message,
     ...(err.code && { code: err.code }),
+    // fields: payload estructurado adicional (ej. GEOVISOR_INCOMPLETO manda aquí
+    // {publicable, capas: [...]} -- ver calcularCompletitud en geovisores.service.js).
+    // Distinto del `fields` de ZodError (arreglo {field, message}) manejado arriba.
+    ...(err.fields && { fields: err.fields }),
   });
 }

@@ -13,21 +13,27 @@ import sharp from 'sharp';
 // image: vistas más grandes (imagen de mapa, avatar de usuario) -- más
 // margen para que no se vea pixelada al ampliarse.
 const LIMITS = {
-  thumbnail: { maxWidth: 480, quality: 75 },
-  image:     { maxWidth: 1600, quality: 82 },
+  thumbnail:   { maxWidth: 480, quality: 75 },
+  image:       { maxWidth: 1600, quality: 82 },
+  // Fichas por punto: galería curada, se ve a mayor tamaño que una tarjeta de
+  // grilla -- más margen de resolución que 'image' (ver plan "Fichas por
+  // punto en geovisores" § Recompresión automática).
+  fichaImagen: { maxWidth: 2000, quality: 82 },
 };
 
 /**
  * @param {Buffer} buffer     - bytes originales, ya validados por fileGuard.js
- * @param {'thumbnail'|'image'} category
+ * @param {'thumbnail'|'image'|'fichaImagen'} category
  * @returns {Promise<{ buffer: Buffer, mimetype: string, ext: string }>}
  */
 export async function optimizeImage(buffer, category) {
   const { maxWidth, quality } = LIMITS[category] ?? LIMITS.image;
-  const optimized = await sharp(buffer)
+  // resolveWithObject: además de los bytes finales, da el ancho/alto YA redimensionado
+  // -- las fichas por punto lo necesitan para dimensionar la galería sin otra pasada.
+  const { data, info } = await sharp(buffer)
     // withoutEnlargement -- nunca agranda una imagen ya más chica que el máximo.
     .resize({ width: maxWidth, withoutEnlargement: true })
     .webp({ quality })
-    .toBuffer();
-  return { buffer: optimized, mimetype: 'image/webp', ext: 'webp' };
+    .toBuffer({ resolveWithObject: true });
+  return { buffer: data, mimetype: 'image/webp', ext: 'webp', width: info.width, height: info.height };
 }
