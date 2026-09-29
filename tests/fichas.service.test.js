@@ -243,39 +243,53 @@ describe('listarFeaturesConCompletitud()', () => {
       .rejects.toMatchObject({ status: 422, code: 'CAPA_DEMASIADO_GRANDE' });
   });
 
-  it('marca completa=true solo si tiene descripción >=20 caracteres Y al menos un medio listo', async () => {
+  it('estado=completa solo si tiene descripción >=20 caracteres Y al menos un medio listo', async () => {
     mockConfigYConexion();
     geoserver.contarFeaturesCapa.mockResolvedValueOnce(2);
     geoserver.listarFeaturesCapa.mockResolvedValueOnce({
       type: 'FeatureCollection',
       features: [
-        { properties: { codigo_estacion: 'EST-001', nombre_estacion: 'Uno' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } },
-        { properties: { codigo_estacion: 'EST-002', nombre_estacion: 'Dos' }, geometry: { type: 'Point', coordinates: [-76.7, 5.56] } },
+        { id: 'f.1', properties: { codigo_estacion: 'EST-001', nombre_estacion: 'Uno' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } },
+        { id: 'f.2', properties: { codigo_estacion: 'EST-002', nombre_estacion: 'Dos' }, geometry: { type: 'Point', coordinates: [-76.7, 5.56] } },
       ],
     });
     query.mockResolvedValueOnce({
       rows: [
-        { valor: 'EST-001', titulo: 'Uno', descripcion: 'Una descripción con más de veinte caracteres', actualizadoEn: new Date().toISOString(), medios: '2' },
-        { valor: 'EST-002', titulo: 'Dos', descripcion: 'corta', actualizadoEn: new Date().toISOString(), medios: '0' },
+        { id: 'ficha-1', valor: 'EST-001', descripcion: 'Una descripción con más de veinte caracteres', actualizadoEn: new Date().toISOString(), n_imagenes: '2', n_videos: '0', n_medios_total: '2' },
+        { id: 'ficha-2', valor: 'EST-002', descripcion: 'corta', actualizadoEn: new Date().toISOString(), n_imagenes: '0', n_videos: '0', n_medios_total: '0' },
       ],
     });
 
     const resultado = await listarFeaturesConCompletitud('config-1');
 
     expect(resultado.resumen).toMatchObject({ totalFeatures: 2, completas: 1, incompletas: 1, sinIdentificador: 0 });
-    expect(resultado.features.find((f) => f.valor === 'EST-001').completa).toBe(true);
-    expect(resultado.features.find((f) => f.valor === 'EST-002').completa).toBe(false);
+    expect(resultado.features.find((f) => f.valor === 'EST-001')).toMatchObject({ estado: 'completa', fichaId: 'ficha-1', nImagenes: 2 });
+    expect(resultado.features.find((f) => f.valor === 'EST-002')).toMatchObject({ estado: 'incompleta', fichaId: 'ficha-2' });
   });
 
-  it('cuenta features sin identificador y detecta identificadores duplicados', async () => {
+  it('estado=sin_ficha cuando el valor no tiene ninguna ficha guardada (distinto de incompleta)', async () => {
     mockConfigYConexion();
-    geoserver.contarFeaturesCapa.mockResolvedValueOnce(3);
+    geoserver.contarFeaturesCapa.mockResolvedValueOnce(1);
+    geoserver.listarFeaturesCapa.mockResolvedValueOnce({
+      type: 'FeatureCollection',
+      features: [{ id: 'f.1', properties: { codigo_estacion: 'EST-NUEVA' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } }],
+    });
+    query.mockResolvedValueOnce({ rows: [] });
+
+    const resultado = await listarFeaturesConCompletitud('config-1');
+
+    expect(resultado.features[0]).toMatchObject({ estado: 'sin_ficha', fichaId: null, tieneDescripcion: false });
+    expect(resultado.resumen.incompletas).toBe(1); // sin_ficha también bloquea publicación
+  });
+
+  it('features sin identificador van en `sinIdentificador` (con el fid crudo), no en `features`', async () => {
+    mockConfigYConexion();
+    geoserver.contarFeaturesCapa.mockResolvedValueOnce(2);
     geoserver.listarFeaturesCapa.mockResolvedValueOnce({
       type: 'FeatureCollection',
       features: [
-        { properties: { codigo_estacion: null }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } },
-        { properties: { codigo_estacion: 'EST-DUP' }, geometry: { type: 'Point', coordinates: [-76.7, 5.56] } },
-        { properties: { codigo_estacion: 'EST-DUP' }, geometry: { type: 'Point', coordinates: [-76.8, 5.57] } },
+        { id: 'Estaciones.1', properties: { codigo_estacion: null, nombre_estacion: 'Sin código' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } },
+        { id: 'Estaciones.2', properties: { codigo_estacion: 'EST-001' }, geometry: { type: 'Point', coordinates: [-76.7, 5.56] } },
       ],
     });
     query.mockResolvedValueOnce({ rows: [] });
@@ -283,26 +297,48 @@ describe('listarFeaturesConCompletitud()', () => {
     const resultado = await listarFeaturesConCompletitud('config-1');
 
     expect(resultado.resumen.sinIdentificador).toBe(1);
-    expect(resultado.resumen.identificadoresDuplicados).toEqual(['EST-DUP']);
+    expect(resultado.sinIdentificador).toEqual([{ fid: 'Estaciones.1', etiqueta: 'Sin código' }]);
+    expect(resultado.features.find((f) => f.valor === '')).toBeUndefined(); // nunca aparece en `features`
+    expect(resultado.features).toHaveLength(1);
   });
 
-  it('detecta fichas huérfanas (existen en BD pero ya no aparecen en la capa)', async () => {
+  it('agrupa features con el mismo identificador (nFeatures>1) y lo cuenta como duplicado', async () => {
+    mockConfigYConexion();
+    geoserver.contarFeaturesCapa.mockResolvedValueOnce(2);
+    geoserver.listarFeaturesCapa.mockResolvedValueOnce({
+      type: 'FeatureCollection',
+      features: [
+        { id: 'f.1', properties: { codigo_estacion: 'EST-DUP' }, geometry: { type: 'Point', coordinates: [-76.7, 5.56] } },
+        { id: 'f.2', properties: { codigo_estacion: 'EST-DUP' }, geometry: { type: 'Point', coordinates: [-76.8, 5.57] } },
+      ],
+    });
+    query.mockResolvedValueOnce({ rows: [] });
+
+    const resultado = await listarFeaturesConCompletitud('config-1');
+
+    expect(resultado.resumen.identificadoresDuplicados).toBe(1); // 1 identificador distinto duplicado, no 2 filas
+    expect(resultado.features).toHaveLength(1); // se agrupan en una sola entrada
+    expect(resultado.features[0]).toMatchObject({ valor: 'EST-DUP', nFeatures: 2 });
+  });
+
+  it('detecta fichas huérfanas (existen en BD pero ya no aparecen en la capa) con conteo de medios', async () => {
     mockConfigYConexion();
     geoserver.contarFeaturesCapa.mockResolvedValueOnce(1);
     geoserver.listarFeaturesCapa.mockResolvedValueOnce({
       type: 'FeatureCollection',
-      features: [{ properties: { codigo_estacion: 'EST-001' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } }],
+      features: [{ id: 'f.1', properties: { codigo_estacion: 'EST-001' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } }],
     });
     query.mockResolvedValueOnce({
       rows: [
-        { valor: 'EST-001', titulo: 'Uno', descripcion: 'x', actualizadoEn: new Date().toISOString(), medios: '0' },
-        { valor: 'EST-BORRADA-EN-GEOSERVER', titulo: 'Vieja', descripcion: 'x', actualizadoEn: new Date().toISOString(), medios: '1' },
+        { id: 'ficha-1', valor: 'EST-001', descripcion: 'x', actualizadoEn: new Date().toISOString(), n_imagenes: '0', n_videos: '0', n_medios_total: '0' },
+        { id: 'ficha-vieja', valor: 'EST-BORRADA-EN-GEOSERVER', descripcion: 'x', actualizadoEn: new Date().toISOString(), n_imagenes: '1', n_videos: '0', n_medios_total: '1' },
       ],
     });
 
     const resultado = await listarFeaturesConCompletitud('config-1');
 
-    expect(resultado.resumen.huerfanas).toEqual(['EST-BORRADA-EN-GEOSERVER']);
+    expect(resultado.resumen.huerfanas).toBe(1);
+    expect(resultado.huerfanas).toEqual([{ valor: 'EST-BORRADA-EN-GEOSERVER', fichaId: 'ficha-vieja', nMedios: 1 }]);
   });
 
   it('calcula el centroide de la geometría de cada feature', async () => {
@@ -310,7 +346,7 @@ describe('listarFeaturesConCompletitud()', () => {
     geoserver.contarFeaturesCapa.mockResolvedValueOnce(1);
     geoserver.listarFeaturesCapa.mockResolvedValueOnce({
       type: 'FeatureCollection',
-      features: [{ properties: { codigo_estacion: 'EST-001' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } }],
+      features: [{ id: 'f.1', properties: { codigo_estacion: 'EST-001' }, geometry: { type: 'Point', coordinates: [-76.6, 5.55] } }],
     });
     query.mockResolvedValueOnce({ rows: [] });
 

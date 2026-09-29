@@ -209,6 +209,15 @@ function calcularCentroide(geometry) {
  * atributos completos), cruzado con las fichas ya guardadas. Sin paginar
  * (tope duro en LIMITE_FEATURES, ver plan): el filtrado/búsqueda es
  * responsabilidad del cliente.
+ *
+ * Contrato exacto esperado por el frontend (FeaturesFichaResponse en
+ * VIGIIAP/src/types/index.ts) -- verificado contra una capa real de 319
+ * features en producción:
+ *   { resumen, features: FeatureFichaEstado[], sinIdentificador: FeatureSinIdentificador[], huerfanas: FichaHuerfana[] }
+ * `features` NUNCA incluye las que no tienen identificador -- esas van
+ * aparte en `sinIdentificador` (con el fid crudo de GeoServer, no un valor
+ * agrupable). `resumen.sinIdentificador`/`resumen.huerfanas`/
+ * `resumen.identificadoresDuplicados` son CONTEOS (number), no arreglos.
  */
 export async function listarFeaturesConCompletitud(configId) {
   const config = await obtenerConfigOrThrow(configId);
@@ -225,8 +234,10 @@ export async function listarFeaturesConCompletitud(configId) {
   const [coleccion, filasFichas] = await Promise.all([
     geoserver.listarFeaturesCapa(conexion, config.capaId, config.campoIdentificador, config.campoEtiqueta),
     query(
-      `SELECT f.valor_identificador AS valor, f.titulo, f.descripcion, f.actualizado_en AS "actualizadoEn",
-              COUNT(m.id) FILTER (WHERE m.estado = 'listo') AS medios
+      `SELECT f.id, f.valor_identificador AS valor, f.descripcion, f.actualizado_en AS "actualizadoEn",
+              COUNT(m.id) FILTER (WHERE m.estado = 'listo' AND m.tipo = 'imagen') AS n_imagenes,
+              COUNT(m.id) FILTER (WHERE m.estado = 'listo' AND m.tipo = 'video') AS n_videos,
+              COUNT(m.id) AS n_medios_total
        FROM fichas_punto f
        LEFT JOIN fichas_punto_medios m ON m.ficha_id = f.id
        WHERE f.capa_config_id = $1
@@ -236,41 +247,81 @@ export async function listarFeaturesConCompletitud(configId) {
   ]);
 
   const fichasPorValor = new Map(filasFichas.rows.map((f) => [f.valor, f]));
-  const vecesPorValor = new Map(); // detecta identificadores duplicados entre features
 
-  const features = (coleccion.features ?? []).map((feature) => {
+  // Agrupa los features crudos por valor de identificador -- varios features
+  // de GeoServer pueden compartir el mismo valor (identificador duplicado en
+  // los datos de origen); todos comparten una sola ficha, nFeatures dice cuántos.
+  const gruposPorValor = new Map();
+  const sinIdentificador = [];
+
+  for (const feature of coleccion.features ?? []) {
     const valorCrudo = feature.properties?.[config.campoIdentificador];
     const valor = valorCrudo === null || valorCrudo === undefined ? '' : String(valorCrudo).trim();
-    if (valor) vecesPorValor.set(valor, (vecesPorValor.get(valor) ?? 0) + 1);
-
     const etiqueta = config.campoEtiqueta ? (feature.properties?.[config.campoEtiqueta] ?? null) : null;
-    const fichaFila = valor ? fichasPorValor.get(valor) : undefined;
+
+    if (!valor) {
+      sinIdentificador.push({ fid: feature.id ?? null, etiqueta });
+      continue;
+    }
+
+    const existente = gruposPorValor.get(valor);
+    if (existente) {
+      existente.nFeatures += 1;
+    } else {
+      gruposPorValor.set(valor, { etiqueta, centroide: calcularCentroide(feature.geometry), nFeatures: 1 });
+    }
+  }
+
+  const features = [...gruposPorValor.entries()].map(([valor, grupo]) => {
+    const fichaFila = fichasPorValor.get(valor);
     const tieneDescripcion = !!fichaFila && (fichaFila.descripcion ?? '').trim().length >= DESCRIPCION_MINIMA;
-    const tieneMedio = !!fichaFila && Number(fichaFila.medios) > 0;
+    const nImagenes = fichaFila ? Number(fichaFila.n_imagenes) : 0;
+    const nVideos = fichaFila ? Number(fichaFila.n_videos) : 0;
+
+    let estado;
+    if (!fichaFila) estado = 'sin_ficha';
+    else if (tieneDescripcion && nImagenes + nVideos > 0) estado = 'completa';
+    else estado = 'incompleta';
 
     return {
       valor,
-      etiqueta,
-      centroide: calcularCentroide(feature.geometry),
-      sinIdentificador: !valor,
-      ficha: fichaFila ? { titulo: fichaFila.titulo, actualizadoEn: fichaFila.actualizadoEn } : null,
-      completa: tieneDescripcion && tieneMedio,
+      etiqueta: grupo.etiqueta,
+      centroide: grupo.centroide,
+      nFeatures: grupo.nFeatures,
+      estado,
+      fichaId: fichaFila?.id ?? null,
+      nImagenes,
+      nVideos,
+      tieneDescripcion,
+      actualizadoEn: fichaFila?.actualizadoEn ?? null,
     };
   });
 
-  const valoresDeFeatures = new Set(features.map((f) => f.valor).filter(Boolean));
-  const huerfanas = filasFichas.rows.map((f) => f.valor).filter((valor) => !valoresDeFeatures.has(valor));
-  const identificadoresDuplicados = [...vecesPorValor.entries()]
-    .filter(([, veces]) => veces > 1)
-    .map(([valor]) => valor);
+  const valoresValidos = new Set(gruposPorValor.keys());
+  const huerfanas = filasFichas.rows
+    .filter((f) => !valoresValidos.has(f.valor))
+    .map((f) => ({ valor: f.valor, fichaId: f.id, nMedios: Number(f.n_medios_total) }));
 
-  const sinIdentificador = features.filter((f) => f.sinIdentificador).length;
-  const completas = features.filter((f) => f.completa).length;
-  const incompletas = features.length - completas - sinIdentificador;
+  const completas = features.filter((f) => f.estado === 'completa').length;
+  // 'sin_ficha' bloquea publicación igual que 'incompleta' -- se suman aquí
+  // para que calcularCompletitud() en geovisores.service.js (bloqueantes =
+  // resumen.incompletas + resumen.sinIdentificador) siga siendo correcto sin
+  // tener que conocer el detalle de los 3 estados posibles.
+  const incompletas = features.filter((f) => f.estado !== 'completa').length;
+  const identificadoresDuplicados = features.filter((f) => f.nFeatures > 1).length;
 
   return {
-    resumen: { totalFeatures: features.length, completas, incompletas, sinIdentificador, identificadoresDuplicados, huerfanas },
+    resumen: {
+      totalFeatures: features.length,
+      completas,
+      incompletas,
+      sinIdentificador: sinIdentificador.length,
+      identificadoresDuplicados,
+      huerfanas: huerfanas.length,
+    },
     features,
+    sinIdentificador,
+    huerfanas,
   };
 }
 
