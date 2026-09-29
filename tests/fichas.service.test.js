@@ -1,11 +1,12 @@
 /**
- * Tests unitarios de fichas.service.js — fase 1 de "Fichas por punto en
- * geovisores" (config de capa + CRUD de fichas + listado de completitud).
- * La subida de medios (estado='procesando'/'error', object_key real) llega
- * en una fase posterior; aquí fichas_punto_medios siempre está vacía o con
- * medios ya 'listo'.
+ * Tests unitarios de fichas.service.js — "Fichas por punto en geovisores".
+ * Fase 1: config de capa + CRUD de fichas + completitud. Fase 2: subida de
+ * medios (imagen síncrona, video asíncrono con estado 'procesando'/'error').
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn(),
@@ -18,14 +19,37 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
   contarFeaturesCapa: vi.fn(),
   listarFeaturesCapa: vi.fn(),
 }));
+vi.mock('../src/config/r2.js', () => ({
+  uploadFile: vi.fn(),
+  deletePublicFile: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../src/modules/fichas/video.transcode.js', () => ({
+  transcodificarVideo: vi.fn(),
+  extraerPosterFrame: vi.fn(),
+  obtenerMetadatosVideo: vi.fn(),
+}));
+vi.mock('../src/utils/imageOptimize.js', () => ({
+  optimizeImage: vi.fn(),
+}));
 
 import { query } from '../src/config/database.js';
 import { obtenerConexionParaConector } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
+import { uploadFile, deletePublicFile } from '../src/config/r2.js';
+import * as video from '../src/modules/fichas/video.transcode.js';
+import { optimizeImage } from '../src/utils/imageOptimize.js';
 import {
   listarAtributos, obtenerConfig, upsertConfig, obtenerFicha, upsertFicha,
   eliminarFicha, listarFeaturesConCompletitud,
+  crearMedioImagen, crearMedioVideo, actualizarMedio, reordenarMedios, eliminarMedio,
+  procesarVideoEnSegundoPlano,
 } from '../src/modules/fichas/fichas.service.js';
+
+function crearArchivoTemporal(contenido = 'contenido de prueba') {
+  const rutaArchivo = path.join(os.tmpdir(), `fichas-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fs.writeFileSync(rutaArchivo, contenido);
+  return rutaArchivo;
+}
 
 const conexion = { id: 'conexion-1', url: 'https://geoserver.test.local/geoserver' };
 
@@ -48,6 +72,12 @@ beforeEach(() => {
   vi.mocked(geoserver.obtenerAtributosCapa).mockReset();
   vi.mocked(geoserver.contarFeaturesCapa).mockReset();
   vi.mocked(geoserver.listarFeaturesCapa).mockReset();
+  vi.mocked(uploadFile).mockReset().mockResolvedValue('https://files.test.local/fichas/x.webp');
+  vi.mocked(deletePublicFile).mockReset().mockResolvedValue(undefined);
+  vi.mocked(video.transcodificarVideo).mockReset();
+  vi.mocked(video.extraerPosterFrame).mockReset();
+  vi.mocked(video.obtenerMetadatosVideo).mockReset();
+  vi.mocked(optimizeImage).mockReset();
 });
 
 describe('listarAtributos()', () => {
@@ -171,15 +201,31 @@ describe('upsertFicha()', () => {
 
 describe('eliminarFicha()', () => {
   it('lanza 404 si no existía ninguna ficha con ese identificador', async () => {
-    query.mockResolvedValueOnce({ rowCount: 0 });
+    query.mockResolvedValueOnce({ rows: [] }); // SELECT id
 
     await expect(eliminarFicha('config-1', 'EST-999')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('borra la ficha existente', async () => {
-    query.mockResolvedValueOnce({ rowCount: 1 });
+  it('borra la ficha y limpia los objetos de R2 de sus medios', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'ficha-1' }] }) // SELECT id
+      .mockResolvedValueOnce({ rows: [{ object_key: 'fichas/1/foto.webp', miniatura_key: 'fichas/1/foto-thumb.webp' }] }) // SELECT medios
+      .mockResolvedValueOnce({ rowCount: 1 }); // DELETE
 
     await expect(eliminarFicha('config-1', 'EST-001')).resolves.toBeUndefined();
+
+    expect(deletePublicFile).toHaveBeenCalledWith('fichas/1/foto.webp');
+    expect(deletePublicFile).toHaveBeenCalledWith('fichas/1/foto-thumb.webp');
+  });
+
+  it('no falla si un medio no tenía object_key/miniatura_key (video todavía procesando)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'ficha-1' }] })
+      .mockResolvedValueOnce({ rows: [{ object_key: null, miniatura_key: null }] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    await expect(eliminarFicha('config-1', 'EST-001')).resolves.toBeUndefined();
+    expect(deletePublicFile).not.toHaveBeenCalled();
   });
 });
 
@@ -270,5 +316,192 @@ describe('listarFeaturesConCompletitud()', () => {
     const resultado = await listarFeaturesConCompletitud('config-1');
 
     expect(resultado.features[0].centroide).toEqual([-76.6, 5.55]);
+  });
+});
+
+function filaFicha(overrides = {}) {
+  return {
+    id: 'ficha-1', capa_config_id: 'config-1', valor_identificador: 'EST-001',
+    titulo: null, descripcion: '', creado_en: new Date().toISOString(), actualizado_en: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe('crearMedioImagen()', () => {
+  it('recomprime (principal + miniatura), sube ambas a R2, y borra el temporal', async () => {
+    const archivoTmp = crearArchivoTemporal('bytes de una imagen');
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] }) // obtenerConfigOrThrow
+      .mockResolvedValueOnce({ rows: [filaFicha()] }) // obtenerOCrearFicha
+      .mockResolvedValueOnce({ rows: [{ count: '2' }] }) // contarMedios
+      .mockResolvedValueOnce({ rows: [{ id: 'medio-1', tipo: 'imagen', estado: 'listo', object_key: 'k1', miniatura_key: 'k1-thumb', mime: 'image/webp', bytes: 1234, ancho: 2000, alto: 1500, duracion_s: null, leyenda: null, creditos: null, orden: 2 }] });
+
+    optimizeImage
+      .mockResolvedValueOnce({ buffer: Buffer.from('principal'), mimetype: 'image/webp', ext: 'webp', width: 2000, height: 1500 })
+      .mockResolvedValueOnce({ buffer: Buffer.from('miniatura'), mimetype: 'image/webp', ext: 'webp', width: 480, height: 360 });
+
+    const medio = await crearMedioImagen({ configId: 'config-1', valor: 'EST-001', archivoPath: archivoTmp, userId: 'user-1' });
+
+    expect(medio).toMatchObject({ tipo: 'imagen', estado: 'listo', objectKey: 'k1', miniaturaKey: 'k1-thumb' });
+    expect(uploadFile).toHaveBeenCalledTimes(2);
+    expect(fs.existsSync(archivoTmp)).toBe(false);
+  });
+
+  it('lanza 422 LIMITE_MEDIOS si la ficha ya tiene el máximo de imágenes, y limpia el temporal', async () => {
+    const archivoTmp = crearArchivoTemporal();
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [filaFicha()] })
+      .mockResolvedValueOnce({ rows: [{ count: '12' }] });
+
+    await expect(crearMedioImagen({ configId: 'config-1', valor: 'EST-001', archivoPath: archivoTmp, userId: 'user-1' }))
+      .rejects.toMatchObject({ status: 422, code: 'LIMITE_MEDIOS' });
+    expect(fs.existsSync(archivoTmp)).toBe(false);
+  });
+});
+
+describe('crearMedioVideo()', () => {
+  it('inserta el medio en estado procesando y responde de inmediato (sin esperar la transcodificación)', async () => {
+    const archivoTmp = crearArchivoTemporal('bytes de video');
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [filaFicha()] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'medio-1', tipo: 'video', estado: 'procesando', object_key: null, miniatura_key: null, mime: null, bytes: 5000, ancho: null, alto: null, duracion_s: null, leyenda: null, creditos: null, orden: 0 }] })
+      .mockResolvedValue({ rows: [{}], rowCount: 1 }); // red de seguridad para lo que dispare el job en background
+
+    video.transcodificarVideo.mockResolvedValue(undefined);
+    video.obtenerMetadatosVideo.mockResolvedValue({ ancho: 1920, alto: 1080, duracionS: 5 });
+    optimizeImage.mockResolvedValue({ buffer: Buffer.from('poster'), mimetype: 'image/webp', ext: 'webp', width: 480, height: 270 });
+
+    const medio = await crearMedioVideo({ configId: 'config-1', valor: 'EST-001', archivoPath: archivoTmp, posterPath: undefined, bytes: 5000, userId: 'user-1' });
+
+    expect(medio).toMatchObject({ tipo: 'video', estado: 'procesando' });
+  });
+
+  it('lanza 422 LIMITE_MEDIOS si la ficha ya tiene el máximo de videos, y limpia archivo + poster temporales', async () => {
+    const archivoTmp = crearArchivoTemporal();
+    const posterTmp = crearArchivoTemporal();
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [filaFicha()] })
+      .mockResolvedValueOnce({ rows: [{ count: '3' }] });
+
+    await expect(crearMedioVideo({ configId: 'config-1', valor: 'EST-001', archivoPath: archivoTmp, posterPath: posterTmp, bytes: 1000, userId: 'user-1' }))
+      .rejects.toMatchObject({ status: 422, code: 'LIMITE_MEDIOS' });
+    expect(fs.existsSync(archivoTmp)).toBe(false);
+    expect(fs.existsSync(posterTmp)).toBe(false);
+  });
+});
+
+describe('procesarVideoEnSegundoPlano() (job de transcodificación)', () => {
+  it('éxito sin poster del cliente: genera uno del frame, sube video+poster, marca estado=listo', async () => {
+    const archivoTmp = crearArchivoTemporal('entrada-cruda');
+    video.transcodificarVideo.mockImplementationOnce(async (_input, output) => fs.writeFileSync(output, 'video-transcodificado'));
+    video.obtenerMetadatosVideo.mockResolvedValueOnce({ ancho: 1920, alto: 1080, duracionS: 12.5 });
+    video.extraerPosterFrame.mockImplementationOnce(async (_videoPath, outputImagePath) => fs.writeFileSync(outputImagePath, 'frame-extraido'));
+    optimizeImage.mockResolvedValueOnce({ buffer: Buffer.from('poster-optimizado'), mimetype: 'image/webp', ext: 'webp', width: 480, height: 270 });
+    query.mockResolvedValueOnce({ rowCount: 1 });
+
+    await procesarVideoEnSegundoPlano({ medioId: 'medio-1', archivoPath: archivoTmp, posterPath: undefined });
+
+    expect(video.extraerPosterFrame).toHaveBeenCalledOnce();
+    expect(uploadFile).toHaveBeenCalledTimes(2);
+    const [sql, params] = query.mock.calls.at(-1);
+    expect(sql).toMatch(/estado = 'listo'/);
+    expect(params).toContain(1920);
+    expect(params).toContain(1080);
+    expect(fs.existsSync(archivoTmp)).toBe(false);
+  });
+
+  it('con poster del cliente: no genera uno nuevo del frame', async () => {
+    const archivoTmp = crearArchivoTemporal('entrada');
+    const posterTmp = crearArchivoTemporal('poster-del-cliente');
+    video.transcodificarVideo.mockImplementationOnce(async (_input, output) => fs.writeFileSync(output, 'video'));
+    video.obtenerMetadatosVideo.mockResolvedValueOnce({ ancho: 1280, alto: 720, duracionS: 3 });
+    optimizeImage.mockResolvedValueOnce({ buffer: Buffer.from('poster-opt'), mimetype: 'image/webp', ext: 'webp', width: 480, height: 270 });
+    query.mockResolvedValueOnce({ rowCount: 1 });
+
+    await procesarVideoEnSegundoPlano({ medioId: 'medio-1', archivoPath: archivoTmp, posterPath: posterTmp });
+
+    expect(video.extraerPosterFrame).not.toHaveBeenCalled();
+  });
+
+  it('en error de ffmpeg: marca estado=error y limpia los temporales igual', async () => {
+    const archivoTmp = crearArchivoTemporal('entrada-corrupta');
+    video.transcodificarVideo.mockRejectedValueOnce(new Error('ffmpeg salió con código 1'));
+    query.mockResolvedValueOnce({ rowCount: 1 });
+
+    await procesarVideoEnSegundoPlano({ medioId: 'medio-1', archivoPath: archivoTmp, posterPath: undefined });
+
+    const [sql, params] = query.mock.calls.at(-1);
+    expect(sql).toMatch(/estado = 'error'/);
+    expect(params).toEqual(['medio-1']);
+    expect(fs.existsSync(archivoTmp)).toBe(false);
+  });
+});
+
+describe('actualizarMedio()', () => {
+  it('actualiza solo los campos enviados (SET dinámico)', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'medio-1', tipo: 'imagen', estado: 'listo', object_key: 'k', miniatura_key: 'k2', mime: 'image/webp', bytes: 1, ancho: 1, alto: 1, duracion_s: null, leyenda: 'nueva', creditos: null, orden: 0 }],
+    });
+
+    const medio = await actualizarMedio('medio-1', { leyenda: 'nueva' });
+
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/leyenda = \$1/);
+    expect(sql).not.toMatch(/creditos/);
+    expect(medio.leyenda).toBe('nueva');
+  });
+
+  it('lanza 404 si el medio no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(actualizarMedio('medio-x', { orden: 1 })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('reordenarMedios()', () => {
+  it('lanza 404 si la ficha no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(reordenarMedios('config-1', 'EST-001', ['a'])).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('rechaza 422 si algún id no pertenece a la ficha', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'ficha-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'medio-a' }, { id: 'medio-b' }] });
+
+    await expect(reordenarMedios('config-1', 'EST-001', ['medio-a', 'medio-ajeno']))
+      .rejects.toMatchObject({ status: 422 });
+  });
+
+  it('actualiza el orden de cada medio según su posición en el arreglo recibido', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'ficha-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'medio-a' }, { id: 'medio-b' }] })
+      .mockResolvedValue({ rowCount: 1 });
+
+    await reordenarMedios('config-1', 'EST-001', ['medio-b', 'medio-a']);
+
+    const llamadasUpdate = query.mock.calls.slice(2);
+    expect(llamadasUpdate).toContainEqual([expect.stringContaining('UPDATE fichas_punto_medios SET orden'), [0, 'medio-b']]);
+    expect(llamadasUpdate).toContainEqual([expect.stringContaining('UPDATE fichas_punto_medios SET orden'), [1, 'medio-a']]);
+  });
+});
+
+describe('eliminarMedio()', () => {
+  it('lanza 404 si el medio no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(eliminarMedio('medio-x')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('borra el medio y limpia sus objetos en R2', async () => {
+    query.mockResolvedValueOnce({ rows: [{ object_key: 'k1', miniatura_key: 'k1-thumb' }] });
+
+    await eliminarMedio('medio-1');
+
+    expect(deletePublicFile).toHaveBeenCalledWith('k1');
+    expect(deletePublicFile).toHaveBeenCalledWith('k1-thumb');
   });
 });

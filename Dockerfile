@@ -6,6 +6,11 @@ WORKDIR /app
 # sin privilegios de root — reduce el radio de daño en una fuga de contenedor.
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
+# ffmpeg/ffprobe -- transcodificación de video de fichas por punto (ver
+# src/modules/fichas/video.transcode.js). Se invoca como binario del sistema,
+# sin wrapper npm.
+RUN apk add --no-cache ffmpeg
+
 # Instalar dependencias de producción como root (acceso a npm cache), luego ceder
 COPY package*.json ./
 RUN npm ci --omit=dev
