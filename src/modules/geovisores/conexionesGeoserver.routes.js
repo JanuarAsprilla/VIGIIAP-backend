@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  index, show, store, update, destroy, workspaces, wmsPreview, leyendaPreview,
+  index, show, store, update, destroy, workspaces, wmsPreview, leyendaPreview, atributosCapa,
 } from './conexionesGeoserver.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
@@ -22,6 +22,7 @@ router.get('/:id', authenticate, authorize('admin_sig'), requireModulo('conexion
 router.get('/:id/workspaces', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), workspaces);
 router.get('/:id/wms', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), tileRateLimiter, wmsPreview);
 router.get('/:id/leyenda/:capaId', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), tileRateLimiter, leyendaPreview);
+router.get('/:id/capas/:capaId/atributos', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), atributosCapa);
 
 router.post('/', authenticate, requireSuperAdmin, csrfProtection, store);
 router.patch('/:id', authenticate, requireSuperAdmin, csrfProtection, update);
