@@ -177,7 +177,7 @@ describe('obtenerFicha()', () => {
 
     expect(ficha.valorIdentificador).toBe('EST-001');
     expect(ficha.medios).toHaveLength(1);
-    expect(ficha.medios[0]).toMatchObject({ tipo: 'imagen', estado: 'listo', objectKey: 'k1' });
+    expect(ficha.medios[0]).toMatchObject({ tipo: 'imagen', estado: 'listo', url: 'https://files.test.local/k1' });
   });
 });
 
@@ -379,7 +379,7 @@ describe('crearMedioImagen()', () => {
 
     const medio = await crearMedioImagen({ configId: 'config-1', valor: 'EST-001', archivoPath: archivoTmp, userId: 'user-1' });
 
-    expect(medio).toMatchObject({ tipo: 'imagen', estado: 'listo', objectKey: 'k1', miniaturaKey: 'k1-thumb' });
+    expect(medio).toMatchObject({ tipo: 'imagen', estado: 'listo', url: 'https://files.test.local/k1', miniaturaUrl: 'https://files.test.local/k1-thumb' });
     expect(uploadFile).toHaveBeenCalledTimes(2);
     expect(fs.existsSync(archivoTmp)).toBe(false);
   });
