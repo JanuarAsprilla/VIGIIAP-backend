@@ -12,10 +12,14 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
   proxyLeyenda: vi.fn(),
   consultarWfs: vi.fn(),
 }));
+vi.mock('../src/modules/fichas/fichas.service.js', () => ({
+  adjuntarFichasAFeatures: vi.fn(),
+}));
 
 import { query } from '../src/config/database.js';
 import { obtenerConexionParaConector } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
+import { adjuntarFichasAFeatures } from '../src/modules/fichas/fichas.service.js';
 import {
   proxyWmsDeGeovisor, proxyLeyendaDeGeovisor, consultarCapaDeGeovisor,
 } from '../src/modules/geovisores/geovisores.service.js';
@@ -44,6 +48,7 @@ beforeEach(() => {
   vi.mocked(geoserver.proxyWms).mockReset();
   vi.mocked(geoserver.proxyLeyenda).mockReset();
   vi.mocked(geoserver.consultarWfs).mockReset();
+  vi.mocked(adjuntarFichasAFeatures).mockReset();
 });
 
 describe('proxyWmsDeGeovisor — solo capas permitidas para este geovisor', () => {
@@ -170,5 +175,39 @@ describe('consultarCapaDeGeovisor — popup por capa', () => {
     vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisor()] });
     await expect(consultarCapaDeGeovisor('geologia-choco', 't_20_hidrologia:cuencas', geometriaPunto, null)).rejects.toMatchObject({ status: 403 });
     expect(geoserver.consultarWfs).not.toHaveBeenCalled();
+  });
+
+  it('no llama a adjuntarFichasAFeatures si la capa no tiene el modo fichas por punto habilitado', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisor({ capas_con_ficha: [] })] });
+    vi.mocked(geoserver.consultarWfs).mockResolvedValueOnce({ type: 'FeatureCollection', features: [] });
+
+    const resultado = await consultarCapaDeGeovisor('geologia-choco', 't_15_geologia:unidades', geometriaPunto, null);
+
+    expect(adjuntarFichasAFeatures).not.toHaveBeenCalled();
+    expect(resultado).toEqual({ type: 'FeatureCollection', features: [] });
+  });
+
+  it('llama a adjuntarFichasAFeatures y devuelve su resultado si la capa SÍ tiene el modo habilitado', async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [filaGeovisor({ capas_seleccionadas: ['t_15_geologia:unidades'], capas_con_ficha: ['t_15_geologia:unidades'] })],
+    });
+    vi.mocked(geoserver.consultarWfs).mockResolvedValueOnce({ type: 'FeatureCollection', features: [{ properties: {} }] });
+    const coleccionConFichas = { type: 'FeatureCollection', features: [{ properties: {}, ficha: null }] };
+    vi.mocked(adjuntarFichasAFeatures).mockResolvedValueOnce(coleccionConFichas);
+
+    const resultado = await consultarCapaDeGeovisor('geologia-choco', 't_15_geologia:unidades', geometriaPunto, null);
+
+    expect(adjuntarFichasAFeatures).toHaveBeenCalledWith('conexion-uuid-1', 't_15_geologia:unidades', { type: 'FeatureCollection', features: [{ properties: {} }] });
+    expect(resultado).toBe(coleccionConFichas);
+  });
+
+  it('trata capas_con_ficha ausente en la fila (fixtures/filas viejas) como vacío, sin reventar', async () => {
+    const fila = filaGeovisor();
+    delete fila.capas_con_ficha;
+    vi.mocked(query).mockResolvedValueOnce({ rows: [fila] });
+    vi.mocked(geoserver.consultarWfs).mockResolvedValueOnce({ type: 'FeatureCollection', features: [] });
+
+    await expect(consultarCapaDeGeovisor('geologia-choco', 't_15_geologia:unidades', geometriaPunto, null)).resolves.toBeDefined();
+    expect(adjuntarFichasAFeatures).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { deleteFile, extractKey } from '../../config/r2.js';
 import { obtenerConexionParaConector } from './conexionesGeoserver.service.js';
 import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
+import { adjuntarFichasAFeatures } from '../fichas/fichas.service.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -350,5 +351,12 @@ export async function consultarCapaDeGeovisor(slug, capaId, geometria, user) {
   const geovisor = await getBySlug(slug, user);
   exigirCapaPermitida(geovisor, capaId);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
-  return geoserver.consultarWfs(conexion, capaId, geometria);
+  const coleccion = await geoserver.consultarWfs(conexion, capaId, geometria);
+
+  // Capas sin el modo "fichas por punto" no cambian -- compatibilidad hacia
+  // atrás garantizada (ver adjuntarFichasAFeatures en fichas.service.js).
+  // `?? []` cubre fixtures de test anteriores a la migración 053 -- en BD la
+  // columna es NOT NULL DEFAULT '{}', nunca llega undefined en producción.
+  if (!(geovisor.capasConFicha ?? []).includes(capaId)) return coleccion;
+  return adjuntarFichasAFeatures(geovisor.conexionGeoserverId, capaId, coleccion);
 }
