@@ -1,5 +1,53 @@
 # Changelog
 
+## [1.5.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.4.0...v1.5.0) (2026-09-29)
+
+
+### Features
+
+* analítica de uso anónima (pageviews, sesiones, tendencias) ([#150](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/150)) ([c9da239](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c9da239cc3550efd33071ceed78b80ef9769084a))
+* asignar explícitamente a qué módulos pertenece cada categoría ([#134](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/134)) ([49b20f8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/49b20f837d520dda263a084138cb49028971d94f))
+* captura eventos de seguridad de auth en el log de auditoría + filtros reales en Actividad ([#139](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/139)) ([7ffc659](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7ffc659fefe081d553f5a8839b9b52408b8f0f60))
+* catálogo de tipos de notificación y preferencias por usuario (Fases 2-3) ([#130](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/130)) ([275c7d6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/275c7d6cfcd3f962146c5f88593b249453d34c76))
+* conteo por módulo de cada categoría calculado en el servidor ([#132](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/132)) ([1fe9bc7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/1fe9bc7b1c264f1f5a7b7955b542fdef8a177d3a))
+* estado de seguimiento en el registro de errores + corrige causas reales de 4 errores reportados ([#158](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/158)) ([446e72e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/446e72e5cebea642fc37917cefdf16f134f1eaee))
+* expone y hace borrables los metadatos técnicos de mapas (EPSG/escala/fuente/bbox) ([#145](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/145)) ([062f903](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/062f903a38bc2b650e15bd0dea9beb09254216c8))
+* fase 1 de fichas por punto en geovisores (config de capa + CRUD) ([#161](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/161)) ([95a5251](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/95a5251394a74cdb0ebc0c627aa74dd00806eaf9))
+* fase 2 de fichas por punto — subida de medios (imagen síncrona, video async) ([#162](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/162)) ([790dd2a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/790dd2a0e90b0f1d280acaf045f627fd73a8934b))
+* fase 3 de fichas por punto — ficha por feature en el visor público ([#163](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/163)) ([205b79c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/205b79cea55a774f0b8907546f360191f75cbd9d))
+* fase 4 de fichas por punto — completitud y bloqueo de publicación ([#164](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/164)) ([7937e5a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7937e5ac336436709b9db168af740196c4658659))
+* módulo de administración real de herramientas (/api/herramientas) ([33deb2b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/33deb2bafffe903030e07083dca7b7e29cc69d57))
+* módulo de administración real de herramientas (/api/herramientas) ([aa76731](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/aa76731e3a0d539605d4cba1b50f668e544c93bd))
+* persistir preferencia de tema por usuario ([#128](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/128)) ([c9fffa8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c9fffa87898d9b39042124b4d995441089258bdb))
+* política de contraseñas configurable y 2FA obligatorio para admins ([#147](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/147)) ([8ae2a8c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8ae2a8c25b88acb6478f73f8e14ae020fbb788b6))
+* serie de tiempo día a día en el reporte de actividad ([#151](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/151)) ([4474e8f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4474e8f55cb44c18741c8c89e3c1ce0a6f7ac6a3))
+* soporte para conexiones a geovisores/WMS externos de terceros ([#133](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/133)) ([ddf8623](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ddf8623246545181aed7e19fce542702a6602339))
+* subir miniatura de geovisor como archivo (arrastrar y soltar) ([#131](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/131)) ([33c3b71](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/33c3b71dc10eb97e980455947158568e1f0b4f39))
+* visibilidad publico/usuarios por herramienta ([3dd9c35](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3dd9c35aaab7f2c4b20efbca74538b1a82ca813d))
+
+
+### Bug Fixes
+
+* cierra el hueco de permisos de mail_remitente y valida formato de correo ([#152](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/152)) ([e7d2197](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e7d2197a82752a8ab7fde373ef3804a13f451fce))
+* corrige conteo y geometría de fichas contra GeoServer real ([#165](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/165)) ([34f2963](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/34f2963dda717bef26453664ef9b748844f7ca27))
+* corrige el workflow de respaldo para que funcione contra la infraestructura real ([#155](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/155)) ([c709b28](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c709b289ea28a6df7986a419028f99a14b70f801))
+* hardening del guard SSRF de conexiones GeoServer (TOCTOU + IPv6) ([#138](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/138)) ([b88ca4a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b88ca4a970fba1b32ff8408043c09d41c4f7758c))
+* la url de una conexión GeoServer podía apuntar a una red interna (SSRF) ([#137](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/137)) ([3f299ac](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3f299ac4f3a362f346256844a3be54d5f5019877))
+* los tiles WMS/leyenda de geovisores agotaban el rate limit general ([#136](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/136)) ([a0c538a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a0c538a95f51bff61b11e2fd030778d50a6b6ad1))
+* mueve GET completitud a /admin/geovisores para calzar con el frontend ([#168](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/168)) ([b12ff03](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b12ff031675ac15da0d8ce9de744a91ee4d6c719))
+* obtenerFicha/crearMedioImagen/actualizarMedio devuelven url en vez de object_key crudo ([#167](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/167)) ([9223450](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/9223450a7cb515bade5a7e84fb11edc665258997))
+* reescribe el contrato de GET .../features para calzar con el frontend real ([#166](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/166)) ([91a1fce](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/91a1fce16ec49bd37a1a752739cdba0089635491))
+* **seguridad:** deja de exponer URLs prefirmadas de S3/MinIO al navegador ([#148](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/148)) ([3e26ccb](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3e26ccb3931dda0ec02b48e1067ad1319ea7116d))
+* subir la portada de una categoría rechazaba cualquier imagen real ([#135](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/135)) ([920dba0](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/920dba0ddef9ae1b61fdb0b824cfe72a8cad2416))
+* visibilidadPermitida fallaba abierto ante un rol no reconocido ([5cd9d6a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5cd9d6aa7b05eace1c03a054be6d97081f467d36))
+
+
+### Performance Improvements
+
+* agrega Cache-Control a los archivos privados servidos por stream ([#156](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/156)) ([11a3a44](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/11a3a44b52b3b2fa8aa17399acfc986cef07bd36))
+* cachea de forma inmutable las imágenes públicas subidas a R2/MinIO ([#157](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/157)) ([305e2d0](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/305e2d051705fe77881b93eb027a94781f875b32))
+* redimensiona y comprime imágenes/thumbnails antes de subirlas a R2 ([#149](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/149)) ([36f0a5b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/36f0a5b9d141fa91706abb28a15f3a6d8836f838))
+
 ## [1.4.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.3.0...v1.4.0) (2026-09-19)
 
 
