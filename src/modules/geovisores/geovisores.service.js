@@ -5,6 +5,7 @@ import { deleteFile, extractKey } from '../../config/r2.js';
 import { obtenerConexionParaConector } from './conexionesGeoserver.service.js';
 import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
+import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -73,6 +74,7 @@ function filaAGeovisor(fila) {
     conexionGeoserverId: fila.conexion_geoserver_id,
     workspacesGeoserver: fila.workspaces_geoserver,
     capasSeleccionadas: fila.capas_seleccionadas,
+    capasConFicha: fila.capas_con_ficha,
     colorPorTema: fila.color_por_tema,
     centro: { lat: fila.centro_lat, lng: fila.centro_lng },
     zoomInicial: fila.zoom_inicial,
@@ -156,15 +158,15 @@ export async function create(data, userId) {
   const { rows } = await query(
     `INSERT INTO geovisores (
        slug, titulo, subtitulo, descripcion, cita, categoria, conexion_geoserver_id,
-       workspaces_geoserver, capas_seleccionadas, color_por_tema, centro_lat, centro_lng, zoom_inicial,
+       workspaces_geoserver, capas_seleccionadas, capas_con_ficha, color_por_tema, centro_lat, centro_lng, zoom_inicial,
        basemap_defecto, area_max_ha, presets_area, visibilidad, presentacion,
        thumbnail_url, creado_por
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
      RETURNING *`,
     [
       slug, data.titulo, data.subtitulo ?? null, data.descripcion ?? null, data.cita ?? null,
       data.categoria ?? null, data.conexionGeoserverId, data.workspacesGeoserver ?? [],
-      data.capasSeleccionadas ?? [], JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
+      data.capasSeleccionadas ?? [], data.capasConFicha ?? [], JSON.stringify(data.colorPorTema ?? {}), data.centroLat, data.centroLng, data.zoomInicial ?? 8,
       data.basemapDefecto ?? 'calles', data.areaMaxHa ?? null, JSON.stringify(data.presetsArea ?? []),
       data.visibilidad ?? 'publico',
       JSON.stringify(data.presentacion ?? { mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] }),
@@ -180,6 +182,7 @@ const MAPA_CAMPOS = {
   titulo: 'titulo', subtitulo: 'subtitulo', descripcion: 'descripcion', cita: 'cita',
   categoria: 'categoria', conexionGeoserverId: 'conexion_geoserver_id',
   workspacesGeoserver: 'workspaces_geoserver', capasSeleccionadas: 'capas_seleccionadas',
+  capasConFicha: 'capas_con_ficha',
   zoomInicial: 'zoom_inicial',
   basemapDefecto: 'basemap_defecto', areaMaxHa: 'area_max_ha',
   visibilidad: 'visibilidad', thumbnailUrl: 'thumbnail_url', centroLat: 'centro_lat', centroLng: 'centro_lng',
@@ -235,7 +238,51 @@ export async function updateThumbnail(id, newUrl) {
   return result;
 }
 
+/** GET .../geovisores/:id -- lectura admin directa por id (bypassa visibilidad, a diferencia de getBySlug). */
+export async function getById(id) {
+  const { rows } = await query('SELECT * FROM geovisores WHERE id = $1 AND deleted_at IS NULL', [id]);
+  if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
+  return filaAGeovisor(rows[0]);
+}
+
+/**
+ * Completitud de un geovisor: por cada capa en capasConFicha, ¿tiene config
+ * (identificador elegido) y todas sus fichas completas (descripción + al
+ * menos un medio)? Identificadores duplicados/huérfanos NO bloquean (son
+ * avisos, ver plan) -- solo features incompletas o sin identificador.
+ * Sin capasConFicha, siempre publicable=true (comportamiento legado intacto).
+ */
+export async function calcularCompletitud(id) {
+  const geovisor = await getById(id);
+
+  const capas = await Promise.all((geovisor.capasConFicha ?? []).map(async (capaId) => {
+    const config = await obtenerConfigFichas(geovisor.conexionGeoserverId, capaId);
+    if (!config) {
+      // La capa tiene el modo habilitado pero nadie eligió todavía un
+      // identificador -- no hay forma de que exista ni una sola ficha, bloquea.
+      return { capaId, nombre: capaId, resumen: null, bloqueantes: null, sinConfigurar: true };
+    }
+    const { resumen } = await listarFeaturesConCompletitud(config.id);
+    return { capaId, nombre: capaId, resumen, bloqueantes: resumen.incompletas + resumen.sinIdentificador };
+  }));
+
+  const publicable = capas.every((c) => !c.sinConfigurar && c.bloqueantes === 0);
+  return { publicable, capas };
+}
+
 export async function toggleActivo(id, activo) {
+  // Activar SÍ se valida contra completitud; desactivar NUNCA se bloquea (ver
+  // plan: corregir un geovisor publicado siempre debe poder desactivarse).
+  if (activo) {
+    const completitud = await calcularCompletitud(id);
+    if (!completitud.publicable) {
+      throw Object.assign(
+        new Error('Este geovisor tiene capas con fichas por punto incompletas -- no se puede publicar todavía'),
+        { status: 409, code: 'GEOVISOR_INCOMPLETO', fields: completitud },
+      );
+    }
+  }
+
   const { rows } = await query(
     'UPDATE geovisores SET activo = $1, actualizado_en = NOW() WHERE id = $2 AND deleted_at IS NULL RETURNING *',
     [activo, id],
@@ -348,5 +395,12 @@ export async function consultarCapaDeGeovisor(slug, capaId, geometria, user) {
   const geovisor = await getBySlug(slug, user);
   exigirCapaPermitida(geovisor, capaId);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
-  return geoserver.consultarWfs(conexion, capaId, geometria);
+  const coleccion = await geoserver.consultarWfs(conexion, capaId, geometria);
+
+  // Capas sin el modo "fichas por punto" no cambian -- compatibilidad hacia
+  // atrás garantizada (ver adjuntarFichasAFeatures en fichas.service.js).
+  // `?? []` cubre fixtures de test anteriores a la migración 053 -- en BD la
+  // columna es NOT NULL DEFAULT '{}', nunca llega undefined en producción.
+  if (!(geovisor.capasConFicha ?? []).includes(capaId)) return coleccion;
+  return adjuntarFichasAFeatures(geovisor.conexionGeoserverId, capaId, coleccion);
 }

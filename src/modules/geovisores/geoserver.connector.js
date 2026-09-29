@@ -123,6 +123,109 @@ export async function consultarWfs(conexion, capaId, geometria) {
   return respuesta.json();
 }
 
+/**
+ * Atributos reales de una capa (nombre + tipo XSD), vía el mismo WFS
+ * DescribeFeatureType que ya resuelve la columna de geometría -- se excluyen
+ * las columnas de tipo gml:*PropertyType (geometría), que no sirven como
+ * identificador ni etiqueta de una ficha por punto.
+ */
+export async function obtenerAtributosCapa(conexion, capaId) {
+  const url = new URL(`${conexion.url}/wfs`);
+  url.searchParams.set('service', 'WFS');
+  url.searchParams.set('version', '2.0.0');
+  url.searchParams.set('request', 'DescribeFeatureType');
+  url.searchParams.set('typeNames', capaId);
+
+  const respuesta = await solicitarConTimeout(conexion, url);
+  if (!respuesta.ok) {
+    throw Object.assign(
+      new Error(`GeoServer respondió ${respuesta.status} al describir la capa ${capaId}`),
+      { status: 502, code: 'GEOSERVER_NO_DISPONIBLE' },
+    );
+  }
+
+  const xml = await respuesta.text();
+  const elementos = xml.match(/<xsd:element\b[^>]*\/>/g) ?? [];
+  return elementos.flatMap((elemento) => {
+    const nombre = elemento.match(/\bname="([^"]*)"/)?.[1];
+    const tipo = elemento.match(/\btype="([^"]*)"/)?.[1] ?? '';
+    if (!nombre || tipo.startsWith('gml:')) return [];
+    return [{ nombre, tipo }];
+  });
+}
+
+/**
+ * Conteo barato de features de una capa (WFS GetFeature con resultType=hits,
+ * sin traer ninguna fila) -- usado para rechazar capas demasiado grandes
+ * (>2000 features, ver LIMITE_FEATURES en fichas.service.js) antes de pedir
+ * el listado completo.
+ *
+ * Varias versiones de GeoServer (confirmado contra geo.siatpc.co en
+ * producción) IGNORAN outputFormat=application/json cuando resultType=hits y
+ * siempre devuelven la respuesta WFS 2.0 estándar en XML, con el conteo en el
+ * atributo numberMatched del elemento raíz -- nunca se puede asumir que la
+ * respuesta sea JSON solo porque se pidió.
+ */
+export async function contarFeaturesCapa(conexion, capaId) {
+  const url = new URL(`${conexion.url}/wfs`);
+  url.searchParams.set('service', 'WFS');
+  url.searchParams.set('version', '2.0.0');
+  url.searchParams.set('request', 'GetFeature');
+  url.searchParams.set('typeNames', capaId);
+  url.searchParams.set('resultType', 'hits');
+  url.searchParams.set('outputFormat', 'application/json');
+
+  const respuesta = await solicitarConTimeout(conexion, url, 'application/json, text/xml, application/xml');
+  if (!respuesta.ok) {
+    throw Object.assign(
+      new Error(`GeoServer respondió ${respuesta.status} al contar features de ${capaId}`),
+      { status: 502, code: 'GEOSERVER_NO_DISPONIBLE' },
+    );
+  }
+  const texto = await respuesta.text();
+  if (texto.trimStart().startsWith('{')) {
+    return JSON.parse(texto).totalFeatures ?? 0;
+  }
+  const numberMatched = texto.match(/\bnumberMatched="(\d+)"/)?.[1];
+  return numberMatched ? Number(numberMatched) : 0;
+}
+
+/**
+ * WFS GetFeature restringido a un subconjunto de propiedades (identificador +
+ * etiqueta opcional) más geometría -- para el listado de completitud de
+ * fichas por punto, que nunca debe traer los atributos completos de cada
+ * feature (potencialmente cientos), solo lo mínimo para identificar el punto
+ * y calcular su centroide.
+ *
+ * La columna de geometría SIEMPRE se agrega al propertyName -- sin ella,
+ * GeoServer devuelve cada feature con geometry:null (propertyName es una
+ * lista exacta, no un "además de la geometría" implícito). Verificado
+ * contra geo.siatpc.co en producción: sin esto, ninguna ficha tendría
+ * centroide para el mini-mapa del checklist admin.
+ */
+export async function listarFeaturesCapa(conexion, capaId, campoIdentificador, campoEtiqueta) {
+  const propiedadGeometria = await obtenerNombrePropiedadGeometria(conexion, capaId);
+  const propiedades = [campoIdentificador, campoEtiqueta, propiedadGeometria].filter(Boolean).join(',');
+
+  const url = new URL(`${conexion.url}/wfs`);
+  url.searchParams.set('service', 'WFS');
+  url.searchParams.set('version', '2.0.0');
+  url.searchParams.set('request', 'GetFeature');
+  url.searchParams.set('typeNames', capaId);
+  url.searchParams.set('outputFormat', 'application/json');
+  url.searchParams.set('srsName', 'EPSG:4326');
+  url.searchParams.set('propertyName', propiedades);
+
+  const respuesta = await solicitarConTimeout(conexion, url);
+  if (!respuesta.ok) {
+    throw Object.assign(
+      new Error(`GeoServer respondió ${respuesta.status} al listar features de ${capaId}`),
+      { status: 502, code: 'GEOSERVER_NO_DISPONIBLE' },
+    );
+  }
+  return respuesta.json();
+}
+
 export async function consultarCapa(conexion, capaId, tipo, geometria) {
   if (tipo === 'raster') {
     throw Object.assign(

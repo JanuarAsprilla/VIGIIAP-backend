@@ -7,6 +7,11 @@
  * la superficie de ataque antes de que el archivo llegue a R2.
  */
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+
+// Bytes de cabecera suficientes para toda firma en MAGIC_SIGNATURES/MALWARE_SIGNATURES
+// (la más profunda es WEBP: offset 8 + 4 bytes) -- con margen, para lecturas desde disco.
+export const HEADER_BYTES = 32;
 
 // ─── Firmas de bytes mágicos por MIME type ────────────────────────────────────
 // Solo se comprueba el inicio del buffer (offset 0 salvo indicación)
@@ -27,6 +32,13 @@ const MAGIC_SIGNATURES = {
     { bytes: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] }, // GIF89a
     { bytes: [0x47, 0x49, 0x46, 0x38, 0x37, 0x61] }, // GIF87a
   ],
+  // Contenedor ISO-BMFF (mp4/mov de celular): caja "ftyp" en offset 4, casi
+  // universal en archivos producidos por cámaras/teléfonos modernos. No es un
+  // parseo exhaustivo de ISO-BMFF (un mov muy antiguo sin ftyp no matchea),
+  // pero cubre el caso real que van a subir los administradores del IIAP.
+  'video/mp4':       [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }], // ftyp
+  'video/quicktime': [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }], // mismo contenedor ISO-BMFF
+  'video/webm':      [{ bytes: [0x1A, 0x45, 0xDF, 0xA3] }],            // cabecera EBML (WebM/Matroska)
 };
 
 // ─── Firmas de ejecutables/malware conocidos (lista negra) ───────────────────
@@ -51,6 +63,9 @@ const EXT_TO_MIME = {
   png:  'image/png',
   webp: 'image/webp',
   gif:  'image/gif',
+  mp4:  'video/mp4',
+  mov:  'video/quicktime',
+  webm: 'video/webm',
 };
 
 // ─── Tipos permitidos por categoría de campo ─────────────────────────────────
@@ -58,12 +73,17 @@ const ALLOWED_BY_CATEGORY = {
   document:  new Set(['application/pdf']),
   image:     new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
   thumbnail: new Set(['image/jpeg', 'image/png', 'image/webp']),
+  // Fichas por punto: una foto o un video en el mismo campo de subida -- el
+  // tipo real ('imagen'|'video') se resuelve del MIME esperado ya validado
+  // aquí, ver fichasMedios.middleware.js.
+  medioFicha: new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm']),
 };
 
 // ─── Utilidades ──────────────────────────────────────────────────────────────
 
 function matchesSignature(buffer, sig) {
-  const slice = buffer.slice(0, sig.bytes.length);
+  const offset = sig.offset ?? 0;
+  const slice = buffer.slice(offset, offset + sig.bytes.length);
   const match = sig.bytes.every((b, i) => slice[i] === b);
   if (!match) return false;
   if (sig.extra) {
@@ -112,28 +132,29 @@ export function sha256(buffer) {
 }
 
 /**
- * Valida un archivo subido contra:
+ * Validación compartida contra:
  *  1. Lista negra de ejecutables/malware (magic bytes)
  *  2. Whitelist de extensiones permitidas
  *  3. Consistencia extensión ↔ MIME type
  *  4. Magic bytes del tipo declarado
  *
- * @param {object} file            - Objeto multer (buffer, originalname, mimetype, size)
- * @param {string} allowedCategory - 'document' | 'image' | 'thumbnail'
- * @returns {{ valid: boolean, error?: string, hash?: string, sanitizedExt?: string }}
+ * Recibe solo la CABECERA del archivo (no necesita el contenido completo --
+ * todas las firmas anteriores viven en los primeros bytes) para que también
+ * sirva a archivos que se procesan en disco (video, nunca cargado entero en
+ * memoria -- ver validateFileHeader).
  */
-export function validateFile(file, allowedCategory = 'document') {
+function validateContenido(headerBuffer, originalname, mimetype, allowedCategory) {
   const allowed = ALLOWED_BY_CATEGORY[allowedCategory];
   if (!allowed) {
     return { valid: false, error: `Categoría de campo desconocida: ${allowedCategory}` };
   }
 
-  if (!file?.buffer?.length) {
+  if (!headerBuffer?.length) {
     return { valid: false, error: 'El archivo está vacío' };
   }
 
   // 1. Detección de malware / ejecutables antes de cualquier otra validación
-  const malwareLabel = detectMalware(file.buffer);
+  const malwareLabel = detectMalware(headerBuffer);
   if (malwareLabel) {
     return {
       valid: false,
@@ -142,7 +163,7 @@ export function validateFile(file, allowedCategory = 'document') {
   }
 
   // 2. Extensión única (protege contra doble-extensión)
-  const ext = extractSingleExt(file.originalname ?? '');
+  const ext = extractSingleExt(originalname ?? '');
   if (!ext) {
     return { valid: false, error: 'El archivo no tiene extensión' };
   }
@@ -160,7 +181,7 @@ export function validateFile(file, allowedCategory = 'document') {
   }
 
   // 3. MIME type reportado por el cliente (no confiable, solo referencia)
-  const clientMime = (file.mimetype ?? '').toLowerCase().split(';')[0].trim();
+  const clientMime = (mimetype ?? '').toLowerCase().split(';')[0].trim();
   if (
     clientMime &&
     clientMime !== 'application/octet-stream' &&
@@ -173,16 +194,58 @@ export function validateFile(file, allowedCategory = 'document') {
   }
 
   // 4. Magic bytes — comprobación del contenido real del archivo
-  if (!validateMagicBytes(file.buffer, expectedMime)) {
+  if (!validateMagicBytes(headerBuffer, expectedMime)) {
     return {
       valid: false,
       error: `El contenido del archivo no corresponde a .${ext} — posible archivo malicioso o corrupto`,
     };
   }
 
-  return {
-    valid: true,
-    hash: sha256(file.buffer),
-    sanitizedExt: ext,
-  };
+  return { valid: true, sanitizedExt: ext, mime: expectedMime };
+}
+
+/**
+ * Valida un archivo cargado por completo en memoria (objeto multer con
+ * `.buffer`) -- ver validateFileHeader para archivos que viven en disco.
+ * @param {object} file            - Objeto multer (buffer, originalname, mimetype, size)
+ * @param {string} allowedCategory - 'document' | 'image' | 'thumbnail' | 'medioFicha'
+ * @returns {{ valid: boolean, error?: string, hash?: string, sanitizedExt?: string, mime?: string }}
+ */
+export function validateFile(file, allowedCategory = 'document') {
+  const resultado = validateContenido(file?.buffer, file?.originalname, file?.mimetype, allowedCategory);
+  if (!resultado.valid) return resultado;
+  return { ...resultado, hash: sha256(file.buffer) };
+}
+
+/**
+ * Misma validación que validateFile, pero para un archivo en disco -- lee
+ * solo los primeros HEADER_BYTES (todas las firmas están ahí), nunca el
+ * archivo completo. Usado por la subida de medios de fichas (video puede
+ * pesar hasta 300 MB, nunca se procesa entero en memoria antes de validarlo).
+ * @param {string} filePath
+ * @param {string} originalname
+ * @param {string} mimetype
+ * @param {string} allowedCategory
+ * @returns {{ valid: boolean, error?: string, sanitizedExt?: string, mime?: string }}
+ */
+export function validateFileHeader(filePath, originalname, mimetype, allowedCategory) {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const header = Buffer.alloc(HEADER_BYTES);
+    const bytesLeidos = fs.readSync(fd, header, 0, HEADER_BYTES, 0);
+    return validateContenido(header.subarray(0, bytesLeidos), originalname, mimetype, allowedCategory);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** SHA-256 de un archivo en disco, por streaming -- nunca carga el archivo completo en memoria. */
+export function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
 }
