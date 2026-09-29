@@ -188,46 +188,120 @@ describe('obtenerAtributosCapa', () => {
 });
 
 describe('contarFeaturesCapa', () => {
-  it('pide resultType=hits y devuelve totalFeatures', async () => {
-    const fetchMock = stubFetchPorOperacion({
-      GetFeature: () => ({ type: 'FeatureCollection', totalFeatures: 42, features: [] }),
+  it('pide resultType=hits y devuelve totalFeatures cuando la respuesta SÍ es JSON', async () => {
+    const mock = vi.fn(async (entrada) => {
+      const url = typeof entrada === 'string' ? new URL(entrada) : entrada;
+      return {
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify({ type: 'FeatureCollection', totalFeatures: 42, features: [] })),
+        json: () => Promise.resolve({ type: 'FeatureCollection', totalFeatures: 42, features: [] }),
+        headers: { get: () => 'application/json' },
+        _url: url,
+      };
     });
+    vi.stubGlobal('fetch', mock);
 
     const total = await contarFeaturesCapa(conexion, 't_19_clima:Estaciones');
 
     expect(total).toBe(42);
-    const url = new URL(fetchMock.mock.calls[0][0]);
+    const url = new URL(mock.mock.calls[0][0]);
     expect(url.searchParams.get('resultType')).toBe('hits');
   });
 
-  it('devuelve 0 si la respuesta no trae totalFeatures', async () => {
-    stubFetchPorOperacion({ GetFeature: () => ({ type: 'FeatureCollection', features: [] }) });
+  it('devuelve 0 si la respuesta JSON no trae totalFeatures', async () => {
+    const mock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify({ type: 'FeatureCollection', features: [] })),
+      json: () => Promise.resolve({ type: 'FeatureCollection', features: [] }),
+      headers: { get: () => 'application/json' },
+    }));
+    vi.stubGlobal('fetch', mock);
 
     expect(await contarFeaturesCapa(conexion, 't_19_clima:Estaciones')).toBe(0);
+  });
+
+  // Regresión: geo.siatpc.co (GeoServer real en producción) ignora
+  // outputFormat=application/json cuando resultType=hits y siempre responde
+  // la forma WFS 2.0 en XML -- descubierto en la primera prueba end-to-end
+  // contra datos reales (capa de 319 estaciones climáticas del IDEAM).
+  it('parsea numberMatched del XML cuando GeoServer ignora outputFormat=json en resultType=hits', async () => {
+    const mock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(
+        '<?xml version="1.0" encoding="UTF-8"?><wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" numberMatched="319" numberReturned="0" timeStamp="2026-09-29T17:52:46.264Z"/>',
+      ),
+      json: () => Promise.reject(new Error('no debería llamarse .json() sobre una respuesta XML')),
+      headers: { get: () => 'text/xml' },
+    }));
+    vi.stubGlobal('fetch', mock);
+
+    const total = await contarFeaturesCapa(conexion, 't_19_clima:Estaciones_reales');
+
+    expect(total).toBe(319);
+  });
+
+  it('devuelve 0 si la respuesta XML no trae numberMatched', async () => {
+    const mock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve('<?xml version="1.0"?><algo/>'),
+      json: () => Promise.reject(new Error('no debería llamarse')),
+      headers: { get: () => 'text/xml' },
+    }));
+    vi.stubGlobal('fetch', mock);
+
+    expect(await contarFeaturesCapa(conexion, 't_19_clima:Otra')).toBe(0);
   });
 });
 
 describe('listarFeaturesCapa', () => {
-  it('restringe propertyName al identificador + etiqueta, con srsName EPSG:4326', async () => {
+  it('restringe propertyName al identificador + etiqueta + geometría, con srsName EPSG:4326', async () => {
     const fetchMock = stubFetchPorOperacion({
+      DescribeFeatureType: () => `<?xml version="1.0"?><xsd:schema>
+        <xsd:element name="the_geom" type="gml:PointPropertyType"/>
+      </xsd:schema>`,
       GetFeature: () => ({ type: 'FeatureCollection', features: [] }),
     });
 
-    await listarFeaturesCapa(conexion, 't_19_clima:Estaciones', 'codigo_estacion', 'nombre_estacion');
+    await listarFeaturesCapa(conexion, 't_19_clima:capa-a', 'codigo_estacion', 'nombre_estacion');
 
-    const url = new URL(fetchMock.mock.calls[0][0]);
-    expect(url.searchParams.get('propertyName')).toBe('codigo_estacion,nombre_estacion');
+    const url = new URL(fetchMock.mock.calls.at(-1)[0]);
+    expect(url.searchParams.get('propertyName')).toBe('codigo_estacion,nombre_estacion,the_geom');
     expect(url.searchParams.get('srsName')).toBe('EPSG:4326');
   });
 
-  it('sin campoEtiqueta, propertyName solo trae el identificador', async () => {
+  it('sin campoEtiqueta, propertyName trae identificador + geometría', async () => {
     const fetchMock = stubFetchPorOperacion({
+      DescribeFeatureType: () => `<?xml version="1.0"?><xsd:schema>
+        <xsd:element name="the_geom" type="gml:PointPropertyType"/>
+      </xsd:schema>`,
       GetFeature: () => ({ type: 'FeatureCollection', features: [] }),
     });
 
-    await listarFeaturesCapa(conexion, 't_19_clima:Estaciones', 'codigo_estacion', undefined);
+    await listarFeaturesCapa(conexion, 't_19_clima:capa-b', 'codigo_estacion', undefined);
 
-    const url = new URL(fetchMock.mock.calls[0][0]);
-    expect(url.searchParams.get('propertyName')).toBe('codigo_estacion');
+    const url = new URL(fetchMock.mock.calls.at(-1)[0]);
+    expect(url.searchParams.get('propertyName')).toBe('codigo_estacion,the_geom');
+  });
+
+  // Regresión: sin incluir la columna de geometría en propertyName, GeoServer
+  // devuelve cada feature con geometry:null (propertyName es una lista
+  // exacta) -- verificado contra geo.siatpc.co en producción, donde esto
+  // dejaba sin centroide a las 319 estaciones climáticas reales.
+  it('usa el nombre real de la columna de geometría resuelto por DescribeFeatureType, no "the_geom" a ciegas', async () => {
+    const fetchMock = stubFetchPorOperacion({
+      DescribeFeatureType: () => `<?xml version="1.0"?><xsd:schema>
+        <xsd:element name="geom_punto" type="gml:PointPropertyType"/>
+      </xsd:schema>`,
+      GetFeature: () => ({ type: 'FeatureCollection', features: [] }),
+    });
+
+    await listarFeaturesCapa(conexion, 't_19_clima:capa-c', 'codigo', 'nombre');
+
+    const url = new URL(fetchMock.mock.calls.at(-1)[0]);
+    expect(url.searchParams.get('propertyName')).toBe('codigo,nombre,geom_punto');
   });
 });
