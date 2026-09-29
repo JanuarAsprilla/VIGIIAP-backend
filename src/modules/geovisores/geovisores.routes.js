@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  index, show, catalogo, wms, leyenda, consulta, store, update, uploadThumbnail, patchActivo, destroy,
+  index, show, catalogo, wms, leyenda, consulta, store, update, uploadThumbnail, patchActivo, completitud, destroy,
 } from './geovisores.controller.js';
 import { authenticate, authorize, optionalAuthenticate } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
@@ -27,6 +27,8 @@ router.patch('/:id', authenticate, authorize('admin_sig'), requireModulo('geovis
 // csrfProtection ANTES de thumbnailUpload: rechaza la petición forjada antes de parsear el multipart.
 router.post('/:id/thumbnail', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, uploadRateLimiter, thumbnailUpload, uploadThumbnail);
 router.patch('/:id/activo', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, patchActivo);
+// Lectura pura (sin csrfProtection, mismo criterio que el resto de los GET admin de este router).
+router.get('/:id/completitud', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), completitud);
 router.delete('/:id', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, destroy);
 
 export default router;

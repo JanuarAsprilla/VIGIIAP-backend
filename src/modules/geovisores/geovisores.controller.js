@@ -148,6 +148,13 @@ export async function patchActivo(req, res, next) {
   } catch (err) { next(err); }
 }
 
+/** GET /admin/geovisores/:id/completitud -- para el badge de fichas pendientes en el panel admin. */
+export async function completitud(req, res, next) {
+  try {
+    res.json(await geovisorService.calcularCompletitud(req.params.id));
+  } catch (err) { next(err); }
+}
+
 export async function destroy(req, res, next) {
   try {
     await geovisorService.remove(req.params.id);

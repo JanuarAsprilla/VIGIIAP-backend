@@ -67,5 +67,9 @@ export function errorHandler(err, _req, res, _next) {
   res.status(status).json({
     error: message,
     ...(err.code && { code: err.code }),
+    // fields: payload estructurado adicional (ej. GEOVISOR_INCOMPLETO manda aquí
+    // {publicable, capas: [...]} -- ver calcularCompletitud en geovisores.service.js).
+    // Distinto del `fields` de ZodError (arreglo {field, message}) manejado arriba.
+    ...(err.fields && { fields: err.fields }),
   });
 }

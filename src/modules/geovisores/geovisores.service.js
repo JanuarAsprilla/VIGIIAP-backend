@@ -5,7 +5,7 @@ import { deleteFile, extractKey } from '../../config/r2.js';
 import { obtenerConexionParaConector } from './conexionesGeoserver.service.js';
 import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
-import { adjuntarFichasAFeatures } from '../fichas/fichas.service.js';
+import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -238,7 +238,51 @@ export async function updateThumbnail(id, newUrl) {
   return result;
 }
 
+/** GET .../geovisores/:id -- lectura admin directa por id (bypassa visibilidad, a diferencia de getBySlug). */
+export async function getById(id) {
+  const { rows } = await query('SELECT * FROM geovisores WHERE id = $1 AND deleted_at IS NULL', [id]);
+  if (!rows[0]) throw Object.assign(new Error('Geovisor no encontrado'), { status: 404 });
+  return filaAGeovisor(rows[0]);
+}
+
+/**
+ * Completitud de un geovisor: por cada capa en capasConFicha, ¿tiene config
+ * (identificador elegido) y todas sus fichas completas (descripción + al
+ * menos un medio)? Identificadores duplicados/huérfanos NO bloquean (son
+ * avisos, ver plan) -- solo features incompletas o sin identificador.
+ * Sin capasConFicha, siempre publicable=true (comportamiento legado intacto).
+ */
+export async function calcularCompletitud(id) {
+  const geovisor = await getById(id);
+
+  const capas = await Promise.all((geovisor.capasConFicha ?? []).map(async (capaId) => {
+    const config = await obtenerConfigFichas(geovisor.conexionGeoserverId, capaId);
+    if (!config) {
+      // La capa tiene el modo habilitado pero nadie eligió todavía un
+      // identificador -- no hay forma de que exista ni una sola ficha, bloquea.
+      return { capaId, nombre: capaId, resumen: null, bloqueantes: null, sinConfigurar: true };
+    }
+    const { resumen } = await listarFeaturesConCompletitud(config.id);
+    return { capaId, nombre: capaId, resumen, bloqueantes: resumen.incompletas + resumen.sinIdentificador };
+  }));
+
+  const publicable = capas.every((c) => !c.sinConfigurar && c.bloqueantes === 0);
+  return { publicable, capas };
+}
+
 export async function toggleActivo(id, activo) {
+  // Activar SÍ se valida contra completitud; desactivar NUNCA se bloquea (ver
+  // plan: corregir un geovisor publicado siempre debe poder desactivarse).
+  if (activo) {
+    const completitud = await calcularCompletitud(id);
+    if (!completitud.publicable) {
+      throw Object.assign(
+        new Error('Este geovisor tiene capas con fichas por punto incompletas -- no se puede publicar todavía'),
+        { status: 409, code: 'GEOVISOR_INCOMPLETO', fields: completitud },
+      );
+    }
+  }
+
   const { rows } = await query(
     'UPDATE geovisores SET activo = $1, actualizado_en = NOW() WHERE id = $2 AND deleted_at IS NULL RETURNING *',
     [activo, id],
