@@ -69,6 +69,12 @@ export async function deleteFile(key) {
   await r2.send(new DeleteObjectCommand({ Bucket: PRIVATE_BUCKET, Key: key }));
 }
 
+/** Igual que deleteFile() pero contra el bucket PÚBLICO -- ver uploadFile(isPublic=true). */
+export async function deletePublicFile(key) {
+  if (!key) return;
+  await r2.send(new DeleteObjectCommand({ Bucket: PUBLIC_BUCKET, Key: key }));
+}
+
 /**
  * Descarga un objeto del bucket privado y devuelve su stream directamente,
  * para que el backend lo reenvíe al cliente en vez de redirigirlo a una URL

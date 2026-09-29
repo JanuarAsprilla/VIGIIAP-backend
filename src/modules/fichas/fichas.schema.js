@@ -18,3 +18,23 @@ export const fichaPuntoSchema = z.object({
   // guardado de una ficha en progreso.
   descripcion: z.string().max(10000).default(''),
 });
+
+// Metadatos que acompañan la subida multipart (leyenda/creditos) -- el
+// archivo en sí lo valida fichasMedios.middleware.js, no Zod.
+export const medioFichaMetaSchema = z.object({
+  leyenda: z.string().max(300).optional(),
+  creditos: z.string().max(200).optional(),
+});
+
+export const actualizarMedioSchema = z.object({
+  leyenda: z.string().max(300).nullable().optional(),
+  creditos: z.string().max(200).nullable().optional(),
+  orden: z.coerce.number().int().min(0).optional(),
+}).refine(
+  (d) => Object.values(d).some((v) => v !== undefined),
+  { message: 'Debe enviar al menos un campo a actualizar' },
+);
+
+export const reordenarMediosSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
+});
