@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.6.0...v1.7.0) (2026-10-01)
+
+
+### Features
+
+* **fichas:** endpoint de importación en lote de títulos y descripciones ([#171](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/171)) ([2b236f8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2b236f8dbcc5253d58efa5de9f9fe8b84f144d2d))
+* **fichas:** endpoint para quitar la configuración de fichas de una capa ([#173](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/173)) ([4a00ed9](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4a00ed9ce15bd7ed6bcb99e7f27cbb32c1db5125))
+
 ## [1.6.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.5.0...v1.6.0) (2026-10-01)
 
 
