@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.0...v1.7.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* la descripcion del Validador ya no menciona la comparacion de municipios ([#174](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/174)) ([93fe6ca](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/93fe6caac9874ed9148405bf57eb35447ef3e97d))
+
 ## [1.7.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.6.0...v1.7.0) (2026-10-01)
 
 
