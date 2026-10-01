@@ -40,7 +40,7 @@ import { uploadFile, deletePublicFile } from '../src/config/r2.js';
 import * as video from '../src/modules/fichas/video.transcode.js';
 import { optimizeImage } from '../src/utils/imageOptimize.js';
 import {
-  listarAtributos, obtenerConfig, upsertConfig, obtenerFicha, upsertFicha,
+  listarAtributos, obtenerConfig, upsertConfig, obtenerFicha, upsertFicha, importarFichas,
   eliminarFicha, listarFeaturesConCompletitud,
   crearMedioImagen, crearMedioVideo, actualizarMedio, reordenarMedios, eliminarMedio,
   procesarVideoEnSegundoPlano, adjuntarFichasAFeatures,
@@ -197,6 +197,89 @@ describe('upsertFicha()', () => {
     const ficha = await upsertFicha('config-1', 'EST-001', { descripcion: 'corta' }, 'user-1');
 
     expect(ficha.descripcion).toBe('corta');
+  });
+});
+
+describe('importarFichas()', () => {
+  const fila = (valor, descripcion = 'Descripción de más de veinte caracteres', titulo) => ({ valor, descripcion, ...(titulo ? { titulo } : {}) });
+
+  it('lanza 404 si la config no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(importarFichas('config-inexistente', { filas: [fila('EST-001')], sobrescribir: false }, 'user-1'))
+      .rejects.toMatchObject({ status: 404 });
+  });
+
+  it('crea las fichas de los valores que aún no existen, en una sola escritura', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [] }) // ninguna ficha previa
+      .mockResolvedValueOnce({ rowCount: 2 });
+
+    const r = await importarFichas('config-1', { filas: [fila('EST-001', 'Primera descripción larga', 'Uno'), fila('EST-002')], sobrescribir: false }, 'user-1');
+
+    expect(r).toEqual({ creadas: 2, actualizadas: 0, omitidas: 0, duplicadasEnArchivo: 0 });
+    const [sql, params] = query.mock.calls[2];
+    expect(sql).toMatch(/INSERT INTO fichas_punto/);
+    expect(params).toEqual(['config-1', ['EST-001', 'EST-002'], ['Uno', ''], ['Primera descripción larga', 'Descripción de más de veinte caracteres'], 'user-1']);
+  });
+
+  it('sin sobrescribir, omite los puntos que ya tienen descripción', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ valor_identificador: 'EST-001', descripcion: 'Ya escrita por el equipo' }] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const r = await importarFichas('config-1', { filas: [fila('EST-001'), fila('EST-002')], sobrescribir: false }, 'user-1');
+
+    expect(r).toEqual({ creadas: 1, actualizadas: 0, omitidas: 1, duplicadasEnArchivo: 0 });
+    expect(query.mock.calls[2][1][1]).toEqual(['EST-002']);
+  });
+
+  it('sin sobrescribir, sí completa una ficha existente que tenía la descripción vacía', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ valor_identificador: 'EST-001', descripcion: '   ' }] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const r = await importarFichas('config-1', { filas: [fila('EST-001')], sobrescribir: false }, 'user-1');
+
+    expect(r).toEqual({ creadas: 0, actualizadas: 1, omitidas: 0, duplicadasEnArchivo: 0 });
+  });
+
+  it('con sobrescribir, reemplaza también las que ya tenían descripción', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ valor_identificador: 'EST-001', descripcion: 'Ya escrita por el equipo' }] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const r = await importarFichas('config-1', { filas: [fila('EST-001', 'Texto nuevo del Excel, más largo')], sobrescribir: true }, 'user-1');
+
+    expect(r).toEqual({ creadas: 0, actualizadas: 1, omitidas: 0, duplicadasEnArchivo: 0 });
+    expect(query.mock.calls[2][1][3]).toEqual(['Texto nuevo del Excel, más largo']);
+  });
+
+  it('si el archivo repite un valor, gana la última fila y se cuenta la repetición', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const r = await importarFichas('config-1', { filas: [fila('EST-001', 'Versión vieja del texto'), fila('EST-001', 'Versión final del texto')], sobrescribir: false }, 'user-1');
+
+    expect(r).toEqual({ creadas: 1, actualizadas: 0, omitidas: 0, duplicadasEnArchivo: 1 });
+    expect(query.mock.calls[2][1][3]).toEqual(['Versión final del texto']);
+  });
+
+  it('si todo se omite, no ejecuta ninguna escritura', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ valor_identificador: 'EST-001', descripcion: 'Ya escrita' }] });
+
+    const r = await importarFichas('config-1', { filas: [fila('EST-001')], sobrescribir: false }, 'user-1');
+
+    expect(r).toEqual({ creadas: 0, actualizadas: 0, omitidas: 1, duplicadasEnArchivo: 0 });
+    expect(query).toHaveBeenCalledTimes(2);
   });
 });
 

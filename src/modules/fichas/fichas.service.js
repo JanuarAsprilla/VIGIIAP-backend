@@ -176,6 +176,66 @@ export async function upsertFicha(configId, valor, data, userId) {
 }
 
 /**
+ * Importación en lote de títulos y descripciones (p. ej. desde un Excel). El
+ * frontend ya cruzó los valores contra los puntos reales de la capa, así que
+ * acá no se vuelve a consultar GeoServer. Sin `sobrescribir`, una ficha que ya
+ * tiene descripción no se toca -- una importación no debe pisar el trabajo ya
+ * hecho a mano --, pero sí se completa una que existía vacía (creada, por
+ * ejemplo, al subirle una foto primero). Un valor repetido en el archivo se
+ * resuelve a favor de la última fila.
+ */
+export async function importarFichas(configId, { filas, sobrescribir }, userId) {
+  await obtenerConfigOrThrow(configId);
+
+  const porValor = new Map();
+  for (const f of filas) porValor.set(f.valor, f);
+  const duplicadasEnArchivo = filas.length - porValor.size;
+
+  const { rows: previas } = await query(
+    'SELECT valor_identificador, descripcion FROM fichas_punto WHERE capa_config_id = $1 AND valor_identificador = ANY($2::text[])',
+    [configId, [...porValor.keys()]],
+  );
+  const descripcionPrevia = new Map(previas.map((p) => [p.valor_identificador, p.descripcion]));
+
+  let creadas = 0;
+  let actualizadas = 0;
+  let omitidas = 0;
+  const aEscribir = [];
+  for (const fila of porValor.values()) {
+    if (!descripcionPrevia.has(fila.valor)) {
+      creadas += 1;
+      aEscribir.push(fila);
+    } else if (sobrescribir || !descripcionPrevia.get(fila.valor).trim()) {
+      actualizadas += 1;
+      aEscribir.push(fila);
+    } else {
+      omitidas += 1;
+    }
+  }
+
+  if (aEscribir.length > 0) {
+    await query(
+      `INSERT INTO fichas_punto (capa_config_id, valor_identificador, titulo, descripcion, creado_por, actualizado_por)
+       SELECT $1, t.valor, NULLIF(t.titulo, ''), t.descripcion, $5, $5
+       FROM unnest($2::text[], $3::text[], $4::text[]) AS t(valor, titulo, descripcion)
+       ON CONFLICT (capa_config_id, valor_identificador)
+       DO UPDATE SET titulo = COALESCE(EXCLUDED.titulo, fichas_punto.titulo),
+                     descripcion = EXCLUDED.descripcion,
+                     actualizado_por = EXCLUDED.actualizado_por, actualizado_en = NOW()`,
+      [
+        configId,
+        aEscribir.map((f) => f.valor),
+        aEscribir.map((f) => f.titulo ?? ''),
+        aEscribir.map((f) => f.descripcion),
+        userId,
+      ],
+    );
+  }
+
+  return { creadas, actualizadas, omitidas, duplicadasEnArchivo };
+}
+
+/**
  * Borra la ficha (cascada borra sus medios en BD) y limpia sus objetos en R2
  * -- se leen las keys ANTES del DELETE (la cascada ya se llevó las filas de
  * fichas_punto_medios para cuando se podría consultar después).

@@ -19,6 +19,19 @@ export const fichaPuntoSchema = z.object({
   descripcion: z.string().max(10000).default(''),
 });
 
+// Tope por petición: el parser JSON global admite 1 MB, así que el frontend
+// envía los archivos grandes en tandas de este tamaño.
+export const MAX_FILAS_IMPORTACION = 500;
+
+export const importarFichasSchema = z.object({
+  sobrescribir: z.boolean().default(false),
+  filas: z.array(z.object({
+    valor: z.string().trim().min(1).max(255),
+    titulo: z.string().trim().max(200).optional(),
+    descripcion: z.string().max(10000).default(''),
+  })).min(1).max(MAX_FILAS_IMPORTACION),
+});
+
 // Metadatos que acompañan la subida multipart (leyenda/creditos) -- el
 // archivo en sí lo valida fichasMedios.middleware.js, no Zod.
 export const medioFichaMetaSchema = z.object({
