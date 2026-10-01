@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.5.0...v1.6.0) (2026-10-01)
+
+
+### Features
+
+* publica el Validador de Coordenadas en el catálogo y retira el Conversor ([#169](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/169)) ([dde3a19](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/dde3a196834df636301899b12a5e8c3689f2d405))
+
 ## [1.5.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.4.0...v1.5.0) (2026-09-29)
 
 
