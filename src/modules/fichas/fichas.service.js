@@ -142,6 +142,43 @@ export async function upsertConfig(data, userId) {
   return filaAConfig(rows[0]);
 }
 
+/**
+ * Quita la config de fichas de una capa -- para poder rehacerla (p. ej. elegir
+ * otro identificador) o dejar de usar el modo en esa capa. La config es de la
+ * CAPA y la comparten todos los geovisores que la muestren, así que se bloquea
+ * con 409 si la capa ya tiene fichas (borrarlas es una decisión aparte, ficha
+ * por ficha) o si algún geovisor sigue exigiendo fichas en ella (quedaría sin
+ * poder publicarse sin una pista clara de por qué).
+ */
+export async function eliminarConfig(configId) {
+  const config = await obtenerConfigOrThrow(configId);
+
+  const { rows: conteo } = await query(
+    'SELECT COUNT(*) FROM fichas_punto WHERE capa_config_id = $1',
+    [configId],
+  );
+  const totalFichas = Number(conteo[0].count);
+  if (totalFichas > 0) {
+    throw Object.assign(
+      new Error(`No se puede quitar la configuración: la capa ya tiene ${totalFichas} ficha${totalFichas === 1 ? '' : 's'}. Elimínalas antes.`),
+      { status: 409, code: 'CONFIG_CON_FICHAS' },
+    );
+  }
+
+  const { rows: geovisores } = await query(
+    'SELECT titulo FROM geovisores WHERE conexion_geoserver_id = $1 AND $2 = ANY(capas_con_ficha) ORDER BY titulo',
+    [config.conexionGeoserverId, config.capaId],
+  );
+  if (geovisores.length > 0) {
+    throw Object.assign(
+      new Error(`No se puede quitar la configuración: la usan estos geovisores: ${geovisores.map((g) => g.titulo).join(', ')}. Quita las fichas de esa capa en cada uno antes.`),
+      { status: 409, code: 'CONFIG_EN_USO' },
+    );
+  }
+
+  await query('DELETE FROM capas_fichas_config WHERE id = $1', [configId]);
+}
+
 /** Ficha completa de un punto (con medios) o null si el punto aún no tiene ficha. */
 export async function obtenerFicha(configId, valor) {
   const { rows } = await query(

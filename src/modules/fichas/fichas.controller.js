@@ -40,6 +40,23 @@ export async function upsertConfig(req, res, next) {
   } catch (err) { next(err); }
 }
 
+/** DELETE /admin/fichas-capa/:configId */
+export async function eliminarConfig(req, res, next) {
+  try {
+    await fichasService.eliminarConfig(req.params.configId);
+    registrarAuditoria({
+      accion: 'delete_config_fichas',
+      modulo: 'geovisores',
+      entidadId: req.params.configId,
+      descripcion: 'Config de fichas eliminada',
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+    });
+    res.status(204).send();
+  } catch (err) { next(err); }
+}
+
 export async function obtenerFicha(req, res, next) {
   try {
     res.json(await fichasService.obtenerFicha(req.params.configId, req.params.valor));
