@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  obtenerConfig, upsertConfig, obtenerFicha, upsertFicha, eliminarFicha, features,
+  obtenerConfig, upsertConfig, obtenerFicha, upsertFicha, importarFichas, eliminarFicha, features,
   subirMedio, reordenarMedios,
 } from './fichas.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
@@ -17,6 +17,7 @@ const router = Router();
 router.get('/', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), obtenerConfig);
 router.put('/', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, upsertConfig);
 router.get('/:configId/features', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), features);
+router.post('/:configId/fichas/importar', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, importarFichas);
 router.get('/:configId/fichas/:valor', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), obtenerFicha);
 router.put('/:configId/fichas/:valor', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, upsertFicha);
 router.delete('/:configId/fichas/:valor', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, eliminarFicha);

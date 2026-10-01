@@ -1,5 +1,5 @@
 import {
-  configFichasSchema, fichaPuntoSchema, medioFichaMetaSchema, actualizarMedioSchema, reordenarMediosSchema,
+  configFichasSchema, fichaPuntoSchema, importarFichasSchema, medioFichaMetaSchema, actualizarMedioSchema, reordenarMediosSchema,
 } from './fichas.schema.js';
 import * as fichasService from './fichas.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
@@ -60,6 +60,24 @@ export async function upsertFicha(req, res, next) {
       ip: req.ip,
     });
     res.json(ficha);
+  } catch (err) { next(err); }
+}
+
+/** POST /admin/fichas-capa/:configId/fichas/importar */
+export async function importarFichas(req, res, next) {
+  try {
+    const data = importarFichasSchema.parse(req.body);
+    const resultado = await fichasService.importarFichas(req.params.configId, data, req.user.id);
+    registrarAuditoria({
+      accion: 'importar_fichas_punto',
+      modulo: 'geovisores',
+      entidadId: req.params.configId,
+      descripcion: `Importación de fichas: ${resultado.creadas} creadas, ${resultado.actualizadas} actualizadas, ${resultado.omitidas} omitidas`,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+    });
+    res.json(resultado);
   } catch (err) { next(err); }
 }
 
