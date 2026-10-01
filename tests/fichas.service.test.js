@@ -40,7 +40,7 @@ import { uploadFile, deletePublicFile } from '../src/config/r2.js';
 import * as video from '../src/modules/fichas/video.transcode.js';
 import { optimizeImage } from '../src/utils/imageOptimize.js';
 import {
-  listarAtributos, obtenerConfig, upsertConfig, obtenerFicha, upsertFicha, importarFichas,
+  listarAtributos, obtenerConfig, upsertConfig, eliminarConfig, obtenerFicha, upsertFicha, importarFichas,
   eliminarFicha, listarFeaturesConCompletitud,
   crearMedioImagen, crearMedioVideo, actualizarMedio, reordenarMedios, eliminarMedio,
   procesarVideoEnSegundoPlano, adjuntarFichasAFeatures,
@@ -158,6 +158,63 @@ describe('upsertConfig()', () => {
 
     // Solo 2 queries (SELECT existente + INSERT/UPDATE) -- no se consultó fichas_punto.
     expect(query).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('eliminarConfig()', () => {
+  it('lanza 404 si la config no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(eliminarConfig('config-inexistente')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('lanza 409 CONFIG_CON_FICHAS si la capa ya tiene fichas, y no borra nada', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ count: '3' }] });
+
+    await expect(eliminarConfig('config-1')).rejects.toMatchObject({ status: 409, code: 'CONFIG_CON_FICHAS' });
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('lanza 409 CONFIG_EN_USO si algún geovisor exige fichas en esa capa, y nombra los geovisores', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ titulo: 'Clima del Chocó' }, { titulo: 'Estaciones IDEAM' }] });
+
+    await expect(eliminarConfig('config-1')).rejects.toMatchObject({
+      status: 409,
+      code: 'CONFIG_EN_USO',
+      message: expect.stringContaining('Clima del Chocó, Estaciones IDEAM'),
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('busca los geovisores por la misma conexión y capa de la config', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    await eliminarConfig('config-1');
+
+    expect(query.mock.calls[2][1]).toEqual(['conexion-1', 't_19_clima:estaciones']);
+  });
+
+  it('borra la config cuando no tiene fichas ni geovisores que la usen', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [filaConfig()] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    await expect(eliminarConfig('config-1')).resolves.toBeUndefined();
+
+    const [sql, params] = query.mock.calls[3];
+    expect(sql).toMatch(/DELETE FROM capas_fichas_config/);
+    expect(params).toEqual(['config-1']);
   });
 });
 
