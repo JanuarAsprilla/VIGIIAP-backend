@@ -363,8 +363,11 @@ export async function listarWorkspacesDeConexion(conexionId) {
     geoserver.obtenerCapacidadesWcs(conexion),
   ]);
 
-  const capas = [...vectoriales, ...raster]
-    .filter((capa) => !WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspaceDeCapa(capa.id)));
+  const descubiertas = [...vectoriales, ...raster];
+  const nuevas = await obtenerCapasNuevas(conexionId, descubiertas.map((capa) => capa.id));
+  const capas = descubiertas
+    .filter((capa) => !WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspaceDeCapa(capa.id)))
+    .map((capa) => ({ ...capa, nueva: nuevas.has(capa.id) }));
 
   // `id` es el workspace CRUDO de GeoServer (ej. "t_20_hidrologia"), el mismo valor que
   // geovisor.workspacesGeoserver guarda y que capaPermitidaEnGeovisor compara -- no el id de tema
@@ -376,9 +379,14 @@ export async function listarWorkspacesDeConexion(conexionId) {
   for (const capa of capas) {
     const workspace = workspaceDeCapa(capa.id);
     const existente = workspacesPorId.get(workspace);
-    if (existente) { existente.capas.push(capa); existente.totalCapas += 1; continue; }
+    if (existente) {
+      existente.capas.push(capa);
+      existente.totalCapas += 1;
+      if (capa.nueva) existente.totalNuevas += 1;
+      continue;
+    }
     const { nombre } = temaDesdeWorkspace(workspace);
-    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1, capas: [capa] });
+    workspacesPorId.set(workspace, { id: workspace, nombre, totalCapas: 1, totalNuevas: capa.nueva ? 1 : 0, capas: [capa] });
   }
   return [...workspacesPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
