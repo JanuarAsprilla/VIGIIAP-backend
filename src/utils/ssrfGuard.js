@@ -21,6 +21,7 @@
  * una comparación por string/regex no.
  */
 import dns from 'node:dns/promises';
+import dnsCallback from 'node:dns';
 import net from 'node:net';
 
 const RANGOS_IPV4_PRIVADOS = [
@@ -109,6 +110,40 @@ async function resolverYEvaluar(hostname) {
 //    mapa) sin reabrir esa ventana más de lo necesario.
 const TTL_CACHE_MS = 5 * 60 * 1000;
 const cache = new Map(); // hostname -> { privada, expira }
+
+/**
+ * lookup compatible con la opción `lookup` de net.connect/tls.connect (y por
+ * tanto con el `connect.lookup` de un undici.Agent) -- resuelve el hostname
+ * UNA vez y descarta cualquier dirección privada/reservada antes de que el
+ * socket real se conecte a ella.
+ *
+ * Por qué esto cierra el TOCTOU que urlApuntaARedPrivada() por sí sola no
+ * cierra: esa función valida una resolución DNS propia, pero fetch() hace
+ * su PROPIA resolución independiente para conectar -- dos consultas DNS
+ * distintas a un resolver que el dueño del dominio controla pueden responder
+ * cosas distintas (DNS rebinding: pública en la primera, 169.254.169.254 en
+ * la segunda), y nada obliga a que la IP validada sea la IP marcada. Pasando
+ * ESTA función como `connect.lookup` del Agent de undici que geoserver.
+ * connector.js usa, la resolución que valida y la resolución que conecta son
+ * la MISMA llamada -- no hay ventana entre "se revisó" y "se usó".
+ */
+export function dnsLookupSeguro(hostname, opciones, callback) {
+  const cb = typeof opciones === 'function' ? opciones : callback;
+  const todas = typeof opciones === 'object' && opciones?.all;
+
+  dnsCallback.lookup(hostname, { all: true, verbatim: true }, (err, direcciones) => {
+    if (err) return cb(err);
+    const seguras = direcciones.filter((d) => !esDireccionPrivada(d.address));
+    if (seguras.length === 0) {
+      return cb(Object.assign(
+        new Error(`SSRF_BLOQUEADO: ${hostname} no resolvió a ninguna dirección pública/no-reservada`),
+        { code: 'SSRF_BLOQUEADO' },
+      ));
+    }
+    if (todas) return cb(null, seguras.map((d) => ({ address: d.address, family: d.family })));
+    cb(null, seguras[0].address, seguras[0].family);
+  });
+}
 
 /**
  * true si la URL apunta (directamente o vía resolución DNS) a una red

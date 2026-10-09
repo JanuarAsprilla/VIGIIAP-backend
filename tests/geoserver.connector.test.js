@@ -41,6 +41,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('REGRESIÓN SSRF: solicitarConTimeout() fija la resolución DNS (pinning de IP)', () => {
+  it('pasa un dispatcher con connect.lookup -- la validación y la conexión real usan la misma resolución, no dos independientes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, type: 'basic',
+      text: () => Promise.resolve('<ok/>'), json: () => Promise.resolve({}),
+      headers: { get: () => 'application/json' },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await proxyWms(conexion, new URLSearchParams({ layers: 't_19_clima:Capa' }), poligono);
+
+    const opciones = fetchMock.mock.calls[0][1];
+    expect(opciones.dispatcher).toBeDefined();
+    expect(opciones.dispatcher.constructor.name).toBe('Agent');
+  });
+});
+
 describe('REGRESIÓN SSRF: solicitarConTimeout() no sigue redirecciones', () => {
   it('rechaza con 502 GEOSERVER_REDIRECT_RECHAZADO si GeoServer responde un 302 (p.ej. hacia una IP interna)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

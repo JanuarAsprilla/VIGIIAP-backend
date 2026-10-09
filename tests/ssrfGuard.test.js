@@ -3,9 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('node:dns/promises', () => ({
   default: { lookup: vi.fn() },
 }));
+vi.mock('node:dns', () => ({
+  default: { lookup: vi.fn() },
+}));
 
 const { default: dns } = await import('node:dns/promises');
-const { urlApuntaARedPrivada } = await import('../src/utils/ssrfGuard.js');
+const { default: dnsCallback } = await import('node:dns');
+const { urlApuntaARedPrivada, dnsLookupSeguro } = await import('../src/utils/ssrfGuard.js');
 
 describe('urlApuntaARedPrivada', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -69,5 +73,53 @@ describe('urlApuntaARedPrivada', () => {
 
   it('no revienta con una URL malformada -- deja que z.string().url() la rechace primero', async () => {
     expect(await urlApuntaARedPrivada('no-es-una-url')).toBe(false);
+  });
+});
+
+describe('dnsLookupSeguro — REGRESIÓN pinning de IP (TOCTOU entre validar y conectar)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  function lookupAsync(hostname, opciones) {
+    return new Promise((resolve) => {
+      dnsLookupSeguro(hostname, opciones, (err, address, family) => resolve({ err, address, family }));
+    });
+  }
+
+  it('devuelve la primera dirección pública al llamador (callback estilo net.connect lookup)', async () => {
+    dnsCallback.lookup.mockImplementation((_host, _opts, cb) => {
+      cb(null, [{ address: '8.8.8.8', family: 4 }]);
+    });
+    const { err, address, family } = await lookupAsync('geoserver.externo.test', {});
+    expect(err).toBeNull();
+    expect(address).toBe('8.8.8.8');
+    expect(family).toBe(4);
+  });
+
+  it('rechaza con error si TODAS las direcciones resueltas son privadas -- el socket nunca llega a conectarse', async () => {
+    dnsCallback.lookup.mockImplementation((_host, _opts, cb) => {
+      cb(null, [{ address: '169.254.169.254', family: 4 }]);
+    });
+    const { err } = await lookupAsync('geoserver.secuestrado.test', {});
+    expect(err).toBeTruthy();
+    expect(err.code).toBe('SSRF_BLOQUEADO');
+  });
+
+  it('descarta solo las direcciones privadas y conecta con la pública si hay varias (no basta con que la primera sea pública)', async () => {
+    dnsCallback.lookup.mockImplementation((_host, _opts, cb) => {
+      cb(null, [{ address: '127.0.0.1', family: 4 }, { address: '203.0.113.9', family: 4 }]);
+    });
+    const { err, address } = await lookupAsync('geoserver.mixto.test', {});
+    expect(err).toBeNull();
+    expect(address).toBe('203.0.113.9');
+  });
+
+  it('con opciones.all, devuelve solo las direcciones seguras filtradas', async () => {
+    dnsCallback.lookup.mockImplementation((_host, _opts, cb) => {
+      cb(null, [{ address: '10.0.0.5', family: 4 }, { address: '203.0.113.9', family: 4 }]);
+    });
+    const direcciones = await new Promise((resolve) => {
+      dnsLookupSeguro('geoserver.mixto.test', { all: true }, (err, result) => resolve(result));
+    });
+    expect(direcciones).toEqual([{ address: '203.0.113.9', family: 4 }]);
   });
 });
