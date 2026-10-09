@@ -15,7 +15,9 @@ const thumbnailUpload = uploadSingle('thumbnail', 'geovisores/thumbnails', 5, 't
 // ─── Lectura pública (filtrada por visibilidad dentro del service) ──────────
 router.get('/', cacheMiddleware(120), optionalAuthenticate, index);
 router.get('/:slug', cacheMiddleware(300), optionalAuthenticate, show);
-router.get('/:slug/capas', cacheMiddleware(300), optionalAuthenticate, catalogo);
+// TTL corto a propósito: el catálogo se descubre en vivo contra GeoServer, y una caché larga
+// retrasaba que una capa recién publicada apareciera en el visor.
+router.get('/:slug/capas', cacheMiddleware(30), optionalAuthenticate, catalogo);
 // wms/leyenda son proxys binarios hacia GeoServer -- sin cacheMiddleware (asume JSON, ver cache.js).
 router.get('/:slug/wms', optionalAuthenticate, tileRateLimiter, wms);
 router.get('/:slug/capas/:capaId/leyenda', optionalAuthenticate, tileRateLimiter, leyenda);

@@ -63,6 +63,9 @@ const geovisorBase = z.object({
   // y validar el subconjunto contra un valor que puede no venir en este payload
   // produciría falsos rechazos.
   capasConFicha: z.array(z.string()).default([]),
+  // true = además de capasSeleccionadas se admiten las capas nuevas de los mismos temas
+  // (workspaces) publicadas después en GeoServer -- ver capaPermitidaEnGeovisor().
+  incluirCapasNuevas: z.boolean().default(false),
   colorPorTema: z.record(z.string(), z.string()).default({}),
   centroLat: z.coerce.number().min(-90).max(90),
   centroLng: z.coerce.number().min(-180).max(180),
