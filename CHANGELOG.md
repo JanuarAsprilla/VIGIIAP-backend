@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.1...v1.8.0) (2026-10-09)
+
+
+### Features
+
+* capas nuevas de GeoServer aparecen solas en los geovisores ([#178](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/178)) ([5dc7453](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5dc7453b15e9eea611151d1fdbff7e774dbed6bf))
+* el selector del constructor marca las capas nuevas del servidor ([#183](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/183)) ([b0c772b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b0c772b898f9d9152c129dc3768a0c8190810814))
+
+
+### Bug Fixes
+
+* npm audit fix (proxy-addr crítico, sharp, ip-address) ([#179](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/179)) ([09f2d3a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/09f2d3aacda9130c022ae798567af29e57e74163))
+
 ## [1.7.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.0...v1.7.1) (2026-10-01)
 
 
