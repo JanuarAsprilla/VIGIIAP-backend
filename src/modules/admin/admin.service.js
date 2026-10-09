@@ -349,8 +349,9 @@ export async function getAuditLog(reqQuery, viewerRol) {
   if (fechaHasta) { params.push(fechaHasta); conditions.push(`creado_en <= $${params.length}`); }
   if (q) {
     if (q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
-    params.push(`%${q}%`);
-    conditions.push(`(descripcion ILIKE $${params.length} OR usuario_email ILIKE $${params.length} OR accion ILIKE $${params.length})`);
+    const qEsc = q.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${qEsc}%`);
+    conditions.push(`(descripcion ILIKE $${params.length} ESCAPE '\\' OR usuario_email ILIKE $${params.length} ESCAPE '\\' OR accion ILIKE $${params.length} ESCAPE '\\')`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

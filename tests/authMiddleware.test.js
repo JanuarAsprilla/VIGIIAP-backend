@@ -94,6 +94,23 @@ describe('optionalAuthenticate middleware', () => {
     expect(next).toHaveBeenCalled();
     expect(req.user).toBeUndefined();
   });
+
+  it('REGRESIÓN: continúa como anónimo (req.user indefinido) con un token de scope 2fa — ya no debe tratarlo como sesión completa', () => {
+    const next = vi.fn();
+    const req = { cookies: { vigiiap_token: SCOPE_2FA }, headers: {} };
+    optionalAuthenticate(req, res(), next);
+    expect(next).toHaveBeenCalled();
+    expect(req.user).toBeUndefined();
+  });
+
+  it('REGRESIÓN: continúa como anónimo con un token de scope password-change', () => {
+    const scopePasswordChange = jwt.sign({ id: 'u1', rol: 'admin_sig', scope: 'password-change' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const next = vi.fn();
+    const req = { cookies: { vigiiap_token: scopePasswordChange }, headers: {} };
+    optionalAuthenticate(req, res(), next);
+    expect(next).toHaveBeenCalled();
+    expect(req.user).toBeUndefined();
+  });
 });
 
 describe('authorize middleware', () => {

@@ -17,7 +17,16 @@ export async function streamPrivateFile(res, next, fileUrl, filename) {
   const { stream, contentType, contentLength } = await getFileStream(key);
   res.setHeader('Content-Type', contentType || 'application/octet-stream');
   if (contentLength) res.setHeader('Content-Length', String(contentLength));
-  res.setHeader('Content-Disposition', `inline; filename="${filename || key.split('/').pop()}"`);
+  // Defensa en profundidad además del saneo en origen (solicitudes.service.js
+  // ya sanea con sanitizeFilename antes de guardar) -- este sink es
+  // compartido con otros callers presentes y futuros, así que nunca confía
+  // únicamente en que el nombre ya llegue limpio. Comillas rotas el
+  // parámetro del header; Node lanza si el valor tiene CR/LF.
+  const nombreSeguro = String(filename || key.split('/').pop())
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/"/g, "'");
+  res.setHeader('Content-Disposition', `inline; filename="${nombreSeguro}"`);
   // private: nunca un caché compartido/CDN, solo el navegador de quien ya
   // pasó la autorización de esta ruta. max-age corto (5 min) porque el
   // control de acceso se revalida en cada request real -- una ventana larga

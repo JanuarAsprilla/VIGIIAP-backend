@@ -24,6 +24,12 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
   try {
     const respuesta = await fetch(url, {
       signal: controlador.signal,
+      // 'manual': una respuesta 3xx del GeoServer configurado no se sigue
+      // nunca automáticamente. ssrfGuard solo valida la URL original de la
+      // conexión — seguir una redirección significa conectarse a una
+      // dirección que nunca pasó por ese chequeo (p.ej. 169.254.169.254).
+      // Ninguna operación WMS/WFS/WCS legítima necesita redirigir.
+      redirect: 'manual',
       headers: {
         ...(conexion.usuarioLectura && conexion.passwordDescifrada
           ? { Authorization: `Basic ${credencialesBasicAuth(conexion)}` }
@@ -32,12 +38,23 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
       },
     });
 
+    if (respuesta.type === 'opaqueredirect' || (respuesta.status >= 300 && respuesta.status < 400)) {
+      throw Object.assign(
+        new Error('GeoServer devolvió una redirección — no se sigue por seguridad'),
+        { status: 502, code: 'GEOSERVER_REDIRECT_RECHAZADO' },
+      );
+    }
+
     if (!respuesta.ok && respuesta.status >= 500 && intento < MAX_REINTENTOS) {
       return solicitarConTimeout(conexion, url, aceptar, intento + 1);
     }
 
     return respuesta;
   } catch (error) {
+    // Un rechazo explícito por redirección nunca se reintenta ni se
+    // reempaca como "no disponible" — reintentar no cambia el hecho de
+    // que la respuesta fue una redirección fuera del dominio ya validado.
+    if (error.code === 'GEOSERVER_REDIRECT_RECHAZADO') throw error;
     if (intento < MAX_REINTENTOS) {
       return solicitarConTimeout(conexion, url, aceptar, intento + 1);
     }

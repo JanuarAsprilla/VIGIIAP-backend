@@ -58,7 +58,10 @@ const CAPAS_VECTORIALES = [
 const idsDelCatalogo = (temas) => temas.flatMap((t) => t.capas.map((c) => c.id));
 
 beforeEach(() => {
-  vi.mocked(query).mockReset();
+  // { rows: [] } por defecto en la segunda+ llamada: obtenerRestriccionesDeHermanos()
+  // sin geovisores hermanos. mockResolvedValueOnce() de cada test (fila del
+  // geovisor) tiene prioridad en la primera llamada.
+  vi.mocked(query).mockReset().mockResolvedValue({ rows: [] });
   vi.mocked(obtenerConexionParaConector).mockReset().mockResolvedValue(conexion);
   vi.mocked(geoserver.obtenerCapacidadesWfs).mockReset().mockResolvedValue(CAPAS_VECTORIALES);
   vi.mocked(geoserver.obtenerCapacidadesWcs).mockReset().mockResolvedValue([]);

@@ -474,6 +474,7 @@ describe('solicitudes.service → getArchivos()', () => {
 vi.mock('../src/middlewares/fileGuard.js', () => ({
   validateFile: vi.fn().mockReturnValue({ valid: true, sanitizedExt: 'pdf' }),
   sha256: vi.fn().mockReturnValue('abc123hash'),
+  sanitizeFilename: vi.fn((name) => name),
 }));
 vi.mock('../src/utils/dataCustody.js', () => ({
   registrarScanArchivo: vi.fn().mockResolvedValue(undefined),

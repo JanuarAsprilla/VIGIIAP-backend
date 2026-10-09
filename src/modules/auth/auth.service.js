@@ -98,6 +98,21 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
           ip:          ip ?? null,
           userAgent,
         });
+      } else {
+        // Dentro de la ventana de gracia no se revoca la familia (sería
+        // expulsar al propio cliente legítimo por una carrera benigna),
+        // pero SIEMPRE queda un rastro de severidad menor -- antes esto no
+        // dejaba ninguna señal, indistinguible de un doble-submit normal
+        // incluso para quien audite después. Ver audit finding
+        // refresh-token-reuse-grace-window-race.
+        registrarAuditoria({
+          accion:      'refresh_token_reuse_grace_window',
+          modulo:      'auth',
+          entidadId:   stolen[0].usuario_id,
+          descripcion: `Refresh token reutilizado ${revocadoHaceMs}ms después de su rotación (dentro de la ventana de gracia de ${REUSE_GRACE_MS}ms) — tratado como carrera benigna, sin revocar la familia. Revisar si se repite.`,
+          ip:          ip ?? null,
+          userAgent,
+        });
       }
     }
     throw Object.assign(new Error('Refresh token inválido, expirado o ya usado'), { status: 401 });
@@ -162,20 +177,24 @@ export async function login(email, password, ip, userAgent) {
   const valid = await bcrypt.compare(password, user.password_hash);
 
   if (!valid) {
-    const nuevosIntentos = (user.intentos_fallidos ?? 0) + 1;
-    const bloquear       = nuevosIntentos >= MAX_INTENTOS;
-    await query(
+    // UPDATE atómico: el incremento y el chequeo de umbral pasan en la misma
+    // instrucción SQL. La versión anterior leía intentos_fallidos al inicio
+    // de login() y escribía ese valor+1 en un UPDATE separado -- peticiones
+    // paralelas leían el mismo valor obsoleto y cada una escribía el mismo
+    // "+1", así que el contador nunca pasaba de 1 bajo una ráfaga paralela
+    // (el rate limiter sigue siendo la otra capa, no reemplaza esto). Ver
+    // audit finding login-lockout-counter-toctou-race.
+    const { rows: actualizado } = await query(
       `UPDATE usuarios
-       SET intentos_fallidos = $1,
-           bloqueado_hasta   = $2,
+       SET intentos_fallidos = CASE WHEN intentos_fallidos + 1 >= $2 THEN 0 ELSE intentos_fallidos + 1 END,
+           bloqueado_hasta   = CASE WHEN intentos_fallidos + 1 >= $2 THEN NOW() + ($3 * INTERVAL '1 minute') ELSE NULL END,
            actualizado_en    = NOW()
-       WHERE id = $3`,
-      [
-        bloquear ? 0 : nuevosIntentos,
-        bloquear ? new Date(Date.now() + LOCKOUT_MINS * 60_000) : null,
-        user.id,
-      ]
+       WHERE id = $1
+       RETURNING intentos_fallidos, bloqueado_hasta`,
+      [user.id, MAX_INTENTOS, LOCKOUT_MINS]
     );
+    const bloquear       = Boolean(actualizado[0].bloqueado_hasta);
+    const nuevosIntentos = actualizado[0].intentos_fallidos;
     registrarAuditoria({
       accion:      bloquear ? 'login_blocked' : 'login_failed',
       modulo:      'auth',

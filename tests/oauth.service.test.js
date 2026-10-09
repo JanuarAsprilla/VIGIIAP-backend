@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import crypto from 'crypto';
 
 vi.mock('../src/config/database.js', () => ({
   query: vi.fn(),
@@ -15,9 +16,9 @@ vi.mock('../src/utils/logger.js', () => ({
 
 // Redis "no disponible" por defecto (isReady: false) — la mayoría de tests de
 // handleCallback() no ejercitan PKCE en sí, así que fakeState() les da el
-// code_verifier directamente en el state (ruta de degradación sin Redis,
-// documentada en oauth.service.js). El describe "PKCE" de más abajo sí
-// simula Redis disponible para probar la ruta principal.
+// code_verifier vía codeVerifierCookie (ruta de degradación sin Redis). El
+// describe "PKCE" de más abajo sí simula Redis disponible para la ruta
+// principal.
 const { mockRedisClient } = vi.hoisted(() => ({
   mockRedisClient: { isReady: false, setEx: vi.fn(), get: vi.fn(), del: vi.fn() },
 }));
@@ -54,6 +55,11 @@ import {
 } from '../src/modules/oauth/oauth.service.js';
 
 const REDIRECT_URI = 'https://api.vigiiap.iiap.gov.co/api/v1/auth/oauth/google/callback';
+const CSRF_COOKIE = 'cookie-del-navegador-que-inicio-el-flujo';
+
+function hashCsrf(valor) {
+  return crypto.createHash('sha256').update(valor).digest('hex');
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -69,52 +75,87 @@ describe('listProviders()', () => {
 
 describe('buildAuthorizationUrl()', () => {
   it('devuelve la URL del proveedor con un state firmado y un code_challenge PKCE', async () => {
-    const url = await buildAuthorizationUrl('google', REDIRECT_URI);
+    const { url } = await buildAuthorizationUrl('google', REDIRECT_URI, CSRF_COOKIE);
     expect(url).toContain('accounts.google.com');
     expect(mockGoogleProvider.getAuthorizationUrl).toHaveBeenCalledWith(
       expect.any(String), REDIRECT_URI, expect.any(String),
     );
   });
 
+  it('el state firmado lleva el HASH de la cookie CSRF, nunca su valor en claro', async () => {
+    await buildAuthorizationUrl('google', REDIRECT_URI, CSRF_COOKIE);
+    const [state] = mockGoogleProvider.getAuthorizationUrl.mock.calls[0];
+    const payload = jwt.decode(state);
+    expect(payload.csrf).toBe(hashCsrf(CSRF_COOKIE));
+  });
+
+  it('sin Redis, devuelve codeVerifierCookie para que el controlador lo guarde en una cookie — nunca en el state', async () => {
+    const { codeVerifierCookie } = await buildAuthorizationUrl('google', REDIRECT_URI, CSRF_COOKIE);
+    expect(codeVerifierCookie).toBeTruthy();
+    const [state] = mockGoogleProvider.getAuthorizationUrl.mock.calls[0];
+    const payload = jwt.decode(state);
+    expect(payload.cv).toBeUndefined();
+  });
+
   it('lanza 404 para un proveedor inexistente', async () => {
-    await expect(buildAuthorizationUrl('facebook', REDIRECT_URI)).rejects.toMatchObject({ status: 404 });
+    await expect(buildAuthorizationUrl('facebook', REDIRECT_URI, CSRF_COOKIE)).rejects.toMatchObject({ status: 404 });
   });
 });
 
-function fakeState(provider = 'google', extra = { cv: 'test-code-verifier' }) {
-  return jwt.sign({ provider, nonce: 'n', ...extra }, process.env.JWT_SECRET, { expiresIn: '10m' });
+function fakeState(provider = 'google', { nonce = 'n', csrfCookieValor = CSRF_COOKIE } = {}) {
+  return jwt.sign({ provider, nonce, csrf: hashCsrf(csrfCookieValor) }, process.env.JWT_SECRET, { expiresIn: '10m' });
+}
+
+// Opciones por defecto para handleCallback en los tests que no ejercitan la
+// propia verificación CSRF: cookie y codeVerifierCookie "correctos", como si
+// el navegador que llamó a /start fuera el mismo que llega a /callback.
+function callbackOpts(overrides = {}) {
+  return { csrfCookieValor: CSRF_COOKIE, codeVerifierCookie: 'test-code-verifier', ...overrides };
 }
 
 describe('handleCallback()', () => {
   it('rechaza un state inválido/expirado', async () => {
-    await expect(handleCallback('google', 'code', 'basura-no-es-jwt', REDIRECT_URI))
+    await expect(handleCallback('google', 'code', 'basura-no-es-jwt', REDIRECT_URI, callbackOpts()))
       .rejects.toMatchObject({ status: 400 });
   });
 
   it('rechaza un state firmado para otro proveedor', async () => {
     const state = fakeState('microsoft');
-    await expect(handleCallback('google', 'code', state, REDIRECT_URI))
+    await expect(handleCallback('google', 'code', state, REDIRECT_URI, callbackOpts()))
       .rejects.toMatchObject({ status: 400 });
+  });
+
+  it('REGRESIÓN (login-CSRF): rechaza un state válido si la cookie CSRF del navegador no coincide (o falta) — ese state pudo ser de otro flujo', async () => {
+    const state = fakeState('google', { csrfCookieValor: 'cookie-del-atacante' });
+    await expect(handleCallback('google', 'code', state, REDIRECT_URI, callbackOpts({ csrfCookieValor: 'cookie-de-la-victima' })))
+      .rejects.toMatchObject({ status: 400, code: 'OAUTH_CSRF_MISMATCH' });
+    expect(mockGoogleProvider.exchangeCodeForProfile).not.toHaveBeenCalled();
+  });
+
+  it('REGRESIÓN (login-CSRF): rechaza si la cookie CSRF está ausente del todo', async () => {
+    const state = fakeState('google');
+    await expect(handleCallback('google', 'code', state, REDIRECT_URI, callbackOpts({ csrfCookieValor: undefined })))
+      .rejects.toMatchObject({ status: 400, code: 'OAUTH_CSRF_MISMATCH' });
   });
 
   it('rechaza el perfil si el proveedor no confirma el correo', async () => {
     mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
       providerId: 'g-123', email: 'ana@gmail.com', emailVerified: false, nombre: 'Ana', avatarUrl: null,
     });
-    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI))
+    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
       .rejects.toMatchObject({ status: 400 });
   });
 
-  it('vincula una cuenta existente por email en vez de duplicarla', async () => {
+  it('vincula una cuenta existente por email en vez de duplicarla — solo si esa cuenta NUNCA tuvo contraseña propia', async () => {
     mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
       providerId: 'g-123', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null,
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'existing-uuid', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'investigador', activo: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true }] }) // SELECT por email — existe
+      .mockResolvedValueOnce({ rows: [{ id: 'existing-uuid', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'investigador', activo: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: null }] }) // SELECT por email — existe, sin contraseña
       .mockResolvedValueOnce({ rows: [] }); // UPDATE vincula oauth_provider/oauth_id
 
-    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI);
+    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
 
     expect(query.mock.calls[2][0]).toMatch(/SET oauth_provider/);
     expect(result.perfilCompleto).toBe(true);
@@ -122,6 +163,39 @@ describe('handleCallback()', () => {
       expect.objectContaining({ id: 'existing-uuid' }),
       expect.any(Object)
     );
+  });
+
+  it('REGRESIÓN (account takeover): rechaza vincular por email si la cuenta existente tiene contraseña propia', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'atacante-oauth-id', email: 'victima-admin@iiap.gov.co', emailVerified: true, nombre: 'Atacante', avatarUrl: null,
+    });
+    query
+      .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
+      .mockResolvedValueOnce({ rows: [{ id: 'victima-uuid', nombre: 'Víctima Admin', email: 'victima-admin@iiap.gov.co', rol: 'admin_sig', activo: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: '$2a$12$hash-real-de-la-victima' }] }); // SELECT por email — tiene contraseña
+
+    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
+      .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' });
+
+    // Nunca debe llegar a vincular (UPDATE) ni a emitir tokens para la víctima.
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(issueTokenPair).not.toHaveBeenCalled();
+  });
+
+  it('REGRESIÓN (bypass de 2FA): no emite sesión completa si la cuenta encontrada tiene totp_enabled — pide el segundo factor', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'g-2fa', email: 'con2fa@iiap.gov.co', emailVerified: true, nombre: 'Con 2FA', avatarUrl: null,
+    });
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'u-2fa', nombre: 'Con 2FA', email: 'con2fa@iiap.gov.co', rol: 'admin_sig', activo: true, institucion: null, avatar_url: null, perfil_completo: true, totp_enabled: true }],
+    });
+
+    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
+
+    expect(result.requiresTwoFactor).toBe(true);
+    expect(result.twoFactorToken).toBeTruthy();
+    const decoded = jwt.decode(result.twoFactorToken);
+    expect(decoded).toMatchObject({ id: 'u-2fa', scope: '2fa' });
+    expect(issueTokenPair).not.toHaveBeenCalled();
   });
 
   it('crea una cuenta nueva con rol publico y perfil_completo=false cuando no existe por provider ni por email', async () => {
@@ -133,7 +207,7 @@ describe('handleCallback()', () => {
       .mockResolvedValueOnce({ rows: [] }) // por email — no existe
       .mockResolvedValueOnce({ rows: [{ id: 'new-uuid', nombre: 'Nueva Persona', email: 'nueva@gmail.com', rol: 'publico', activo: true, institucion: null, avatar_url: 'https://x/y.png', perfil_completo: false }] }); // INSERT
 
-    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI);
+    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
 
     expect(query.mock.calls[2][0]).toMatch(/INSERT INTO usuarios/);
     expect(query.mock.calls[2][1]).toEqual(['Nueva Persona', 'nueva@gmail.com', 'google', 'g-456', 'https://x/y.png']);
@@ -149,11 +223,11 @@ describe('handleCallback()', () => {
       rows: [{ id: 'p-uuid', nombre: 'Pendiente', email: 'pendiente@iiap.gov.co', rol: 'publico', activo: false, institucion: null, avatar_url: null, perfil_completo: false }],
     });
 
-    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI))
+    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
       .rejects.toMatchObject({ status: 403, code: 'ACCOUNT_INACTIVE' });
   });
 
-  it('el code_verifier del state llega intacto a exchangeCodeForProfile', async () => {
+  it('el code_verifier de la cookie (fallback sin Redis) llega intacto a exchangeCodeForProfile', async () => {
     mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
       providerId: 'g-1', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null,
     });
@@ -161,33 +235,34 @@ describe('handleCallback()', () => {
       rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: true }],
     });
 
-    await handleCallback('google', 'code-abc', fakeState('google', { cv: 'el-verifier-correcto' }), REDIRECT_URI);
+    await handleCallback('google', 'code-abc', fakeState(), REDIRECT_URI, callbackOpts({ codeVerifierCookie: 'el-verifier-correcto' }));
 
     expect(mockGoogleProvider.exchangeCodeForProfile).toHaveBeenCalledWith('code-abc', REDIRECT_URI, 'el-verifier-correcto');
   });
 });
 
-describe('PKCE — code_verifier vía Redis (ruta principal, sin degradar al state)', () => {
+describe('PKCE — code_verifier vía Redis (ruta principal, sin degradar a cookie)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRedisClient.isReady = true;
   });
 
-  it('buildAuthorizationUrl() guarda el code_verifier en Redis y NO lo incluye en el state', async () => {
+  it('buildAuthorizationUrl() guarda el code_verifier en Redis y no pide cookie de fallback (codeVerifierCookie=null)', async () => {
     mockRedisClient.setEx.mockResolvedValue('OK');
 
-    await buildAuthorizationUrl('google', REDIRECT_URI);
+    const { codeVerifierCookie } = await buildAuthorizationUrl('google', REDIRECT_URI, CSRF_COOKIE);
 
     expect(mockRedisClient.setEx).toHaveBeenCalledWith(
       expect.stringMatching(/^oauth:pkce:/), 600, expect.any(String),
     );
+    expect(codeVerifierCookie).toBeNull();
     const [state] = mockGoogleProvider.getAuthorizationUrl.mock.calls[0];
     const statePayload = jwt.decode(state);
     expect(statePayload.cv).toBeUndefined();
     expect(statePayload.nonce).toBeTruthy();
   });
 
-  it('handleCallback() recupera el code_verifier de Redis usando el nonce del state y lo borra tras usarlo (un solo uso)', async () => {
+  it('handleCallback() recupera el code_verifier de Redis usando el nonce del state y lo borra tras usarlo (un solo uso) — ignora cualquier cookie', async () => {
     mockRedisClient.get.mockResolvedValue('verifier-desde-redis');
     mockRedisClient.del.mockResolvedValue(1);
     mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
@@ -197,19 +272,20 @@ describe('PKCE — code_verifier vía Redis (ruta principal, sin degradar al sta
       rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: true }],
     });
 
-    const state = jwt.sign({ provider: 'google', nonce: 'abc123' }, process.env.JWT_SECRET, { expiresIn: '10m' });
-    await handleCallback('google', 'code', state, REDIRECT_URI);
+    const state = fakeState('google', { nonce: 'abc123' });
+    await handleCallback('google', 'code', state, REDIRECT_URI, callbackOpts({ codeVerifierCookie: null }));
 
     expect(mockRedisClient.get).toHaveBeenCalledWith('oauth:pkce:abc123');
     expect(mockRedisClient.del).toHaveBeenCalledWith('oauth:pkce:abc123');
     expect(mockGoogleProvider.exchangeCodeForProfile).toHaveBeenCalledWith('code', REDIRECT_URI, 'verifier-desde-redis');
   });
 
-  it('rechaza el callback si el nonce ya fue usado (Redis no tiene el verifier y el state tampoco lo trae)', async () => {
+  it('rechaza el callback si el nonce ya fue usado (Redis no tiene el verifier y no hay cookie de fallback)', async () => {
     mockRedisClient.get.mockResolvedValue(null);
-    const state = jwt.sign({ provider: 'google', nonce: 'ya-usado' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    const state = fakeState('google', { nonce: 'ya-usado' });
 
-    await expect(handleCallback('google', 'code', state, REDIRECT_URI)).rejects.toMatchObject({ status: 400 });
+    await expect(handleCallback('google', 'code', state, REDIRECT_URI, callbackOpts({ codeVerifierCookie: null })))
+      .rejects.toMatchObject({ status: 400 });
     expect(mockGoogleProvider.exchangeCodeForProfile).not.toHaveBeenCalled();
   });
 });

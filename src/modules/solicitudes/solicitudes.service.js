@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
-import { validateFile, sha256 } from '../../middlewares/fileGuard.js';
+import { validateFile, sha256, sanitizeFilename } from '../../middlewares/fileGuard.js';
 import { uploadFile, deleteFileByUrl } from '../../config/r2.js';
 import { registrarScanArchivo } from '../../utils/dataCustody.js';
 
@@ -249,7 +249,7 @@ export async function addArchivo(solicitudId, file, userId, isAdmin, ip) {
     throw Object.assign(new Error(validation.error), { status: 422 });
   }
 
-  const MIME_TO_EXT = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  const MIME_TO_EXT = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
   const ext = MIME_TO_EXT[file.mimetype] ?? 'bin';
   const key = `solicitudes/${solicitudId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
   const url = await uploadFile(key, file.buffer, file.mimetype, false);
@@ -263,7 +263,12 @@ export async function addArchivo(solicitudId, file, userId, isAdmin, ip) {
   const { rows } = await query(
     `INSERT INTO solicitud_archivos (solicitud_id, nombre, url, mime_type, tamano_bytes, subido_por)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, nombre, mime_type, tamano_bytes, creado_en`,
-    [solicitudId, file.originalname, url, file.mimetype, file.buffer.length, userId]
+    // sanitizeFilename(): el nombre original llega sin tocar hasta aquí y
+    // se guarda/sirve luego en Content-Disposition (ver streamFile.js) --
+    // sin esto, unas comillas rompen el parámetro del header y un CR/LF
+    // tira un TypeError de Node en cada descarga futura de este archivo.
+    // Ver audit finding content-disposition-header-injection.
+    [solicitudId, sanitizeFilename(file.originalname), url, file.mimetype, file.buffer.length, userId]
   );
   return rows[0];
 }

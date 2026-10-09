@@ -48,9 +48,47 @@ function temaDesdeWorkspace(workspace) {
  *   3. Si no, comportamiento legado: workspacesGeoserver vacío = toda la conexión; si no,
  *      cualquier capa de esos workspaces.
  */
-function capaPermitidaEnGeovisor(geovisor, capaId) {
+const RANGO_VISIBILIDAD = { publico: 0, usuarios: 1, acreditados: 2 };
+function esMasRestrictiva(visibilidadCandidata, visibilidadReferencia) {
+  return (RANGO_VISIBILIDAD[visibilidadCandidata] ?? 0) > (RANGO_VISIBILIDAD[visibilidadReferencia] ?? 0);
+}
+const SIN_RESTRICCIONES_DE_HERMANOS = { workspaces: new Set(), capas: new Set() };
+
+/**
+ * Varios geovisores pueden compartir una misma conexionGeoserverId (ver
+ * docs/PORTAL_GEOVISORES_DISENO.md §6) -- cada uno con su propio nivel de
+ * visibilidad. Sin este chequeo, un geovisor público con workspacesGeoserver
+ * vacío ("comportamiento legado: toda la conexión") expone cualquier capa
+ * que un geovisor HERMANO, en la MISMA conexión, haya reservado
+ * explícitamente para un nivel de visibilidad más restrictivo -- el
+ * atacante solo necesita conocer o adivinar el capaId, no pasar por el
+ * geovisor restringido en absoluto.
+ * Ver audit finding geovisor-shared-connection-layer-bypass.
+ */
+async function obtenerRestriccionesDeHermanos(conexionGeoserverId, geovisorId, visibilidadActual) {
+  const { rows } = await query(
+    `SELECT workspaces_geoserver, capas_seleccionadas, visibilidad
+     FROM geovisores
+     WHERE conexion_geoserver_id = $1 AND id != $2 AND deleted_at IS NULL AND activo = true`,
+    [conexionGeoserverId, geovisorId],
+  );
+  const workspaces = new Set();
+  const capas = new Set();
+  for (const fila of rows) {
+    if (!esMasRestrictiva(fila.visibilidad, visibilidadActual)) continue;
+    for (const w of fila.workspaces_geoserver ?? []) workspaces.add(w);
+    for (const c of fila.capas_seleccionadas ?? []) capas.add(c);
+  }
+  return { workspaces, capas };
+}
+
+function capaPermitidaEnGeovisor(geovisor, capaId, restricciones = SIN_RESTRICCIONES_DE_HERMANOS) {
   const workspace = workspaceDeCapa(capaId);
   if (WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspace)) return false;
+  // Reserva explícita de un hermano más restrictivo: gana siempre, sin
+  // importar cómo esté configurado este geovisor (capasSeleccionadas o
+  // comportamiento legado incluidos).
+  if (restricciones.capas.has(capaId) || restricciones.workspaces.has(workspace)) return false;
   if (geovisor.capasSeleccionadas.length > 0) {
     if (geovisor.capasSeleccionadas.includes(capaId)) return true;
     if (!geovisor.incluirCapasNuevas) return false;
@@ -61,8 +99,8 @@ function capaPermitidaEnGeovisor(geovisor, capaId) {
   return geovisor.workspacesGeoserver.includes(workspace);
 }
 
-function exigirCapaPermitida(geovisor, capaId) {
-  if (!capaPermitidaEnGeovisor(geovisor, capaId)) {
+function exigirCapaPermitida(geovisor, capaId, restricciones = SIN_RESTRICCIONES_DE_HERMANOS) {
+  if (!capaPermitidaEnGeovisor(geovisor, capaId, restricciones)) {
     throw Object.assign(
       new Error(`La capa "${capaId}" no está disponible en este geovisor`),
       { status: 403, code: 'CAPA_NO_PERMITIDA' },
@@ -322,9 +360,10 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
   const geovisor = await getBySlug(slug, user);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
 
-  const [vectoriales, raster] = await Promise.all([
+  const [vectoriales, raster, restricciones] = await Promise.all([
     geoserver.obtenerCapacidadesWfs(conexion),
     geoserver.obtenerCapacidadesWcs(conexion),
+    obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad),
   ]);
 
   const descubiertas = [...vectoriales, ...raster];
@@ -333,7 +372,7 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
   const nuevas = await obtenerCapasNuevas(geovisor.conexionGeoserverId, descubiertas.map((capa) => capa.id));
 
   const capas = descubiertas
-    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id))
+    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id, restricciones))
     .map((capa) => ({ ...capa, nueva: nuevas.has(capa.id), tema: temaDesdeWorkspace(workspaceDeCapa(capa.id)).id }));
 
   const temasPorId = new Map();
@@ -395,7 +434,8 @@ export async function listarWorkspacesDeConexion(conexionId) {
 export async function proxyWmsDeGeovisor(slug, queryParams, geometriaFiltro, user) {
   const geovisor = await getBySlug(slug, user);
   const capasPedidas = (queryParams.get('layers') ?? '').split(',').map((c) => c.trim()).filter(Boolean);
-  capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId));
+  const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
+  capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId, restricciones));
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
   return geoserver.proxyWms(conexion, queryParams, geometriaFiltro);
 }
@@ -403,7 +443,8 @@ export async function proxyWmsDeGeovisor(slug, queryParams, geometriaFiltro, use
 /** Proxy WMS GetLegendGraphic de un geovisor -- resuelve su conexión, valida la capa y delega al conector. */
 export async function proxyLeyendaDeGeovisor(slug, capaId, user) {
   const geovisor = await getBySlug(slug, user);
-  exigirCapaPermitida(geovisor, capaId);
+  const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
+  exigirCapaPermitida(geovisor, capaId, restricciones);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
   return geoserver.proxyLeyenda(conexion, capaId);
 }
@@ -415,7 +456,8 @@ export async function proxyLeyendaDeGeovisor(slug, capaId, user) {
  */
 export async function consultarCapaDeGeovisor(slug, capaId, geometria, user) {
   const geovisor = await getBySlug(slug, user);
-  exigirCapaPermitida(geovisor, capaId);
+  const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
+  exigirCapaPermitida(geovisor, capaId, restricciones);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
   const coleccion = await geoserver.consultarWfs(conexion, capaId, geometria);
 

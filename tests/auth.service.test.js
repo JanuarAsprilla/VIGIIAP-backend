@@ -135,7 +135,7 @@ describe('login()', () => {
   it('lanza 401 cuando la contraseña es incorrecta', async () => {
     query
       .mockResolvedValueOnce({ rows: [mockUser] })    // SELECT usuario
-      .mockResolvedValueOnce({ rows: [] });            // UPDATE intentos_fallidos
+      .mockResolvedValueOnce({ rows: [{ intentos_fallidos: 1, bloqueado_hasta: null }] }); // UPDATE atómico (RETURNING)
     bcrypt.compare.mockResolvedValueOnce(false);
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest')).rejects.toMatchObject({
@@ -784,34 +784,35 @@ describe('solicitarRecuperacion()', () => {
 describe('login() — bloqueo por 5 intentos fallidos', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('bloquea la cuenta después de 5 intentos fallidos', async () => {
+  it('bloquea la cuenta después de 5 intentos fallidos — el UPDATE atómico hace el +1 y el chequeo de umbral en SQL, no en JS', async () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.compare.mockResolvedValue(false);
     const userWith4Attempts = { ...mockUser, intentos_fallidos: 4 };
     query.mockResolvedValueOnce({ rows: [userWith4Attempts] }); // SELECT user
-    query.mockResolvedValueOnce({ rows: [] }); // UPDATE intentos_fallidos (bloquear=true)
+    // Simula el resultado del UPDATE atómico: la BD ya decidió bloquear (4+1>=5).
+    query.mockResolvedValueOnce({ rows: [{ intentos_fallidos: 0, bloqueado_hasta: new Date(Date.now() + 15 * 60_000) }] });
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
       .rejects.toMatchObject({ status: 401 });
 
-    // Verificar que se bloquea con NULL reset en intentos y fecha de bloqueo
-    const updateParams = query.mock.calls[1][1];
-    expect(updateParams[0]).toBe(0); // bloquear ? 0 : nuevosIntentos
-    expect(updateParams[1]).toBeInstanceOf(Date); // fecha de bloqueo
+    // El incremento (+1) y el umbral (MAX_INTENTOS) van en la query, no en JS.
+    const [sql, updateParams] = query.mock.calls[1];
+    expect(sql).toMatch(/intentos_fallidos \+ 1 >= \$2/);
+    expect(updateParams).toEqual([mockUser.id, 5, 15]);
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'login_blocked' }));
   });
 
-  it('intentos_fallidos es null → usa 0 como base', async () => {
+  it('el incremento atómico no depende de intentos_fallidos leído en JS — la columna es NOT NULL DEFAULT 0 (db/migrations/017_account_lockout.sql), el +1 vive en el propio UPDATE', async () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.compare.mockResolvedValue(false);
-    const userWithNullAttempts = { ...mockUser, intentos_fallidos: null };
-    query.mockResolvedValueOnce({ rows: [userWithNullAttempts] });
-    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [mockUser] });
+    query.mockResolvedValueOnce({ rows: [{ intentos_fallidos: 1, bloqueado_hasta: null }] });
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
       .rejects.toMatchObject({ status: 401 });
 
-    const updateParams = query.mock.calls[1][1];
-    expect(updateParams[0]).toBe(1); // null ?? 0 + 1 = 1
+    const [, updateParams] = query.mock.calls[1];
+    expect(updateParams).toEqual([mockUser.id, 5, 15]); // el UPDATE calcula +1 y el umbral en SQL
   });
 
   it('rechaza el intento con 429 mientras la cuenta sigue bloqueada — no llega a comparar password', async () => {

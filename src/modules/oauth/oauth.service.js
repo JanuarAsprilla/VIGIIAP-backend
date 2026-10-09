@@ -10,16 +10,21 @@ import logger from '../../utils/logger.js';
 // El "state" del flujo OAuth viaja como JWT de vida corta en vez de guardarse
 // en BD — no hay estado de sesión previo al callback (el navegador va y
 // vuelve del proveedor externo), así que firmar el proveedor+nonce y
-// verificarlo al volver es suficiente para CSRF sin infraestructura extra.
-function signState(providerId, nonce, codeVerifierFallback) {
-  const payload = { provider: providerId, nonce };
-  // Solo viaja en el propio state si Redis no está disponible (ver
-  // storeCodeVerifier) — degradado pero funcional, igual que cache.js.
-  if (codeVerifierFallback) payload.cv = codeVerifierFallback;
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '10m' });
+// verificarlo al volver basta para el CSRF de FORJA de state sin
+// infraestructura extra. Eso NO cubre login-CSRF (ver `csrfCookie` abajo):
+// un state válidamente firmado para la cuenta del ATACANTE, completado por
+// el atacante mismo y luego entregado a la víctima, pasaba esta verificación
+// igual — por eso el state también lleva el hash de una cookie httpOnly que
+// solo existe en el navegador que inició el flujo.
+function signState(providerId, nonce, csrfCookieHash) {
+  return jwt.sign({ provider: providerId, nonce, csrf: csrfCookieHash }, process.env.JWT_SECRET, { expiresIn: '10m' });
 }
 
-function verifyState(rawState, expectedProvider) {
+function hashCsrfCookie(valor) {
+  return crypto.createHash('sha256').update(valor).digest('hex');
+}
+
+function verifyState(rawState, expectedProvider, csrfCookieValor) {
   let payload;
   try {
     payload = jwt.verify(rawState, process.env.JWT_SECRET);
@@ -29,6 +34,17 @@ function verifyState(rawState, expectedProvider) {
   if (payload.provider !== expectedProvider) {
     throw Object.assign(new Error('El enlace de inicio de sesión no corresponde a este proveedor.'), { status: 400 });
   }
+  // Login-CSRF: el state debe estar atado al navegador que inició el flujo.
+  // Sin csrfCookieValor (cookie ausente/expirada) o sin que coincida con el
+  // hash firmado en el state, este NO es el navegador que llamó a /start —
+  // podría ser un state legítimo del atacante, replicado en la víctima.
+  const hashEsperado = csrfCookieValor ? hashCsrfCookie(csrfCookieValor) : null;
+  if (!hashEsperado || hashEsperado !== payload.csrf) {
+    throw Object.assign(
+      new Error('No se pudo verificar el inicio de sesión en este navegador. Intenta de nuevo desde el botón de inicio de sesión.'),
+      { status: 400, code: 'OAUTH_CSRF_MISMATCH' },
+    );
+  }
   return payload;
 }
 
@@ -37,8 +53,10 @@ function verifyState(rawState, expectedProvider) {
 // confidencial) — protege también si el `code` queda expuesto en un canal
 // intermedio (proxy, CDN, historial del navegador) antes de que este backend
 // lo canjee. El code_verifier se guarda server-side en Redis, atado al mismo
-// nonce que ya viaja en el state — nunca pasa por el navegador. Si Redis no
-// está configurado, cae al mismo state JWT (degradado, no roto).
+// nonce que ya viaja en el state. Si Redis no está disponible, el fallback
+// es una cookie httpOnly propia (vigiiap_oauth_cv, ver oauth.controller.js)
+// -- NUNCA el propio state/URL, que es exactamente el canal que PKCE existe
+// para proteger si queda expuesto (logs, Referer, historial).
 const PKCE_TTL_SECONDS = 600; // igual a la vida del state JWT
 
 function generatePkce() {
@@ -79,7 +97,7 @@ export function listProviders() {
   );
 }
 
-export async function buildAuthorizationUrl(providerId, redirectUri) {
+export async function buildAuthorizationUrl(providerId, redirectUri, csrfCookieValor) {
   const provider = getProvider(providerId);
   if (!provider.isConfigured()) {
     throw Object.assign(new Error(`El inicio de sesión con ${provider.name} todavía no está disponible.`), { status: 501 });
@@ -87,8 +105,11 @@ export async function buildAuthorizationUrl(providerId, redirectUri) {
   const nonce = crypto.randomBytes(16).toString('hex');
   const { codeVerifier, codeChallenge } = generatePkce();
   const storedInRedis = await storeCodeVerifier(nonce, codeVerifier);
-  const state = signState(providerId, nonce, storedInRedis ? undefined : codeVerifier);
-  return provider.getAuthorizationUrl(state, redirectUri, codeChallenge);
+  const state = signState(providerId, nonce, hashCsrfCookie(csrfCookieValor));
+  const url = provider.getAuthorizationUrl(state, redirectUri, codeChallenge);
+  // El controlador pone esto en una cookie httpOnly SOLO cuando Redis no
+  // guardó el verifier -- si pudo guardarlo, no hay nada que exponer aquí.
+  return { url, codeVerifierCookie: storedInRedis ? null : codeVerifier };
 }
 
 // Busca por (oauth_provider, oauth_id) primero — coincide con quien ya inició
@@ -98,23 +119,35 @@ export async function buildAuthorizationUrl(providerId, redirectUri) {
 // de las dos coincide se crea un usuario nuevo.
 async function findOrCreateUser(providerId, profile) {
   const byOAuth = await query(
-    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo
+    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, totp_enabled
      FROM usuarios WHERE oauth_provider = $1 AND oauth_id = $2`,
     [providerId, profile.providerId],
   );
   if (byOAuth.rows[0]) return { user: byOAuth.rows[0], isNewAccount: false };
 
   const byEmail = await query(
-    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo
+    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, totp_enabled, password_hash
      FROM usuarios WHERE email = $1`,
     [profile.email.toLowerCase()],
   );
   if (byEmail.rows[0]) {
+    const existing = byEmail.rows[0];
+    if (existing.password_hash) {
+      // Nunca vincular en silencio una identidad externa a una cuenta que
+      // ya tiene contraseña propia solo porque el correo coincide — el
+      // proveedor OAuth es quien afirma esa dirección, no quien prueba ser
+      // dueño de la cuenta local. Vincular requiere que el usuario entre
+      // primero con su contraseña (fuera del alcance de este endpoint).
+      throw Object.assign(
+        new Error('Ya existe una cuenta con este correo. Inicia sesión con tu contraseña.'),
+        { status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' },
+      );
+    }
     await query(
       `UPDATE usuarios SET oauth_provider = $1, oauth_id = $2, actualizado_en = NOW() WHERE id = $3`,
-      [providerId, profile.providerId, byEmail.rows[0].id],
+      [providerId, profile.providerId, existing.id],
     );
-    return { user: byEmail.rows[0], isNewAccount: false };
+    return { user: existing, isNewAccount: false };
   }
 
   // Cuenta nueva — rol 'publico' (mismo nivel que ya está abierto al público
@@ -132,9 +165,9 @@ async function findOrCreateUser(providerId, profile) {
   return { user: rows[0], isNewAccount: true };
 }
 
-export async function handleCallback(providerId, code, rawState, redirectUri, { ip, userAgent } = {}) {
-  const statePayload = verifyState(rawState, providerId);
-  const codeVerifier = statePayload.cv ?? await consumeCodeVerifier(statePayload.nonce);
+export async function handleCallback(providerId, code, rawState, redirectUri, { ip, userAgent, csrfCookieValor, codeVerifierCookie } = {}) {
+  const statePayload = verifyState(rawState, providerId, csrfCookieValor);
+  const codeVerifier = codeVerifierCookie ?? await consumeCodeVerifier(statePayload.nonce);
   if (!codeVerifier) {
     throw Object.assign(new Error('El enlace de inicio de sesión expiró o ya fue usado. Intenta de nuevo.'), { status: 400 });
   }
@@ -156,6 +189,19 @@ export async function handleCallback(providerId, code, rawState, redirectUri, { 
       new Error('Tu cuenta está pendiente de aprobación. Recibirás un correo cuando sea activada.'),
       { status: 403, code: 'ACCOUNT_INACTIVE' },
     );
+  }
+
+  // El login con contraseña exige el segundo factor antes de emitir sesión
+  // (ver auth.service.js#login) — OAuth no puede saltarse esa misma puerta
+  // solo por entrar con otro método; el token de scope 'access' nunca debe
+  // emitirse para una cuenta con 2FA activo sin haberlo completado.
+  if (user.totp_enabled) {
+    const twoFactorToken = jwt.sign(
+      { id: user.id, email: user.email, rol: user.rol, scope: '2fa' },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m', algorithm: 'HS256' },
+    );
+    return { requiresTwoFactor: true, twoFactorToken };
   }
 
   const { accessToken, refreshToken } = await issueTokenPair(
