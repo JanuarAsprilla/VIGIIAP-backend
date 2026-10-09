@@ -126,12 +126,24 @@ async function findOrCreateUser(providerId, profile) {
   if (byOAuth.rows[0]) return { user: byOAuth.rows[0], isNewAccount: false };
 
   const byEmail = await query(
-    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, totp_enabled, password_hash
+    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, totp_enabled, password_hash, oauth_provider
      FROM usuarios WHERE email = $1`,
     [profile.email.toLowerCase()],
   );
   if (byEmail.rows[0]) {
     const existing = byEmail.rows[0];
+    // Mismo problema de fondo (clase "nOAuth") sin contraseña de por medio:
+    // si esta cuenta ya quedó vinculada a OTRO proveedor, un segundo
+    // proveedor que afirme el mismo correo (p.ej. editando el atributo
+    // mail de un tenant Entra ID propio, sin que eso pruebe nada) no debe
+    // poder re-vincularla en silencio -- sería tan grave como el caso con
+    // contraseña, solo que la cuenta nació por OAuth en vez de con clave.
+    if (existing.oauth_provider && existing.oauth_provider !== providerId) {
+      throw Object.assign(
+        new Error('Ya existe una cuenta con este correo vinculada a otro proveedor. Inicia sesión con ese método.'),
+        { status: 409, code: 'EMAIL_LINKED_TO_OTHER_PROVIDER' },
+      );
+    }
     if (existing.password_hash) {
       // Nunca vincular en silencio una identidad externa a una cuenta que
       // ya tiene contraseña propia solo porque el correo coincide — el

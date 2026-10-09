@@ -184,11 +184,32 @@ export async function login(email, password, ip, userAgent) {
     // "+1", así que el contador nunca pasaba de 1 bajo una ráfaga paralela
     // (el rate limiter sigue siendo la otra capa, no reemplaza esto). Ver
     // audit finding login-lockout-counter-toctou-race.
+    //
+    // La primera versión de este fix tenía su propia carrera: la rama ELSE
+    // limpiaba bloqueado_hasta a NULL sin condición. En una ráfaga de
+    // intentos concurrentes que ya pasaron el chequeo previo a bcrypt (todos
+    // leyeron bloqueado_hasta=NULL de la misma SELECT inicial), el UPDATE #5
+    // bloqueaba la cuenta y reseteaba el contador a 0 -- pero el UPDATE #6,
+    // ya en cola, veía ese 0 recién puesto, su propio "+1" no llegaba al
+    // umbral, y su rama ELSE volvía a poner bloqueado_hasta en NULL,
+    // desbloqueando la cuenta que el intento anterior acababa de bloquear.
+    // Por eso ahora cada CASE primero pregunta si YA hay un bloqueo vigente
+    // y, si es así, no toca ni el contador ni la fecha -- un bloqueo activo
+    // nunca lo limpia un intento fallido concurrente, solo su propio
+    // vencimiento natural.
     const { rows: actualizado } = await query(
       `UPDATE usuarios
-       SET intentos_fallidos = CASE WHEN intentos_fallidos + 1 >= $2 THEN 0 ELSE intentos_fallidos + 1 END,
-           bloqueado_hasta   = CASE WHEN intentos_fallidos + 1 >= $2 THEN NOW() + ($3 * INTERVAL '1 minute') ELSE NULL END,
-           actualizado_en    = NOW()
+       SET intentos_fallidos = CASE
+             WHEN bloqueado_hasta IS NOT NULL AND bloqueado_hasta > NOW() THEN intentos_fallidos
+             WHEN intentos_fallidos + 1 >= $2 THEN 0
+             ELSE intentos_fallidos + 1
+           END,
+           bloqueado_hasta = CASE
+             WHEN bloqueado_hasta IS NOT NULL AND bloqueado_hasta > NOW() THEN bloqueado_hasta
+             WHEN intentos_fallidos + 1 >= $2 THEN NOW() + ($3 * INTERVAL '1 minute')
+             ELSE NULL
+           END,
+           actualizado_en = NOW()
        WHERE id = $1
        RETURNING intentos_fallidos, bloqueado_hasta`,
       [user.id, MAX_INTENTOS, LOCKOUT_MINS]

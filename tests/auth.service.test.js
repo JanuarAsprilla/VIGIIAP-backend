@@ -802,6 +802,23 @@ describe('login() — bloqueo por 5 intentos fallidos', () => {
     expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'login_blocked' }));
   });
 
+  it('REGRESIÓN: un intento fallido concurrente que llega justo después de bloquear la cuenta NO la desbloquea (la SQL preserva un bloqueo ya vigente)', async () => {
+    const bcryptMock = (await import('bcryptjs')).default
+    bcryptMock.compare.mockResolvedValue(false)
+    query.mockResolvedValueOnce({ rows: [mockUser] })
+    // La BD ya tenía bloqueado_hasta en el futuro cuando este UPDATE corrió
+    // (otro request concurrente lo puso justo antes) -- la rama "ya
+    // bloqueada" de la query debe devolver ese mismo valor preservado, no
+    // NULL, sin importar qué haya en intentos_fallidos.
+    const bloqueadoHastaVigente = new Date(Date.now() + 14 * 60_000)
+    query.mockResolvedValueOnce({ rows: [{ intentos_fallidos: 1, bloqueado_hasta: bloqueadoHastaVigente }] })
+
+    await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
+      .rejects.toMatchObject({ status: 401 })
+
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'login_blocked' }))
+  })
+
   it('el incremento atómico no depende de intentos_fallidos leído en JS — la columna es NOT NULL DEFAULT 0 (db/migrations/017_account_lockout.sql), el +1 vive en el propio UPDATE', async () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.compare.mockResolvedValue(false);
