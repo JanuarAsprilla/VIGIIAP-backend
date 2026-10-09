@@ -166,6 +166,18 @@ async function findOrCreateUser(providerId, profile) {
   // en mapas/documentos/geovisor/herramientas), activa de inmediato porque el
   // proveedor externo ya verificó el correo. perfil_completo=false porque no
   // hay institución todavía — dispara la alerta de completar perfil.
+  //
+  // RESIDUAL CONOCIDO (clase nOAuth, no cerrado aquí): si NO existe ninguna
+  // cuenta previa con este correo, cualquiera que logre que el proveedor
+  // afirme ese email (p.ej. editando el atributo mail de un tenant Entra ID
+  // propio) puede "reservarlo" primero, antes de que su dueño real use
+  // OAuth alguna vez — Microsoft mismo documenta que el claim email no está
+  // verificado y no debe usarse para decisiones de autorización. El rol
+  // 'publico' que se le da limita el daño (mismo nivel que un visitante
+  // anónimo), pero no evita el secuestro del correo. Cerrarlo de verdad
+  // exige una decisión de producto fuera del alcance de este parche: exigir
+  // confirmación por correo antes de activar la cuenta, o restringir el
+  // alta por OAuth a dominios institucionales verificados.
   const { rows } = await query(
     `INSERT INTO usuarios
        (nombre, email, password_hash, rol, activo, email_verified,
