@@ -16,6 +16,9 @@ vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
   obtenerCapacidadesWfs: vi.fn(),
   obtenerCapacidadesWcs: vi.fn(),
 }));
+vi.mock('../src/modules/geovisores/capasNuevas.service.js', () => ({
+  obtenerCapasNuevas: vi.fn().mockResolvedValue(new Set()),
+}));
 vi.mock('../src/utils/slugify.js', () => ({
   slugify: (s) => s.toLowerCase().replace(/\s+/g, '-'),
 }));
