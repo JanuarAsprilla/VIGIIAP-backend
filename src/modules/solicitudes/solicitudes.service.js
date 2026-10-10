@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
-import { validateFile, sha256 } from '../../middlewares/fileGuard.js';
+import { validateFile, sha256, sanitizeFilename } from '../../middlewares/fileGuard.js';
+import { optimizeImage } from '../../utils/imageOptimize.js';
 import { uploadFile, deleteFileByUrl } from '../../config/r2.js';
 import { registrarScanArchivo } from '../../utils/dataCustody.js';
 
@@ -249,12 +250,28 @@ export async function addArchivo(solicitudId, file, userId, isAdmin, ip) {
     throw Object.assign(new Error(validation.error), { status: 422 });
   }
 
-  const MIME_TO_EXT = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-  const ext = MIME_TO_EXT[file.mimetype] ?? 'bin';
+  // Re-encode a WebP para imágenes -- paridad con el resto de uploads de la
+  // app (mapas/documentos/categorías/geovisores ya lo hacen en upload.js),
+  // que fotos de "evidencia" ciudadana en solicitudes no tuviera. Sin esto
+  // se servía el original tal cual, con el EXIF/GPS del dispositivo intacto.
+  // PDFs (validation.mime === 'application/pdf') no pasan por aquí.
+  let uploadBuffer = file.buffer;
+  let uploadMime   = validation.mime;
+  let ext          = validation.sanitizedExt;
+  if (validation.mime?.startsWith('image/')) {
+    const optimizada = await optimizeImage(file.buffer, 'image');
+    uploadBuffer = optimizada.buffer;
+    uploadMime   = optimizada.mimetype;
+    ext          = optimizada.ext;
+  }
+
   const key = `solicitudes/${solicitudId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-  const url = await uploadFile(key, file.buffer, file.mimetype, false);
+  const url = await uploadFile(key, uploadBuffer, uploadMime, false);
 
   registrarScanArchivo({
+    // sha256Hash/tamanioBytes del archivo ORIGINAL recibido, no del
+    // reencodeado -- la cadena de custodia rastrea lo que la persona
+    // realmente subió, independiente de qué bytes queden almacenados.
     archivoKey: key, sha256Hash: hash, mimeType: file.mimetype,
     tamanioBytes: file.buffer.length, uploadedBy: userId, ipOrigen: ip,
     resultado: 'clean',
@@ -263,7 +280,16 @@ export async function addArchivo(solicitudId, file, userId, isAdmin, ip) {
   const { rows } = await query(
     `INSERT INTO solicitud_archivos (solicitud_id, nombre, url, mime_type, tamano_bytes, subido_por)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, nombre, mime_type, tamano_bytes, creado_en`,
-    [solicitudId, file.originalname, url, file.mimetype, file.buffer.length, userId]
+    // sanitizeFilename(): el nombre original llega sin tocar hasta aquí y
+    // se guarda/sirve luego en Content-Disposition (ver streamFile.js) --
+    // sin esto, unas comillas rompen el parámetro del header y un CR/LF
+    // tira un TypeError de Node en cada descarga futura de este archivo.
+    // Ver audit finding content-disposition-header-injection.
+    // mime_type/tamano_bytes del archivo REALMENTE subido (uploadMime/
+    // uploadBuffer), no del original -- si se reencodeó, son distintos
+    // (ej. jpeg 5MB original -> webp 300KB subido) y la fila debe describir
+    // lo que de verdad queda en el bucket.
+    [solicitudId, sanitizeFilename(file.originalname), url, uploadMime, uploadBuffer.length, userId]
   );
   return rows[0];
 }

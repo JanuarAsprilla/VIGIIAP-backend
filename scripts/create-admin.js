@@ -14,8 +14,8 @@ import { query, connectDB } from '../src/config/database.js';
 import logger from '../src/utils/logger.js';
 
 const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD;
-if (!ADMIN_PASSWORD) {
-  console.error('ERROR: Define ADMIN_SEED_PASSWORD en el entorno antes de ejecutar este script.');
+if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 12) {
+  console.error('ERROR: Define ADMIN_SEED_PASSWORD (mínimo 12 caracteres) en el entorno antes de ejecutar este script.');
   process.exit(1);
 }
 

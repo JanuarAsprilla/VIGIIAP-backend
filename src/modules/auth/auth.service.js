@@ -17,13 +17,15 @@ function signToken(payload, expiresIn) {
   });
 }
 
-function generateSecureToken() {
+export function generateSecureToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
 // Tokens se almacenan como SHA-256 para que una brecha de BD no permita usarlos directamente.
-// El valor original solo existe en el email enviado al usuario.
-function hashToken(token) {
+// El valor original solo existe en el email enviado al usuario. Exportado porque
+// oauth.service.js reutiliza el mismo mecanismo para su propia verificación de correo
+// (ver findOrCreateUser) en vez de duplicar la lógica de hashing.
+export function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
@@ -98,6 +100,21 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
           ip:          ip ?? null,
           userAgent,
         });
+      } else {
+        // Dentro de la ventana de gracia no se revoca la familia (sería
+        // expulsar al propio cliente legítimo por una carrera benigna),
+        // pero SIEMPRE queda un rastro de severidad menor -- antes esto no
+        // dejaba ninguna señal, indistinguible de un doble-submit normal
+        // incluso para quien audite después. Ver audit finding
+        // refresh-token-reuse-grace-window-race.
+        registrarAuditoria({
+          accion:      'refresh_token_reuse_grace_window',
+          modulo:      'auth',
+          entidadId:   stolen[0].usuario_id,
+          descripcion: `Refresh token reutilizado ${revocadoHaceMs}ms después de su rotación (dentro de la ventana de gracia de ${REUSE_GRACE_MS}ms) — tratado como carrera benigna, sin revocar la familia. Revisar si se repite.`,
+          ip:          ip ?? null,
+          userAgent,
+        });
       }
     }
     throw Object.assign(new Error('Refresh token inválido, expirado o ya usado'), { status: 401 });
@@ -162,20 +179,45 @@ export async function login(email, password, ip, userAgent) {
   const valid = await bcrypt.compare(password, user.password_hash);
 
   if (!valid) {
-    const nuevosIntentos = (user.intentos_fallidos ?? 0) + 1;
-    const bloquear       = nuevosIntentos >= MAX_INTENTOS;
-    await query(
+    // UPDATE atómico: el incremento y el chequeo de umbral pasan en la misma
+    // instrucción SQL. La versión anterior leía intentos_fallidos al inicio
+    // de login() y escribía ese valor+1 en un UPDATE separado -- peticiones
+    // paralelas leían el mismo valor obsoleto y cada una escribía el mismo
+    // "+1", así que el contador nunca pasaba de 1 bajo una ráfaga paralela
+    // (el rate limiter sigue siendo la otra capa, no reemplaza esto). Ver
+    // audit finding login-lockout-counter-toctou-race.
+    //
+    // La primera versión de este fix tenía su propia carrera: la rama ELSE
+    // limpiaba bloqueado_hasta a NULL sin condición. En una ráfaga de
+    // intentos concurrentes que ya pasaron el chequeo previo a bcrypt (todos
+    // leyeron bloqueado_hasta=NULL de la misma SELECT inicial), el UPDATE #5
+    // bloqueaba la cuenta y reseteaba el contador a 0 -- pero el UPDATE #6,
+    // ya en cola, veía ese 0 recién puesto, su propio "+1" no llegaba al
+    // umbral, y su rama ELSE volvía a poner bloqueado_hasta en NULL,
+    // desbloqueando la cuenta que el intento anterior acababa de bloquear.
+    // Por eso ahora cada CASE primero pregunta si YA hay un bloqueo vigente
+    // y, si es así, no toca ni el contador ni la fecha -- un bloqueo activo
+    // nunca lo limpia un intento fallido concurrente, solo su propio
+    // vencimiento natural.
+    const { rows: actualizado } = await query(
       `UPDATE usuarios
-       SET intentos_fallidos = $1,
-           bloqueado_hasta   = $2,
-           actualizado_en    = NOW()
-       WHERE id = $3`,
-      [
-        bloquear ? 0 : nuevosIntentos,
-        bloquear ? new Date(Date.now() + LOCKOUT_MINS * 60_000) : null,
-        user.id,
-      ]
+       SET intentos_fallidos = CASE
+             WHEN bloqueado_hasta IS NOT NULL AND bloqueado_hasta > NOW() THEN intentos_fallidos
+             WHEN intentos_fallidos + 1 >= $2 THEN 0
+             ELSE intentos_fallidos + 1
+           END,
+           bloqueado_hasta = CASE
+             WHEN bloqueado_hasta IS NOT NULL AND bloqueado_hasta > NOW() THEN bloqueado_hasta
+             WHEN intentos_fallidos + 1 >= $2 THEN NOW() + ($3 * INTERVAL '1 minute')
+             ELSE NULL
+           END,
+           actualizado_en = NOW()
+       WHERE id = $1
+       RETURNING intentos_fallidos, bloqueado_hasta`,
+      [user.id, MAX_INTENTOS, LOCKOUT_MINS]
     );
+    const bloquear       = Boolean(actualizado[0].bloqueado_hasta);
+    const nuevosIntentos = actualizado[0].intentos_fallidos;
     registrarAuditoria({
       accion:      bloquear ? 'login_blocked' : 'login_failed',
       modulo:      'auth',
@@ -342,9 +384,33 @@ function perfilToRol(perfil) {
 export async function register(data, { ip, userAgent } = {}) {
   const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
-  const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
-  if (exists.rows.length) {
+  const existing = await query('SELECT id, email_verified, creado_en FROM usuarios WHERE email = $1', [email.toLowerCase()]);
+  if (existing.rows[0]?.email_verified) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
+  }
+  // REGRESIÓN (account takeover / carrera de reclamo, hallazgo de la
+  // revisión automática sobre el primer intento de este mismo fix): no
+  // basta con "sin verificar" para permitir el reclamo de abajo -- si la
+  // fila es de alguien que acaba de registrarse de buena fe dentro de las
+  // últimas 24h, dejar que OTRA persona que solo conoce ese correo la
+  // reescriba en este mismo instante le "roba" la cuenta real con solo
+  // ganarle la carrera.
+  //
+  // DELIBERADAMENTE se usa creado_en, no email_verification_expires: ese
+  // segundo campo lo puede renovar cualquiera, sin autenticarse, llamando a
+  // reenviarVerificacion(email) -- segundo hallazgo de la revisión
+  // automática: un atacante podía mantener su propio reclamo "vigente" para
+  // siempre reenviando la verificación cada tanto, recreando el DoS
+  // permanente que este fix existe para cerrar. creado_en no lo toca ni el
+  // reclamo ni el resend -- es la única fecha que de verdad no se extiende.
+  if (
+    existing.rows[0] &&
+    new Date(existing.rows[0].creado_en) > new Date(Date.now() - 24 * 60 * 60 * 1000)
+  ) {
+    throw Object.assign(
+      new Error('Ya hay un registro en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
+      { status: 409, code: 'EMAIL_VERIFICATION_PENDING' }
+    );
   }
 
   // La cuenta siempre nace 'publico' — igual que el registro por OAuth
@@ -367,25 +433,77 @@ export async function register(data, { ip, userAgent } = {}) {
   );
   const activoInicial = cfg[0]?.valor === 'false';
 
-  const { rows } = await query(
-    `INSERT INTO usuarios
-       (nombre, email, password_hash, institucion, motivo_acceso, rol, rol_solicitado, tipo_acceso, activo,
-        email_verified, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, 'publico', $6, $7, $8, false, $9, $10)
-     RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
-    [
-      nombre,
-      email.toLowerCase(),
-      password_hash,
-      institucion ?? null,
-      motivo ?? null,
-      rolSolicitado,
-      tipoAcceso ?? 'externo',
-      activoInicial,
-      hashToken(verificationToken), // almacenar hash — no el token original
-      verificationExpires,
-    ]
-  );
+  let rows;
+  if (existing.rows[0]) {
+    // REGRESIÓN (pre-hijacking / backdoor de verificación, misma clase que
+    // oauth.service.js#findOrCreateUser): esta fila existe pero su correo
+    // NUNCA quedó verificado -- ni por la contraseña que alguien puso antes
+    // (nadie la confirmó), ni por un proveedor OAuth cuyo intento tampoco se
+    // verificó. Responder 409 aquí le negaría el registro PARA SIEMPRE a la
+    // dueña real del correo si alguien más lo "reservó" antes sin
+    // verificarlo. Y si en vez de bloquear se dejara la contraseña anterior
+    // intacta, quien la puso conservaría acceso permanente el día que la
+    // dueña real termine verificando el correo por cualquier camino (p.ej.
+    // reenviarVerificacion) -- login() solo exige password_hash correcto +
+    // email_verified, nunca valida QUIÉN puso esa contraseña. Por eso esta
+    // fila se reescribe con los datos de ESTE intento: la contraseña, el
+    // token y cualquier vínculo OAuth previos dejan de servir.
+    // `AND email_verified = false AND creado_en <= hace 24h` cierra la
+    // carrera contra una verificación concurrente de esta misma fila Y
+    // contra un segundo intento concurrente que pase el chequeo de arriba
+    // justo en el límite -- ambas condiciones se vuelven a confirmar
+    // atómicamente en el propio UPDATE (Postgres evalúa el WHERE contra el
+    // valor de creado_en ANTES de este mismo UPDATE), no solo en el SELECT
+    // de más arriba (mismo patrón que oauth.service.js#findOrCreateUser).
+    // `creado_en = NOW()` en el SET es igual de importante: sin esto, la
+    // fila reclamada seguiría teniendo un creado_en viejo (>24h) para
+    // siempre, así que cualquiera podría volver a "reclamarla" de inmediato
+    // -- el reclamo de ESTE intento también necesita su propia ventana de
+    // 24h, no heredar la del squat anterior ya vencido.
+    const result = await query(
+      `UPDATE usuarios SET
+         nombre = $1, password_hash = $2, institucion = $3, motivo_acceso = $4,
+         rol = 'publico', rol_solicitado = $5, tipo_acceso = $6, activo = $7,
+         email_verification_token = $8, email_verification_expires = $9,
+         oauth_provider = NULL, oauth_id = NULL, creado_en = NOW(), actualizado_en = NOW()
+       WHERE id = $10 AND email_verified = false AND creado_en <= NOW() - INTERVAL '24 hours'
+       RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
+      [
+        nombre, password_hash, institucion ?? null, motivo ?? null,
+        rolSolicitado, tipoAcceso ?? 'externo', activoInicial,
+        hashToken(verificationToken), verificationExpires,
+        existing.rows[0].id,
+      ]
+    );
+    if (!result.rows[0]) {
+      throw Object.assign(
+        new Error('Ya hay un registro en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
+        { status: 409, code: 'EMAIL_VERIFICATION_PENDING' }
+      );
+    }
+    rows = result.rows;
+  } else {
+    const result = await query(
+      `INSERT INTO usuarios
+         (nombre, email, password_hash, institucion, motivo_acceso, rol, rol_solicitado, tipo_acceso, activo,
+          email_verified, email_verification_token, email_verification_expires)
+       VALUES ($1, $2, $3, $4, $5, 'publico', $6, $7, $8, false, $9, $10)
+       RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
+      [
+        nombre,
+        email.toLowerCase(),
+        password_hash,
+        institucion ?? null,
+        motivo ?? null,
+        rolSolicitado,
+        tipoAcceso ?? 'externo',
+        activoInicial,
+        hashToken(verificationToken), // almacenar hash — no el token original
+        verificationExpires,
+      ]
+    );
+    rows = result.rows;
+  }
 
   registrarAuditoria({
     accion: 'registro',
@@ -451,6 +569,15 @@ export async function verifyEmail(token, { ip, userAgent } = {}) {
 }
 
 // ─── Reenviar email de verificación ──────────────────────────────────────────
+// RESIDUAL CONOCIDO (no cerrado aquí, requiere decisión de producto): a
+// diferencia de register()/findOrCreateUser(), esta función reemite un
+// token sin limpiar un password_hash/oauth_provider previos. Si una fila
+// quedó "reclamable" (ver REGRESIÓN en register()) y en vez de pasar por
+// register()/OAuth de nuevo el dueño real usa este resend directo, la
+// credencial anterior seguiría siendo válida tras verificar. Cerrarlo bien
+// exige forzar un reset de contraseña tras cualquier resend -- una UX peor
+// para el caso común y benigno (solo no llegó el primer correo) que no se
+// cambia unilateralmente sin decidirlo con el usuario.
 export async function reenviarVerificacion(email) {
   const { rows } = await query(
     'SELECT id, nombre, email, email_verified FROM usuarios WHERE email = $1',

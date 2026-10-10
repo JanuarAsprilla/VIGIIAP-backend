@@ -41,6 +41,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('REGRESIÓN SSRF: solicitarConTimeout() fija la resolución DNS (pinning de IP)', () => {
+  it('pasa un dispatcher con connect.lookup -- la validación y la conexión real usan la misma resolución, no dos independientes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, type: 'basic',
+      text: () => Promise.resolve('<ok/>'), json: () => Promise.resolve({}),
+      headers: { get: () => 'application/json' },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await proxyWms(conexion, new URLSearchParams({ layers: 't_19_clima:Capa' }), poligono);
+
+    const opciones = fetchMock.mock.calls[0][1];
+    expect(opciones.dispatcher).toBeDefined();
+    expect(opciones.dispatcher.constructor.name).toBe('Agent');
+  });
+});
+
+describe('REGRESIÓN SSRF: solicitarConTimeout() no sigue redirecciones', () => {
+  it('rechaza con 502 GEOSERVER_REDIRECT_RECHAZADO si GeoServer responde un 302 (p.ej. hacia una IP interna)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 302, type: 'basic',
+      headers: { get: () => null },
+    }));
+
+    await expect(
+      proxyWms(conexion, new URLSearchParams({ layers: 't_19_clima:Capa' }), poligono),
+    ).rejects.toMatchObject({ status: 502, code: 'GEOSERVER_REDIRECT_RECHAZADO' });
+  });
+
+  it('rechaza con el mismo código cuando fetch() resuelve una redirección "opaca" (redirect:"manual" en runtimes que no exponen status/headers)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ type: 'opaqueredirect', status: 0 }));
+
+    await expect(
+      proxyWms(conexion, new URLSearchParams({ layers: 't_19_clima:Capa' }), poligono),
+    ).rejects.toMatchObject({ status: 502, code: 'GEOSERVER_REDIRECT_RECHAZADO' });
+  });
+
+  it('pasa `redirect: "manual"` en cada fetch() — nunca delega el seguimiento de 3xx al cliente HTTP', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200, type: 'basic',
+      text: () => Promise.resolve('<ok/>'), json: () => Promise.resolve({}),
+      headers: { get: () => 'application/json' },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await proxyWms(conexion, new URLSearchParams({ layers: 't_19_clima:Capa' }), poligono);
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ redirect: 'manual' }));
+  });
+});
+
 function capabilitiesConFeatureType(bboxXml) {
   return `<?xml version="1.0" encoding="UTF-8"?>
     <wfs:WFS_Capabilities xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:ows="http://www.opengis.net/ows/1.1">

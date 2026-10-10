@@ -50,7 +50,10 @@ function filaGeovisor(overrides = {}) {
 }
 
 beforeEach(() => {
-  vi.mocked(query).mockReset();
+  // { rows: [] } por defecto: obtenerRestriccionesDeHermanos() sin
+  // geovisores hermanos. mockResolvedValueOnce() de cada test tiene
+  // prioridad en la primera llamada (la fila del propio geovisor).
+  vi.mocked(query).mockReset().mockResolvedValue({ rows: [] });
   vi.mocked(obtenerConexionParaConector).mockReset().mockResolvedValue(conexion);
   vi.mocked(geoserver.obtenerCapacidadesWfs).mockReset();
   vi.mocked(geoserver.obtenerCapacidadesWcs).mockReset();

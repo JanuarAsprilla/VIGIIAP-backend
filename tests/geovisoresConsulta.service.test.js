@@ -43,7 +43,12 @@ function filaGeovisor(overrides = {}) {
 const geometriaPunto = { type: 'Polygon', coordinates: [[[-76.6, 5.55], [-76.59, 5.55], [-76.59, 5.56], [-76.6, 5.56], [-76.6, 5.55]]] };
 
 beforeEach(() => {
-  vi.mocked(query).mockReset();
+  // Segunda llamada a query() dentro de cada proxy*/consultar() -- resuelve
+  // obtenerRestriccionesDeHermanos(); { rows: [] } = sin geovisores hermanos
+  // (comportamiento histórico, sin restricciones cruzadas) por defecto.
+  // Los mockResolvedValueOnce() de cada test para la fila del geovisor
+  // tienen prioridad en la PRIMERA llamada; esta es la que aplica después.
+  vi.mocked(query).mockReset().mockResolvedValue({ rows: [] });
   vi.mocked(obtenerConexionParaConector).mockReset().mockResolvedValue(conexion);
   vi.mocked(geoserver.proxyWms).mockReset();
   vi.mocked(geoserver.proxyLeyenda).mockReset();
@@ -90,6 +95,30 @@ describe('proxyWmsDeGeovisor — solo capas permitidas para este geovisor', () =
 
     const params = new URLSearchParams({ layers: 't_15_geologia:unidades,t_20_hidrologia:cuencas' });
     await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('REGRESIÓN (geovisor-shared-connection-layer-bypass): un geovisor público no sirve una capa reservada por un hermano restringido en la misma conexión', async () => {
+    // Este geovisor es público y tiene workspaces_geoserver vacío ("legado:
+    // toda la conexión"), el estado por defecto de cualquier geovisor nuevo.
+    vi.mocked(query)
+      .mockResolvedValueOnce({ rows: [filaGeovisor({ workspaces_geoserver: [], visibilidad: 'publico' })] })
+      // Un hermano en la MISMA conexión, con visibilidad "acreditados" (más
+      // restrictiva), reclama explícitamente el workspace sensible.
+      .mockResolvedValueOnce({ rows: [{ workspaces_geoserver: ['t_99_sensible'], capas_seleccionadas: [], visibilidad: 'acreditados' }] });
+
+    const params = new URLSearchParams({ layers: 't_99_sensible:capa_restringida' });
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 403 });
+    expect(geoserver.proxyWms).not.toHaveBeenCalled();
+  });
+
+  it('un hermano con visibilidad IGUAL o MENOS restrictiva no bloquea nada (solo lo estrictamente más restrictivo reserva)', async () => {
+    vi.mocked(query)
+      .mockResolvedValueOnce({ rows: [filaGeovisor({ workspaces_geoserver: [], visibilidad: 'publico' })] })
+      .mockResolvedValueOnce({ rows: [{ workspaces_geoserver: ['t_99_otro'], capas_seleccionadas: [], visibilidad: 'publico' }] });
+    vi.mocked(geoserver.proxyWms).mockResolvedValueOnce({ status: 200, headers: new Map(), arrayBuffer: async () => new ArrayBuffer(0) });
+
+    const params = new URLSearchParams({ layers: 't_99_otro:capa' });
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).resolves.toBeDefined();
   });
 });
 
@@ -169,6 +198,16 @@ describe('consultarCapaDeGeovisor — popup por capa', () => {
 
     expect(geoserver.consultarWfs).toHaveBeenCalledWith(conexion, 't_15_geologia:unidades', geometriaPunto);
     expect(resultado).toEqual({ type: 'FeatureCollection', features: [] });
+  });
+
+  it('REGRESIÓN (geovisor-shared-connection-layer-bypass): no consulta una capa reservada por un hermano más restrictivo', async () => {
+    vi.mocked(query)
+      .mockResolvedValueOnce({ rows: [filaGeovisor({ workspaces_geoserver: [], visibilidad: 'publico' })] })
+      .mockResolvedValueOnce({ rows: [{ workspaces_geoserver: ['t_99_sensible'], capas_seleccionadas: [], visibilidad: 'acreditados' }] });
+
+    await expect(consultarCapaDeGeovisor('geologia-choco', 't_99_sensible:capa', geometriaPunto, null))
+      .rejects.toMatchObject({ status: 403 });
+    expect(geoserver.consultarWfs).not.toHaveBeenCalled();
   });
 
   it('rechaza consultar una capa que no pertenece a este geovisor', async () => {

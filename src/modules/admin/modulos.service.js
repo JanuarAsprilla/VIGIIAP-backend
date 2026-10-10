@@ -22,6 +22,7 @@ export const MODULOS = [
   { clave: 'actividad',            nombre: 'Actividad' },
   { clave: 'errores',              nombre: 'Errores' },
   { clave: 'reportes',             nombre: 'Reportes' },
+  { clave: 'custodia',             nombre: 'Cadena de custodia y descargas' },
 ];
 const CLAVES_VALIDAS = new Set(MODULOS.map((m) => m.clave));
 

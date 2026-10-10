@@ -2,7 +2,22 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validateFile, validateFileHeader, sha256, sha256File } from '../src/middlewares/fileGuard.js';
+import { validateFile, validateFileHeader, sha256, sha256File, sanitizeFilename } from '../src/middlewares/fileGuard.js';
+
+describe('sanitizeFilename() — REGRESIÓN content-disposition-header-injection', () => {
+  it('quita comillas dobles (rompían el parámetro filename="...")', () => {
+    expect(sanitizeFilename('evil".pdf"; filename="x.pdf')).not.toContain('"');
+  });
+
+  it('quita CR/LF (Node lanza TypeError si llegan a un header)', () => {
+    const resultado = sanitizeFilename('archivo\r\nX-Injected: 1.pdf');
+    expect(resultado).not.toMatch(/[\r\n]/);
+  });
+
+  it('nombre normal sin caracteres peligrosos no cambia de forma inesperada', () => {
+    expect(sanitizeFilename('informe-final.pdf')).toBe('informe-final.pdf');
+  });
+});
 
 function archivoTemporalCon(bytes) {
   const ruta = path.join(os.tmpdir(), `fileguard-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);

@@ -15,6 +15,16 @@ function extractToken(req) {
   return null;
 }
 
+// Un token de scope 'access' es el único que representa una sesión completa.
+// Los de scope '2fa'/'password-change' solo sirven para su propio endpoint
+// de confirmación — aceptarlos en cualquier otra ruta deja pasar a alguien
+// que apenas completó el primer factor como si ya tuviera sesión real.
+// authenticate() y optionalAuthenticate() deben compartir esta misma regla;
+// que difirieran fue justo el hallazgo que esto corrige.
+function hasValidAccessScope(payload) {
+  return !payload.scope || payload.scope === 'access';
+}
+
 /**
  * Verifica el JWT (cookie o Bearer).
  * Adjunta req.user = { id, email, rol } si es válido y no fue revocado.
@@ -31,8 +41,7 @@ export function authenticate(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-    // Rechazar tokens de scope especial (2fa, password-change) en rutas normales
-    if (payload.scope && payload.scope !== 'access') {
+    if (!hasValidAccessScope(payload)) {
       return res.status(401).json({ error: 'Token no válido para este endpoint' });
     }
     req.user = payload;
@@ -50,7 +59,10 @@ export function optionalAuthenticate(req, res, next) {
   const token = extractToken(req);
   if (token && !isRevoked(token)) {
     try {
-      req.user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+      const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+      // Mismo chequeo que authenticate(): un token de scope '2fa' o
+      // 'password-change' no debe tratarse como sesión válida tampoco aquí.
+      if (hasValidAccessScope(payload)) req.user = payload;
     } catch {
       // Token inválido/expirado — continuar como anónimo
     }

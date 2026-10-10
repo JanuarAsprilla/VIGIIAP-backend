@@ -8,14 +8,18 @@ vi.mock('../src/modules/oauth/oauth.service.js', () => ({
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
+vi.mock('../src/utils/mailer.js', () => ({
+  notifyVerificacionEmail: vi.fn().mockResolvedValue(undefined),
+}));
 
 import * as oauthService from '../src/modules/oauth/oauth.service.js';
+import * as mailer from '../src/utils/mailer.js';
 import { listProviders, redirectToProvider, callback } from '../src/modules/oauth/oauth.controller.js';
 
 const mockNext = vi.fn();
 
 function res() {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn(), cookie: vi.fn(), redirect: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), json: vi.fn(), cookie: vi.fn(), clearCookie: vi.fn(), redirect: vi.fn() };
 }
 
 function req(overrides = {}) {
@@ -24,6 +28,7 @@ function req(overrides = {}) {
     get: () => 'api.vigiiap.iiap.gov.co',
     params: {},
     query: {},
+    cookies: {},
     ip: '127.0.0.1',
     headers: { 'user-agent': 'vitest' },
     ...overrides,
@@ -45,16 +50,26 @@ describe('oauth.controller → listProviders()', () => {
 });
 
 describe('oauth.controller → redirectToProvider()', () => {
-  it('redirige a la URL de autorización con el redirect_uri derivado del propio host', async () => {
-    oauthService.buildAuthorizationUrl.mockResolvedValue('https://accounts.google.com/authorize?mock=1');
+  it('redirige a la URL de autorización, con el redirect_uri derivado del propio host y una cookie CSRF httpOnly propia', async () => {
+    oauthService.buildAuthorizationUrl.mockResolvedValue({ url: 'https://accounts.google.com/authorize?mock=1', codeVerifierCookie: null });
     const r = res();
     await redirectToProvider(req({ params: { provider: 'google' } }), r, mockNext);
 
     expect(oauthService.buildAuthorizationUrl).toHaveBeenCalledWith(
       'google',
-      'https://api.vigiiap.iiap.gov.co/api/v1/auth/oauth/google/callback'
+      'https://api.vigiiap.iiap.gov.co/api/v1/auth/oauth/google/callback',
+      expect.any(String),
     );
+    expect(r.cookie).toHaveBeenCalledWith('vigiiap_oauth_csrf', expect.any(String), expect.objectContaining({ httpOnly: true }));
     expect(r.redirect).toHaveBeenCalledWith('https://accounts.google.com/authorize?mock=1');
+  });
+
+  it('cuando no hay Redis (codeVerifierCookie presente), también pone la cookie httpOnly del code_verifier', async () => {
+    oauthService.buildAuthorizationUrl.mockResolvedValue({ url: 'https://accounts.google.com/authorize?mock=1', codeVerifierCookie: 'el-verifier' });
+    const r = res();
+    await redirectToProvider(req({ params: { provider: 'google' } }), r, mockNext);
+
+    expect(r.cookie).toHaveBeenCalledWith('vigiiap_oauth_cv', 'el-verifier', expect.objectContaining({ httpOnly: true }));
   });
 
   it('llama next(err) si el proveedor no está configurado', async () => {
@@ -76,6 +91,8 @@ describe('oauth.controller → callback()', () => {
     await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
 
     expect(r.cookie).toHaveBeenCalledTimes(2);
+    expect(r.clearCookie).toHaveBeenCalledWith('vigiiap_oauth_csrf', expect.any(Object));
+    expect(r.clearCookie).toHaveBeenCalledWith('vigiiap_oauth_cv', expect.any(Object));
     expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/');
   });
 
@@ -101,6 +118,35 @@ describe('oauth.controller → callback()', () => {
     const r = res();
     await callback(req({ params: { provider: 'google' }, query: {} }), r);
     expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?oauthError=missing_code');
+  });
+
+  it('REGRESIÓN (bypass de 2FA): si handleCallback pide el segundo factor, pone solo la cookie temporal y NO la de sesión', async () => {
+    oauthService.handleCallback.mockResolvedValue({ requiresTwoFactor: true, twoFactorToken: 'temp-2fa-tok' });
+    const r = res();
+
+    await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
+
+    expect(r.cookie).toHaveBeenCalledTimes(1);
+    expect(r.cookie).toHaveBeenCalledWith('vigiiap_2fa_temp', 'temp-2fa-tok', expect.objectContaining({
+      httpOnly: true, path: '/api/auth/2fa/confirm',
+    }));
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/login?requiresTwoFactor=1');
+  });
+
+  it('REGRESIÓN (nOAuth / email squatting): si handleCallback pide verificar el correo (cuenta nueva), envía el email y NO pone cookies de sesión', async () => {
+    oauthService.handleCallback.mockResolvedValue({
+      requiresEmailVerification: true, isNewAccount: true,
+      email: 'nueva@gmail.com', nombre: 'Nueva Persona', verificationToken: 'raw-tok',
+    });
+    const r = res();
+
+    await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
+
+    expect(mailer.notifyVerificacionEmail).toHaveBeenCalledWith({
+      email: 'nueva@gmail.com', nombre: 'Nueva Persona', verificationToken: 'raw-tok',
+    });
+    expect(r.cookie).not.toHaveBeenCalled();
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?oauthError=EMAIL_VERIFICATION_SENT');
   });
 
   it('redirige con oauthError cuando handleCallback lanza (no navega al frontend con la sesión a medias)', async () => {

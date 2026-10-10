@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { index, getMe, updateRol, updateMe, updateAvatar, changePassword } from './usuarios.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
+import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
@@ -12,9 +13,13 @@ const VERIFICADOS = ['investigador', 'tecnico', 'institucional', 'admin_sig', 's
 
 const avatarUpload = uploadSingle('avatar', 'avatars', 5, 'image');
 
-router.get('/', authenticate, authorize('admin_sig'), index);
+// requireModulo('usuarios', 'ver'|'editar'): sin esto, un admin_sig con el
+// permiso de módulo "usuarios" revocado seguía pudiendo leer/gestionar
+// cuentas por esta ruta — el mismo efecto que PATCH /admin/usuarios/:id,
+// que sí lo exigía. Ver audit finding usuarios-rol-endpoint-bypasses-modulo-permission.
+router.get('/', authenticate, authorize('admin_sig'), requireModulo('usuarios', 'ver'), index);
 router.get('/me', authenticate, getMe);
-router.patch('/:id/rol', authenticate, authorize('admin_sig'), csrfProtection, updateRol);
+router.patch('/:id/rol', authenticate, authorize('admin_sig'), requireModulo('usuarios', 'editar'), csrfProtection, updateRol);
 router.patch('/me', authenticate, authorize(...VERIFICADOS), csrfProtection, updateMe);
 // csrfProtection ANTES de avatarUpload: rechaza la petición forjada antes de parsear el multipart.
 router.patch('/me/avatar', authenticate, authorize(...VERIFICADOS), csrfProtection, uploadRateLimiter, avatarUpload, updateAvatar);

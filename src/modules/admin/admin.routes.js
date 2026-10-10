@@ -37,10 +37,14 @@ router.get('/configuracion',    requireModulo('configuracion', 'ver'), getConfig
 router.put('/configuracion',    requireModulo('configuracion', 'editar'), setConfiguracion);
 
 // ── Cadena de custodia y seguridad ───────────────────────────────────────────
-router.get('/custodia',         custodiaRecurso);   // ?tipo=mapa&id=UUID
-router.get('/descargas',        descargasRecurso);  // ?tipo=mapa&id=UUID
-router.get('/descargas/stats',  descargasStats);
-router.get('/scan-log',         scanLog);
+// requireModulo('custodia','ver'): antes solo dependían del gate de router
+// (authorize('admin_sig')) sin módulo propio -- un admin_sig sin NINGÚN
+// permiso delegado podía leer logs de descarga (usuario+IP) y el log de
+// escaneo antivirus igual. Ver audit finding admin-sensitive-endpoints-not-module-gated.
+router.get('/custodia',         requireModulo('custodia', 'ver'), custodiaRecurso);   // ?tipo=mapa&id=UUID
+router.get('/descargas',        requireModulo('custodia', 'ver'), descargasRecurso);  // ?tipo=mapa&id=UUID
+router.get('/descargas/stats',  requireModulo('custodia', 'ver'), descargasStats);
+router.get('/scan-log',         requireModulo('custodia', 'ver'), scanLog);
 
 // ── Rutas exclusivas de super_admin ──────────────────────────────────────────
 router.get('/super/stats',              requireSuperAdmin, superStats);
@@ -55,7 +59,7 @@ router.put('/administradores/:id/permisos', requireSuperAdmin, setPermisosAdminC
 router.get('/export/usuarios',    requireModulo('usuarios', 'ver'), exportUsuarios);
 router.get('/export/solicitudes', requireModulo('solicitudes', 'ver'), exportSolicitudes);
 router.get('/export/audit',       requireModulo('actividad', 'ver'), exportAudit);
-router.get('/export/descargas',   exportDescargas);
+router.get('/export/descargas',   requireModulo('custodia', 'ver'), exportDescargas);
 
 // ── Papelera (soft deletes) — solo super_admin ────────────────────────────────
 router.get('/papelera',                      requireSuperAdmin, getPapelera);

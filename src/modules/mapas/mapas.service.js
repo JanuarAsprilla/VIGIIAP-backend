@@ -36,7 +36,7 @@ export async function getAll(reqQuery, user) {
   if (q) {
     const qEsc = q.replace(/[%_\\]/g, '\\$&');
     params.push(`%${qEsc}%`);
-    conditions.push(`(m.titulo ILIKE $${params.length} ESCAPE '\\\\' OR m.descripcion ILIKE $${params.length} ESCAPE '\\\\')`);
+    conditions.push(`(m.titulo ILIKE $${params.length} ESCAPE '\\' OR m.descripcion ILIKE $${params.length} ESCAPE '\\')`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

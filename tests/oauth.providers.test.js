@@ -4,6 +4,28 @@ vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+
+// jwks-rsa's getSigningKey() normally hits Microsoft's network JWKS
+// endpoint — mocked here with a locally-generated RSA keypair so the
+// Microsoft id_token signature path can be tested without network access.
+const TEST_KID = 'test-kid-1';
+const { publicKey: TEST_PUBLIC_KEY, privateKey: TEST_PRIVATE_KEY } = crypto.generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+});
+
+const { mockGetSigningKey } = vi.hoisted(() => ({ mockGetSigningKey: vi.fn() }));
+vi.mock('jwks-rsa', () => ({
+  default: vi.fn(() => ({ getSigningKey: mockGetSigningKey })),
+}));
+
+function signMsIdToken(claims, { kid = TEST_KID, key = TEST_PRIVATE_KEY } = {}) {
+  return jwt.sign(claims, key, { algorithm: 'RS256', keyid: kid });
+}
+
 import { PROVIDERS, getProvider } from '../src/modules/oauth/oauth.providers.js';
 
 const REDIRECT_URI = 'https://api.test/api/v1/auth/oauth/google/callback';
@@ -12,6 +34,10 @@ const ORIGINAL_ENV = { ...process.env };
 beforeEach(() => {
   vi.restoreAllMocks();
   process.env = { ...ORIGINAL_ENV };
+  mockGetSigningKey.mockReset().mockImplementation((kid, cb) => {
+    if (kid !== TEST_KID) return cb(new Error('kid desconocido'));
+    cb(null, { getPublicKey: () => TEST_PUBLIC_KEY });
+  });
 });
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
@@ -97,21 +123,74 @@ describe('microsoftProvider', () => {
     expect(url.pathname).toContain('/iiap-tenant/oauth2/v2.0/authorize');
   });
 
-  it('exchangeCodeForProfile() usa mail o userPrincipalName como email, y envía el code_verifier', async () => {
+  it('exchangeCodeForProfile() valida el id_token firmado y usa su claim email, no el mail de Graph', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'id';
     process.env.MICROSOFT_CLIENT_SECRET = 'secret';
+    const idToken = signMsIdToken({
+      iss: 'https://login.microsoftonline.com/some-tenant-id/v2.0',
+      aud: 'id',
+      oid: 'm-1',
+      email: 'ana@empresa.com',
+    });
     const fetchMock = vi.spyOn(global, 'fetch')
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token' }) })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ id: 'm-1', mail: null, userPrincipalName: 'ana@empresa.com', displayName: 'Ana' }),
-      });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token', id_token: idToken }) })
+      // Graph /me solo aporta displayName, un dato no relevante para seguridad.
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ displayName: 'Ana' }) });
 
     const profile = await PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'ms-verifier');
 
-    expect(profile).toMatchObject({ providerId: 'm-1', email: 'ana@empresa.com', emailVerified: true, nombre: 'Ana' });
+    expect(profile).toEqual({ providerId: 'm-1', email: 'ana@empresa.com', emailVerified: true, nombre: 'Ana', avatarUrl: null });
     const tokenBody = fetchMock.mock.calls[0][1].body;
     expect(tokenBody.get('code_verifier')).toBe('ms-verifier');
+  });
+
+  it('exchangeCodeForProfile() usa preferred_username si el id_token no trae email', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'id';
+    process.env.MICROSOFT_CLIENT_SECRET = 'secret';
+    const idToken = signMsIdToken({
+      iss: 'https://login.microsoftonline.com/common/v2.0',
+      aud: 'id',
+      oid: 'm-2',
+      preferred_username: 'ana@empresa.com',
+    });
+    vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token', id_token: idToken }) })
+      .mockResolvedValueOnce({ ok: false });
+
+    const profile = await PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'v');
+    expect(profile.email).toBe('ana@empresa.com');
+  });
+
+  it('exchangeCodeForProfile() lanza 502 si el token de Microsoft no incluye id_token', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'id';
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token' }) });
+    await expect(PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'v'))
+      .rejects.toMatchObject({ status: 502 });
+  });
+
+  it('exchangeCodeForProfile() lanza 502 si la firma del id_token no coincide (clave distinta a la del JWKS)', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'id';
+    const { privateKey: otherKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } });
+    const forgedToken = signMsIdToken({ iss: 'https://login.microsoftonline.com/common/v2.0', aud: 'id', oid: 'm-3', email: 'ataque@evil.com' }, { key: otherKey });
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token', id_token: forgedToken }) });
+    await expect(PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'v'))
+      .rejects.toMatchObject({ status: 502 });
+  });
+
+  it('exchangeCodeForProfile() lanza 502 si el emisor del id_token no es Microsoft', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'id';
+    const idToken = signMsIdToken({ iss: 'https://evil.example.com/v2.0', aud: 'id', oid: 'm-4', email: 'ataque@evil.com' });
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token', id_token: idToken }) });
+    await expect(PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'v'))
+      .rejects.toMatchObject({ status: 502 });
+  });
+
+  it('exchangeCodeForProfile() lanza 502 si el id_token tiene una audiencia distinta a este client_id', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'id-real';
+    const idToken = signMsIdToken({ iss: 'https://login.microsoftonline.com/common/v2.0', aud: 'otra-app-cliente', oid: 'm-5', email: 'ataque@evil.com' });
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'ms-token', id_token: idToken }) });
+    await expect(PROVIDERS.microsoft.exchangeCodeForProfile('code', REDIRECT_URI, 'v'))
+      .rejects.toMatchObject({ status: 502 });
   });
 });
 

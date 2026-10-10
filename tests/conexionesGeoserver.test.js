@@ -34,6 +34,11 @@ vi.mock('../src/utils/auditLog.js', () => ({
 // para probar el camino de rechazo end-to-end.
 vi.mock('../src/utils/ssrfGuard.js', () => ({
   urlApuntaARedPrivada: vi.fn().mockResolvedValue(false),
+  // dnsLookupSeguro: geoserver.connector.js lo usa para construir su Agent
+  // de undici a nivel de módulo (import time) -- sin esto, cualquier test
+  // que cargue ese módulo revienta al construirse, no solo los que
+  // ejercitan el proxy de verdad.
+  dnsLookupSeguro: vi.fn(),
 }));
 
 import * as conexionService from '../src/modules/geovisores/conexionesGeoserver.service.js';

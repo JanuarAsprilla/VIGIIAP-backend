@@ -106,8 +106,13 @@ function validateMagicBytes(buffer, mimeType) {
   return sigs.some((sig) => matchesSignature(buffer, sig));
 }
 
-function sanitizeFilename(name) {
+export function sanitizeFilename(name) {
   return name
+    // CR/LF/control chars deben salir: un nombre con ellos rompe (o inyecta
+    // parámetros en) Content-Disposition al servirlo de vuelta (ver audit
+    // finding content-disposition-header-injection).
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, '')
     .replace(/[/\\?%*:|"<>]/g, '_')
     .replace(/\.{2,}/g, '.')
     .replace(/^\./, '_')

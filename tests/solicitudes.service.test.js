@@ -472,8 +472,12 @@ describe('solicitudes.service → getArchivos()', () => {
 // ─── addArchivo() — branches de validación y acceso ───────────────────────
 
 vi.mock('../src/middlewares/fileGuard.js', () => ({
-  validateFile: vi.fn().mockReturnValue({ valid: true, sanitizedExt: 'pdf' }),
+  validateFile: vi.fn().mockReturnValue({ valid: true, sanitizedExt: 'pdf', mime: 'application/pdf' }),
   sha256: vi.fn().mockReturnValue('abc123hash'),
+  sanitizeFilename: vi.fn((name) => name),
+}));
+vi.mock('../src/utils/imageOptimize.js', () => ({
+  optimizeImage: vi.fn().mockResolvedValue({ buffer: Buffer.from('webp-optimizado'), mimetype: 'image/webp', ext: 'webp' }),
 }));
 vi.mock('../src/utils/dataCustody.js', () => ({
   registrarScanArchivo: vi.fn().mockResolvedValue(undefined),
@@ -482,6 +486,7 @@ vi.mock('../src/utils/dataCustody.js', () => ({
 
 import { addArchivo } from '../src/modules/solicitudes/solicitudes.service.js';
 import { validateFile } from '../src/middlewares/fileGuard.js';
+import { optimizeImage } from '../src/utils/imageOptimize.js';
 import { uploadFile, deleteFileByUrl } from '../src/config/r2.js';
 
 const MOCK_FILE = {
@@ -496,7 +501,7 @@ describe('solicitudes.service → addArchivo()', () => {
     vi.clearAllMocks();
     uploadFile.mockResolvedValue('https://files.test.local/sol/doc.pdf');
     deleteFileByUrl.mockResolvedValue(undefined);
-    validateFile.mockReturnValue({ valid: true, sanitizedExt: 'pdf' });
+    validateFile.mockReturnValue({ valid: true, sanitizedExt: 'pdf', mime: 'application/pdf' });
   });
 
   it('lanza 404 si la solicitud no existe', async () => {
@@ -546,6 +551,38 @@ describe('solicitudes.service → addArchivo()', () => {
     const result = await addArchivo('sol-1', MOCK_FILE, 'u1', false, '::1');
     expect(uploadFile).toHaveBeenCalledOnce();
     expect(result.nombre).toBe('doc.pdf');
+  });
+
+  it('REGRESIÓN (paridad con el resto de uploads): un PDF no pasa por optimizeImage -- sube el buffer original tal cual', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', nombre: 'doc.pdf', tamano_bytes: 1024, mime_type: 'application/pdf', creado_en: new Date() }] });
+
+    await addArchivo('sol-1', MOCK_FILE, 'u1', false, '::1');
+
+    expect(optimizeImage).not.toHaveBeenCalled();
+    expect(uploadFile).toHaveBeenCalledWith(expect.stringContaining('.pdf'), MOCK_FILE.buffer, 'application/pdf', false);
+  });
+
+  it('REGRESIÓN (image re-encode en solicitudes): una imagen SÍ pasa por optimizeImage y se sube el resultado, no el original', async () => {
+    const archivoImagen = { ...MOCK_FILE, originalname: 'evidencia.jpg', mimetype: 'image/jpeg' };
+    validateFile.mockReturnValue({ valid: true, sanitizedExt: 'jpg', mime: 'image/jpeg' });
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'sol-1', estado: 'pendiente' }] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'a2', nombre: 'evidencia.jpg', tamano_bytes: 15, mime_type: 'image/webp', creado_en: new Date() }] });
+
+    await addArchivo('sol-1', archivoImagen, 'u1', false, '::1');
+
+    expect(optimizeImage).toHaveBeenCalledWith(archivoImagen.buffer, 'image');
+    // El buffer/mimetype SUBIDO es el reencodeado (webp), no el jpeg original.
+    expect(uploadFile).toHaveBeenCalledWith(expect.stringContaining('.webp'), Buffer.from('webp-optimizado'), 'image/webp', false);
+    // Lo que queda en BD (mime_type/tamano_bytes del INSERT) también es lo
+    // realmente subido, no el original -- si no, la fila mentiría sobre qué
+    // hay en el bucket.
+    const insertParams = query.mock.calls[2][1];
+    expect(insertParams).toEqual(['sol-1', 'evidencia.jpg', 'https://files.test.local/sol/doc.pdf', 'image/webp', Buffer.from('webp-optimizado').length, 'u1']);
   });
 });
 

@@ -79,7 +79,7 @@ export async function exportUsuarios(req, res, next) {
     const { rows } = await query(
       `SELECT id, nombre, email, rol, tipo_acceso, institucion, activo,
               email_verified, last_login_at, creado_en
-       FROM usuarios WHERE rol != 'super_admin' ORDER BY creado_en DESC LIMIT $1`,
+       FROM usuarios WHERE rol NOT IN ('super_admin', 'admin_sig') ORDER BY creado_en DESC LIMIT $1`,
       [MAX_ROWS]
     );
     if (rows.length === MAX_ROWS) {

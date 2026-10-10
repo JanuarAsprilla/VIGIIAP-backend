@@ -276,7 +276,13 @@ describe('PATCH /api/usuarios/me/password', () => {
 });
 
 describe('GET /api/usuarios', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // requireModulo('usuarios','ver') consulta admin_permisos_modulo —
+    // concedido por defecto en este describe; el test de "sin permiso" lo
+    // sobrescribe explícitamente.
+    query.mockResolvedValue({ rows: [{ puede_ver: true, puede_editar: true }] });
+  });
 
   it('retorna 401 sin token', async () => {
     const res = await request(app).get('/api/usuarios');
@@ -306,10 +312,22 @@ describe('GET /api/usuarios', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(500);
   });
+
+  it('REGRESIÓN (usuarios-rol-endpoint-bypasses-modulo-permission): 403 si al admin_sig se le revocó el permiso "usuarios"', async () => {
+    query.mockResolvedValue({ rows: [] }); // sin fila en admin_permisos_modulo = deniega por defecto
+    const res = await request(app)
+      .get('/api/usuarios')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(403);
+    expect(userService.getAll).not.toHaveBeenCalled();
+  });
 });
 
 describe('PATCH /api/usuarios/:id/rol', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    query.mockResolvedValue({ rows: [{ puede_ver: true, puede_editar: true }] });
+  });
 
   it('retorna 401 sin token', async () => {
     const res = await request(app).patch('/api/usuarios/uuid-x/rol').send({ rol: 'tecnico' });
@@ -352,5 +370,15 @@ describe('PATCH /api/usuarios/:id/rol', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ rol: 'tecnico' });
     expect(res.status).toBe(403);
+  });
+
+  it('REGRESIÓN (usuarios-rol-endpoint-bypasses-modulo-permission): 403 si al admin_sig se le revocó el permiso de editar "usuarios" — antes bypaseaba este chequeo', async () => {
+    query.mockResolvedValue({ rows: [{ puede_ver: true, puede_editar: false }] });
+    const res = await request(app)
+      .patch('/api/usuarios/uuid-inv/rol')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ rol: 'tecnico', activo: true });
+    expect(res.status).toBe(403);
+    expect(userService.updateRol).not.toHaveBeenCalled();
   });
 });

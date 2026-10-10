@@ -5,7 +5,52 @@
  * de cada proveedor. Agregar uno nuevo es solo escribir un adaptador más y
  * registrarlo en PROVIDERS — el resto del módulo no cambia.
  */
+import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
 import logger from '../../utils/logger.js';
+
+// ─── Verificación de id_token de Microsoft ───────────────────────────────
+// Graph /me no es una fuente verificada de identidad: su atributo `mail`
+// puede editarlo el propio usuario en varias configuraciones de tenant
+// (incluido un tenant Entra ID self-service gratuito). El id_token OIDC, en
+// cambio, lo firma Microsoft con una llave RS256 publicada en su propio
+// JWKS — verificar esa firma es la única forma de confiar en el claim de
+// email sin depender de un atributo de directorio editable por el usuario.
+const msJwks = jwksClient({
+  jwksUri: 'https://login.microsoftonline.com/common/discovery/v2.0/keys',
+  cache: true,
+  cacheMaxAge: 24 * 60 * 60 * 1000,
+  rateLimit: true,
+});
+
+function getMsSigningKey(kid) {
+  return new Promise((resolve, reject) => {
+    msJwks.getSigningKey(kid, (err, key) => {
+      if (err) return reject(err);
+      resolve(key.getPublicKey());
+    });
+  });
+}
+
+async function verifyMicrosoftIdToken(idToken) {
+  const decoded = jwt.decode(idToken, { complete: true });
+  const kid = decoded?.header?.kid;
+  if (!kid) {
+    throw new Error('id_token de Microsoft sin encabezado kid');
+  }
+  const publicKey = await getMsSigningKey(kid);
+  const claims = jwt.verify(idToken, publicKey, {
+    algorithms: ['RS256'],
+    audience: process.env.MICROSOFT_CLIENT_ID,
+  });
+  // El emisor varía por tenant (.../<tenant-id>/v2.0) pero siempre vive bajo
+  // el dominio de Microsoft identity platform — nunca aceptar un emisor
+  // fuera de ese dominio, sin importar qué diga el payload.
+  if (typeof claims.iss !== 'string' || !claims.iss.startsWith('https://login.microsoftonline.com/')) {
+    throw new Error(`Emisor de id_token de Microsoft no reconocido: ${claims.iss}`);
+  }
+  return claims;
+}
 
 // ─── Google ───────────────────────────────────────────────────────────────
 // https://developers.google.com/identity/protocols/oauth2/web-server
@@ -113,25 +158,41 @@ const microsoftProvider = {
       logger.error(`[oauth] Microsoft token exchange falló: ${tokenRes.status}`);
       throw Object.assign(new Error('No se pudo validar la cuenta de Microsoft'), { status: 502 });
     }
-    const { access_token: accessToken } = await tokenRes.json();
+    const { access_token: accessToken, id_token: idToken } = await tokenRes.json();
+    if (!idToken) {
+      // Sin id_token no hay nada firmado por Microsoft que verificar — no
+      // hay fallback seguro a Graph /me (ver verifyMicrosoftIdToken arriba).
+      logger.error('[oauth] Microsoft no devolvió id_token (¿falta el scope openid?)');
+      throw Object.assign(new Error('No se pudo verificar la identidad de Microsoft'), { status: 502 });
+    }
+
+    let claims;
+    try {
+      claims = await verifyMicrosoftIdToken(idToken);
+    } catch (err) {
+      logger.error(`[oauth] Verificación de id_token de Microsoft falló: ${err.message}`);
+      throw Object.assign(new Error('No se pudo verificar la identidad de Microsoft'), { status: 502 });
+    }
+
+    // El claim `email` del id_token firmado reemplaza a Graph /me — Graph se
+    // usa solo para el nombre a mostrar, un dato no relevante para seguridad.
+    const email = claims.email ?? claims.preferred_username;
+    if (!email) {
+      throw Object.assign(new Error('Microsoft no compartió un correo verificable en el id_token'), { status: 400 });
+    }
 
     const profileRes = await fetch('https://graph.microsoft.com/v1.0/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!profileRes.ok) {
-      logger.error(`[oauth] Microsoft Graph /me falló: ${profileRes.status}`);
-      throw Object.assign(new Error('No se pudo obtener el perfil de Microsoft'), { status: 502 });
-    }
-    const profile = await profileRes.json();
-    const email = profile.mail ?? profile.userPrincipalName;
+    const profile = profileRes.ok ? await profileRes.json() : {};
 
     return {
-      providerId:    profile.id,
+      providerId:    claims.oid ?? claims.sub,
       email,
-      // Graph /me no expone verificación de email explícita — una cuenta
-      // corporativa/Microsoft ya implica un correo controlado por el
-      // proveedor, a diferencia de un formulario propio sin verificar.
-      emailVerified: Boolean(email),
+      // Ahora respaldado por la firma RS256 de Microsoft sobre el id_token,
+      // no por un atributo de directorio (Graph `mail`) que el propio
+      // usuario puede editar en un tenant Entra ID self-service.
+      emailVerified: true,
       nombre:        profile.displayName ?? email,
       avatarUrl:     null,
     };

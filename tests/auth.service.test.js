@@ -135,7 +135,7 @@ describe('login()', () => {
   it('lanza 401 cuando la contraseña es incorrecta', async () => {
     query
       .mockResolvedValueOnce({ rows: [mockUser] })    // SELECT usuario
-      .mockResolvedValueOnce({ rows: [] });            // UPDATE intentos_fallidos
+      .mockResolvedValueOnce({ rows: [{ intentos_fallidos: 1, bloqueado_hasta: null }] }); // UPDATE atómico (RETURNING)
     bcrypt.compare.mockResolvedValueOnce(false);
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest')).rejects.toMatchObject({
@@ -286,12 +286,66 @@ describe('register()', () => {
     expect(bcrypt.hash).toHaveBeenCalledWith(validData.password, 12);
   });
 
-  it('lanza 409 cuando el email ya está registrado', async () => {
-    query.mockResolvedValueOnce({ rows: [{ id: 'uuid-000' }] });
+  it('lanza 409 cuando el email ya está registrado Y VERIFICADO', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'uuid-000', email_verified: true }] });
 
     await expect(register(validData)).rejects.toMatchObject({ status: 409 });
-    // No debe consultar configuracion ni llamar a INSERT
+    // No debe consultar configuracion ni llamar a INSERT/UPDATE
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── REGRESIÓN (pre-hijacking / backdoor de verificación) ──────────────────
+  // Mismo razonamiento que oauth.service.js#findOrCreateUser: una fila sin
+  // verificar nunca probó tener dueño real, así que bloquear el registro aquí
+  // le negaría la cuenta PARA SIEMPRE a quien sí es dueño del correo, y dejar
+  // la contraseña anterior intacta le daría acceso permanente a quien la puso
+  // en cuanto el correo se verifique por cualquier camino.
+  describe('register() → correo ya existente pero SIN verificar (reclamo, no bloqueo)', () => {
+    it('reescribe la fila (UPDATE, no INSERT) con los datos de ESTE intento en vez de devolver 409 — solo si el enlace anterior YA EXPIRÓ', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000) }] }); // duplicado sin verificar, creado hace >24h
+      query.mockResolvedValueOnce({ rows: [] }); // requireApproval ausente
+      query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-squat', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'publico', rolSolicitado: 'investigador' }],
+      });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed-nuevo');
+
+      const result = await register(validData);
+
+      expect(query.mock.calls[2][0]).toMatch(/UPDATE usuarios/);
+      expect(query.mock.calls[2][0]).toMatch(/email_verified = false/); // guarda contra carrera
+      expect(query.mock.calls[2][0]).toMatch(/oauth_provider = NULL, oauth_id = NULL/); // limpia un vínculo OAuth previo sin verificar
+      // REGRESIÓN (hallazgo real de la revisión automática sobre el intento
+      // anterior de este mismo fix): sin resetear creado_en al reclamar, la
+      // fila reclamada seguiría pareciendo "creada hace >24h" para siempre,
+      // así que cualquiera podría volver a reclamarla de inmediato después.
+      expect(query.mock.calls[2][0]).toMatch(/creado_en = NOW\(\)/);
+      expect(query.mock.calls[2][1]).toContain('$2a$12$hashed-nuevo'); // la contraseña NUEVA, no la de quien reservó el correo antes
+      expect(result).toMatchObject({ id: 'uuid-squat', email: 'nuevo@iiap.gob.pe' });
+      expect(result).toHaveProperty('verificationToken');
+    });
+
+    it('lanza 409 si la fila se verificó justo entre el SELECT y el UPDATE (carrera)', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000) }] });
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] }); // UPDATE con WHERE email_verified=false no afectó ninguna fila
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await expect(register(validData)).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
+    });
+
+    // REGRESIÓN (account takeover / carrera de reclamo): hallazgo real de la
+    // revisión automática sobre el primer intento de este fix — sin el
+    // chequeo de expiración, cualquiera que solo conociera el correo de
+    // alguien registrándose en ese instante podía "robarle" la cuenta
+    // reescribiéndola antes de que su propio enlace, todavía vigente, fuera
+    // usado.
+    it('NO reclama la fila si el enlace de verificación anterior TODAVÍA está vigente — bloquea en vez de pisar un registro de buena fe', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-buena-fe', email_verified: false, creado_en: new Date(Date.now() - 60 * 60 * 1000) }] }); // registrado hace 1h — todavía dentro de la ventana de 24h
+
+      await expect(register(validData)).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
+      // No debe consultar configuracion ni llamar a UPDATE/INSERT.
+      expect(query).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('perfil no reconocido → sin solicitud de rol pendiente (rol_solicitado null)', async () => {
@@ -784,34 +838,52 @@ describe('solicitarRecuperacion()', () => {
 describe('login() — bloqueo por 5 intentos fallidos', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('bloquea la cuenta después de 5 intentos fallidos', async () => {
+  it('bloquea la cuenta después de 5 intentos fallidos — el UPDATE atómico hace el +1 y el chequeo de umbral en SQL, no en JS', async () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.compare.mockResolvedValue(false);
     const userWith4Attempts = { ...mockUser, intentos_fallidos: 4 };
     query.mockResolvedValueOnce({ rows: [userWith4Attempts] }); // SELECT user
-    query.mockResolvedValueOnce({ rows: [] }); // UPDATE intentos_fallidos (bloquear=true)
+    // Simula el resultado del UPDATE atómico: la BD ya decidió bloquear (4+1>=5).
+    query.mockResolvedValueOnce({ rows: [{ intentos_fallidos: 0, bloqueado_hasta: new Date(Date.now() + 15 * 60_000) }] });
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
       .rejects.toMatchObject({ status: 401 });
 
-    // Verificar que se bloquea con NULL reset en intentos y fecha de bloqueo
-    const updateParams = query.mock.calls[1][1];
-    expect(updateParams[0]).toBe(0); // bloquear ? 0 : nuevosIntentos
-    expect(updateParams[1]).toBeInstanceOf(Date); // fecha de bloqueo
+    // El incremento (+1) y el umbral (MAX_INTENTOS) van en la query, no en JS.
+    const [sql, updateParams] = query.mock.calls[1];
+    expect(sql).toMatch(/intentos_fallidos \+ 1 >= \$2/);
+    expect(updateParams).toEqual([mockUser.id, 5, 15]);
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'login_blocked' }));
   });
 
-  it('intentos_fallidos es null → usa 0 como base', async () => {
+  it('REGRESIÓN: un intento fallido concurrente que llega justo después de bloquear la cuenta NO la desbloquea (la SQL preserva un bloqueo ya vigente)', async () => {
+    const bcryptMock = (await import('bcryptjs')).default
+    bcryptMock.compare.mockResolvedValue(false)
+    query.mockResolvedValueOnce({ rows: [mockUser] })
+    // La BD ya tenía bloqueado_hasta en el futuro cuando este UPDATE corrió
+    // (otro request concurrente lo puso justo antes) -- la rama "ya
+    // bloqueada" de la query debe devolver ese mismo valor preservado, no
+    // NULL, sin importar qué haya en intentos_fallidos.
+    const bloqueadoHastaVigente = new Date(Date.now() + 14 * 60_000)
+    query.mockResolvedValueOnce({ rows: [{ intentos_fallidos: 1, bloqueado_hasta: bloqueadoHastaVigente }] })
+
+    await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
+      .rejects.toMatchObject({ status: 401 })
+
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'login_blocked' }))
+  })
+
+  it('el incremento atómico no depende de intentos_fallidos leído en JS — la columna es NOT NULL DEFAULT 0 (db/migrations/017_account_lockout.sql), el +1 vive en el propio UPDATE', async () => {
     const bcryptMock = (await import('bcryptjs')).default;
     bcryptMock.compare.mockResolvedValue(false);
-    const userWithNullAttempts = { ...mockUser, intentos_fallidos: null };
-    query.mockResolvedValueOnce({ rows: [userWithNullAttempts] });
-    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [mockUser] });
+    query.mockResolvedValueOnce({ rows: [{ intentos_fallidos: 1, bloqueado_hasta: null }] });
 
     await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
       .rejects.toMatchObject({ status: 401 });
 
-    const updateParams = query.mock.calls[1][1];
-    expect(updateParams[0]).toBe(1); // null ?? 0 + 1 = 1
+    const [, updateParams] = query.mock.calls[1];
+    expect(updateParams).toEqual([mockUser.id, 5, 15]); // el UPDATE calcula +1 y el umbral en SQL
   });
 
   it('rechaza el intento con 429 mientras la cuenta sigue bloqueada — no llega a comparar password', async () => {

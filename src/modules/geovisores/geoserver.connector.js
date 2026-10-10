@@ -8,7 +8,9 @@
  * terceros) sin credenciales -- Authorization solo se manda cuando la conexión
  * las tiene, este módulo no necesita saber si el tipo es propio o externo.
  */
+import { Agent } from 'undici';
 import { geometriaAWkt } from '../../utils/geometry.js';
+import { dnsLookupSeguro } from '../../utils/ssrfGuard.js';
 
 const MAX_REINTENTOS = 1;
 
@@ -17,6 +19,14 @@ function credencialesBasicAuth(conexion) {
   return Buffer.from(credenciales).toString('base64');
 }
 
+// Agent propio con una resolución DNS fijada a dnsLookupSeguro -- sin esto,
+// ssrfGuard valida una resolución DNS y fetch() hace la SUYA por separado
+// para conectar; dos consultas al mismo resolver (controlado por el dueño
+// del dominio) pueden responder cosas distintas (DNS rebinding). Con este
+// Agent, la resolución que valida "no es una IP privada" y la resolución que
+// el socket usa para conectar son literalmente la misma llamada.
+const agenteSsrfSeguro = new Agent({ connect: { lookup: dnsLookupSeguro } });
+
 async function solicitarConTimeout(conexion, url, aceptar = 'application/json', intento = 0) {
   const controlador = new AbortController();
   const temporizador = setTimeout(() => controlador.abort(), conexion.timeoutMs);
@@ -24,6 +34,13 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
   try {
     const respuesta = await fetch(url, {
       signal: controlador.signal,
+      dispatcher: agenteSsrfSeguro,
+      // 'manual': una respuesta 3xx del GeoServer configurado no se sigue
+      // nunca automáticamente. ssrfGuard solo valida la URL original de la
+      // conexión — seguir una redirección significa conectarse a una
+      // dirección que nunca pasó por ese chequeo (p.ej. 169.254.169.254).
+      // Ninguna operación WMS/WFS/WCS legítima necesita redirigir.
+      redirect: 'manual',
       headers: {
         ...(conexion.usuarioLectura && conexion.passwordDescifrada
           ? { Authorization: `Basic ${credencialesBasicAuth(conexion)}` }
@@ -32,12 +49,23 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
       },
     });
 
+    if (respuesta.type === 'opaqueredirect' || (respuesta.status >= 300 && respuesta.status < 400)) {
+      throw Object.assign(
+        new Error('GeoServer devolvió una redirección — no se sigue por seguridad'),
+        { status: 502, code: 'GEOSERVER_REDIRECT_RECHAZADO' },
+      );
+    }
+
     if (!respuesta.ok && respuesta.status >= 500 && intento < MAX_REINTENTOS) {
       return solicitarConTimeout(conexion, url, aceptar, intento + 1);
     }
 
     return respuesta;
   } catch (error) {
+    // Un rechazo explícito por redirección nunca se reintenta ni se
+    // reempaca como "no disponible" — reintentar no cambia el hecho de
+    // que la respuesta fue una redirección fuera del dominio ya validado.
+    if (error.code === 'GEOSERVER_REDIRECT_RECHAZADO') throw error;
     if (intento < MAX_REINTENTOS) {
       return solicitarConTimeout(conexion, url, aceptar, intento + 1);
     }
