@@ -197,6 +197,11 @@ describe('handleCallback()', () => {
     expect(query.mock.calls[2][0]).toMatch(/UPDATE usuarios/);
     expect(query.mock.calls[2][0]).toMatch(/password_hash = NULL/);
     expect(query.mock.calls[2][0]).toMatch(/email_verified = false/);
+    // REGRESIÓN (hallazgo real de la revisión automática sobre el intento
+    // anterior de este mismo fix): sin resetear creado_en al reclamar, la
+    // fila reclamada seguiría pareciendo "creada hace >24h" para siempre,
+    // así que cualquiera podría volver a reclamarla de inmediato después.
+    expect(query.mock.calls[2][0]).toMatch(/creado_en = NOW\(\)/);
     expect(result).toMatchObject({ requiresEmailVerification: true, isNewAccount: true, email: 'victima@gmail.com' });
     expect(issueTokenPair).not.toHaveBeenCalled();
   });

@@ -314,6 +314,11 @@ describe('register()', () => {
       expect(query.mock.calls[2][0]).toMatch(/UPDATE usuarios/);
       expect(query.mock.calls[2][0]).toMatch(/email_verified = false/); // guarda contra carrera
       expect(query.mock.calls[2][0]).toMatch(/oauth_provider = NULL, oauth_id = NULL/); // limpia un vínculo OAuth previo sin verificar
+      // REGRESIÓN (hallazgo real de la revisión automática sobre el intento
+      // anterior de este mismo fix): sin resetear creado_en al reclamar, la
+      // fila reclamada seguiría pareciendo "creada hace >24h" para siempre,
+      // así que cualquiera podría volver a reclamarla de inmediato después.
+      expect(query.mock.calls[2][0]).toMatch(/creado_en = NOW\(\)/);
       expect(query.mock.calls[2][1]).toContain('$2a$12$hashed-nuevo'); // la contraseña NUEVA, no la de quien reservó el correo antes
       expect(result).toMatchObject({ id: 'uuid-squat', email: 'nuevo@iiap.gob.pe' });
       expect(result).toHaveProperty('verificationToken');

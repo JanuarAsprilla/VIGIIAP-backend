@@ -74,6 +74,31 @@ describe('register()', () => {
     expect(result.user.email).toBe('squat@iiap.test');
   });
 
+  // REGRESIÓN (account takeover, hallazgo real de la revisión automática
+  // sobre el intento anterior de este mismo fix): el reclamo de arriba DEBE
+  // resetear creado_en a NOW() -- si no lo hiciera, la fila recién reclamada
+  // seguiría pareciendo "creada hace >24h" para siempre, y cualquiera (p.ej.
+  // el mismo atacante original) podría volver a reclamarla de inmediato,
+  // reescribiendo la contraseña que la dueña real acaba de establecer.
+  it('justo después de un reclamo legítimo, un segundo intento NO puede reclamarla de nuevo de inmediato', async () => {
+    const primero = await register({ nombre: 'Atacante', email: 'squat-doble@iiap.test', password: 'ContraseñaDelAtacante1!', perfil: 'publico' });
+    await query('UPDATE usuarios SET creado_en = NOW() - INTERVAL \'25 hours\' WHERE id=$1', [primero.id]);
+
+    const segundo = await register({ nombre: 'Dueña Real', email: 'squat-doble@iiap.test', password: 'MiPropiaContraseña1!', perfil: 'publico' });
+    expect(segundo.id).toBe(primero.id);
+
+    // El atacante vuelve a intentar de inmediato, sin que pase tiempo real.
+    await expect(
+      register({ nombre: 'Atacante Otra Vez', email: 'squat-doble@iiap.test', password: 'OtraContraseñaDelAtacante1!', perfil: 'publico' })
+    ).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
+
+    // La contraseña vigente sigue siendo la del reclamo legítimo.
+    await verifyEmail(segundo.verificationToken);
+    await query('UPDATE usuarios SET activo=true WHERE id=$1', [segundo.id]);
+    const result = await login('squat-doble@iiap.test', 'MiPropiaContraseña1!', '127.0.0.1', 'vitest');
+    expect(result.user.email).toBe('squat-doble@iiap.test');
+  });
+
   // REGRESIÓN (DoS permanente vía resend, hallazgo de la revisión automática
   // sobre el intento anterior de este fix): reenviarVerificacion() es
   // pública y sin autenticar — reenvía un token nuevo con una expiración

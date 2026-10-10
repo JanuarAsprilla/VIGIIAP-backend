@@ -452,14 +452,20 @@ export async function register(data, { ip, userAgent } = {}) {
     // carrera contra una verificación concurrente de esta misma fila Y
     // contra un segundo intento concurrente que pase el chequeo de arriba
     // justo en el límite -- ambas condiciones se vuelven a confirmar
-    // atómicamente en el propio UPDATE, no solo en el SELECT de más arriba
-    // (mismo patrón que oauth.service.js#findOrCreateUser).
+    // atómicamente en el propio UPDATE (Postgres evalúa el WHERE contra el
+    // valor de creado_en ANTES de este mismo UPDATE), no solo en el SELECT
+    // de más arriba (mismo patrón que oauth.service.js#findOrCreateUser).
+    // `creado_en = NOW()` en el SET es igual de importante: sin esto, la
+    // fila reclamada seguiría teniendo un creado_en viejo (>24h) para
+    // siempre, así que cualquiera podría volver a "reclamarla" de inmediato
+    // -- el reclamo de ESTE intento también necesita su propia ventana de
+    // 24h, no heredar la del squat anterior ya vencido.
     const result = await query(
       `UPDATE usuarios SET
          nombre = $1, password_hash = $2, institucion = $3, motivo_acceso = $4,
          rol = 'publico', rol_solicitado = $5, tipo_acceso = $6, activo = $7,
          email_verification_token = $8, email_verification_expires = $9,
-         oauth_provider = NULL, oauth_id = NULL, actualizado_en = NOW()
+         oauth_provider = NULL, oauth_id = NULL, creado_en = NOW(), actualizado_en = NOW()
        WHERE id = $10 AND email_verified = false AND creado_en <= NOW() - INTERVAL '24 hours'
        RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
       [

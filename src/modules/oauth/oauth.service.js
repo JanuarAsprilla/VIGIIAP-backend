@@ -217,12 +217,18 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
     // carrera contra una verificación concurrente de esta misma fila, Y
     // contra un segundo intento concurrente que pase el chequeo de arriba
     // justo en el límite -- ambas condiciones se vuelven a confirmar
-    // atómicamente en el propio UPDATE, no solo en el SELECT de más arriba.
+    // atómicamente en el propio UPDATE (Postgres evalúa el WHERE contra el
+    // valor de creado_en ANTES de este mismo UPDATE), no solo en el SELECT
+    // de más arriba. `creado_en = NOW()` en el SET es igual de importante:
+    // sin esto, la fila reclamada seguiría teniendo un creado_en viejo
+    // (>24h) para siempre, así que cualquiera podría volver a "reclamarla"
+    // de inmediato -- el reclamo de ESTE intento también necesita su propia
+    // ventana de 24h, no heredar la del squat anterior ya vencido.
     const { rows: reclamada } = await query(
       `UPDATE usuarios SET
          oauth_provider = $1, oauth_id = $2, password_hash = NULL,
          email_verification_token = $3, email_verification_expires = $4,
-         actualizado_en = NOW()
+         creado_en = NOW(), actualizado_en = NOW()
        WHERE id = $5 AND email_verified = false AND creado_en <= NOW() - INTERVAL '24 hours'
        RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, email_verified`,
       [providerId, profile.providerId, hashToken(verificationToken), verificationExpires, existing.id],
