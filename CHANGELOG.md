@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.8.0...v1.8.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* cierra hallazgos de auditoría de seguridad + residual nOAuth (OAuth email verification) ([d1aac10](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d1aac10e2d973abfcc7785e1f5080ab22962ec3a))
+
 ## [1.8.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.1...v1.8.0) (2026-10-09)
 
 
