@@ -189,7 +189,7 @@ describe('handleCallback()', () => {
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid', nombre: 'Lo Que Sea', email: 'victima@gmail.com', rol: 'publico', activo: false, email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: '$2a$12$hash-de-quien-reservo-el-correo' }] }) // SELECT por email — reservado por registro con contraseña, YA EXPIRADO sin verificar
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid', nombre: 'Lo Que Sea', email: 'victima@gmail.com', rol: 'publico', activo: false, email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: '$2a$12$hash-de-quien-reservo-el-correo' }] }) // SELECT por email — reservado por registro con contraseña hace >24h, sin verificar
       .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid', nombre: 'Víctima Real', email: 'victima@gmail.com', rol: 'publico', activo: false, institucion: null, avatar_url: null, perfil_completo: false, email_verified: false }] }); // UPDATE reclama la fila
 
     const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
@@ -207,7 +207,7 @@ describe('handleCallback()', () => {
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-2', nombre: 'Atacante', email: 'victima2@gmail.com', rol: 'publico', activo: true, email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: null, oauth_provider: 'microsoft' }] }) // SELECT por email — squat previo por otro proveedor, YA EXPIRADO sin verificar
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-2', nombre: 'Atacante', email: 'victima2@gmail.com', rol: 'publico', activo: true, email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: null, oauth_provider: 'microsoft' }] }) // SELECT por email — squat previo por otro proveedor hace >24h, sin verificar
       .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-2', nombre: 'Víctima Real', email: 'victima2@gmail.com', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: false, email_verified: false }] });
 
     const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
@@ -223,7 +223,7 @@ describe('handleCallback()', () => {
     });
     query
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-3', nombre: 'Lo Que Sea', email: 'victima3@gmail.com', rol: 'publico', activo: true, email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: null }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-3', nombre: 'Lo Que Sea', email: 'victima3@gmail.com', rol: 'publico', activo: true, email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: null }] })
       .mockResolvedValueOnce({ rows: [] }); // UPDATE con WHERE email_verified=false no afectó ninguna fila -- ya se verificó
 
     await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
@@ -237,7 +237,7 @@ describe('handleCallback()', () => {
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'buena-fe-uuid', nombre: 'Dueña Real', email: 'victima4@gmail.com', rol: 'publico', activo: true, email_verified: false, email_verification_expires: new Date(Date.now() + 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: '$2a$12$hash-de-la-dueña-real' }] }); // registro propio, su enlace sigue vigente
+      .mockResolvedValueOnce({ rows: [{ id: 'buena-fe-uuid', nombre: 'Dueña Real', email: 'victima4@gmail.com', rol: 'publico', activo: true, email_verified: false, creado_en: new Date(Date.now() - 60 * 60 * 1000), institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: '$2a$12$hash-de-la-dueña-real' }] }); // registrada hace 1h — todavía dentro de la ventana de 24h
 
     await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
       .rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });

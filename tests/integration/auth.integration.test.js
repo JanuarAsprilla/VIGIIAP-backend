@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { cleanDatabase } from './setup.js';
-import { register, login, verifyEmail } from '../../src/modules/auth/auth.service.js';
+import { register, login, verifyEmail, reenviarVerificacion } from '../../src/modules/auth/auth.service.js';
 import { query } from '../../src/config/database.js';
 
 beforeEach(cleanDatabase);
@@ -50,13 +50,13 @@ describe('register()', () => {
   });
 
   // REGRESIÓN (pre-hijacking / backdoor de verificación): si alguien "reserva"
-  // un correo con el registro pero nunca lo verifica Y ese enlace YA EXPIRÓ,
-  // no debe poder negarle esa cuenta para siempre a su dueño real — la fila
-  // se reclama (reescribe), no se bloquea con 409.
-  it('un registro previo SIN verificar, con el enlace YA EXPIRADO, se puede reclamar con una contraseña nueva', async () => {
+  // un correo con el registro pero nunca lo verifica Y ya pasaron 24h desde
+  // que se creó, no debe poder negarle esa cuenta para siempre a su dueño
+  // real — la fila se reclama (reescribe), no se bloquea con 409.
+  it('un registro previo SIN verificar, creado hace más de 24h, se puede reclamar con una contraseña nueva', async () => {
     const primero = await register({ nombre: 'Atacante', email: 'squat@iiap.test', password: 'ContraseñaDelAtacante1!', perfil: 'publico' });
-    // Simula el paso de las 24h sin que nadie lo haya confirmado.
-    await query('UPDATE usuarios SET email_verification_expires = NOW() - INTERVAL \'1 minute\' WHERE id=$1', [primero.id]);
+    // Simula el paso de las 24h desde la creación, sin que nadie lo haya confirmado.
+    await query('UPDATE usuarios SET creado_en = NOW() - INTERVAL \'25 hours\' WHERE id=$1', [primero.id]);
 
     const segundo = await register({ nombre: 'Dueña Real', email: 'squat@iiap.test', password: 'MiPropiaContraseña1!', perfil: 'publico' });
     expect(segundo.id).toBe(primero.id); // misma fila, reescrita — no un duplicado
@@ -72,6 +72,33 @@ describe('register()', () => {
       .rejects.toMatchObject({ status: 401 }); // la contraseña del atacante ya no abre la cuenta
     const result = await login('squat@iiap.test', 'MiPropiaContraseña1!', '127.0.0.1', 'vitest');
     expect(result.user.email).toBe('squat@iiap.test');
+  });
+
+  // REGRESIÓN (DoS permanente vía resend, hallazgo de la revisión automática
+  // sobre el intento anterior de este fix): reenviarVerificacion() es
+  // pública y sin autenticar — reenvía un token nuevo con una expiración
+  // nueva cada vez. Si el reclamo de arriba dependiera de esa expiración (en
+  // vez de creado_en, que nadie puede tocar), un atacante podría llamar a
+  // reenviarVerificacion sobre su propio squat cada tanto y mantenerlo
+  // "vigente" para siempre, recreando el DoS permanente. Aquí se simula
+  // exactamente eso -- reenviar varias veces no debe impedir el reclamo una
+  // vez que de verdad pasaron 24h desde la creación real.
+  it('reenviar la verificación repetidamente NO extiende la ventana de reclamo — solo importa cuándo se creó la fila', async () => {
+    const primero = await register({ nombre: 'Atacante', email: 'squat-resend@iiap.test', password: 'ContraseñaDelAtacante1!', perfil: 'publico' });
+
+    // El atacante reenvía su propia verificación varias veces -- cada
+    // llamada renueva email_verification_expires, pero NO creado_en.
+    await reenviarVerificacion('squat-resend@iiap.test');
+    await reenviarVerificacion('squat-resend@iiap.test');
+
+    const { rows: antes } = await query('SELECT email_verification_expires FROM usuarios WHERE id=$1', [primero.id]);
+    expect(new Date(antes[0].email_verification_expires) > new Date(Date.now() + 23 * 60 * 60 * 1000)).toBe(true); // "vigente" según ese campo
+
+    // Pero ya pasaron 24h reales desde que la fila se CREÓ.
+    await query('UPDATE usuarios SET creado_en = NOW() - INTERVAL \'25 hours\' WHERE id=$1', [primero.id]);
+
+    const segundo = await register({ nombre: 'Dueña Real', email: 'squat-resend@iiap.test', password: 'MiPropiaContraseña1!', perfil: 'publico' });
+    expect(segundo.id).toBe(primero.id); // se reclama igual — los resends del atacante no lo protegieron
   });
 });
 

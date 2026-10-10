@@ -302,7 +302,7 @@ describe('register()', () => {
   // en cuanto el correo se verifique por cualquier camino.
   describe('register() → correo ya existente pero SIN verificar (reclamo, no bloqueo)', () => {
     it('reescribe la fila (UPDATE, no INSERT) con los datos de ESTE intento en vez de devolver 409 — solo si el enlace anterior YA EXPIRÓ', async () => {
-      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000) }] }); // duplicado sin verificar, expirado
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000) }] }); // duplicado sin verificar, creado hace >24h
       query.mockResolvedValueOnce({ rows: [] }); // requireApproval ausente
       query.mockResolvedValueOnce({
         rows: [{ id: 'uuid-squat', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'publico', rolSolicitado: 'investigador' }],
@@ -320,7 +320,7 @@ describe('register()', () => {
     });
 
     it('lanza 409 si la fila se verificó justo entre el SELECT y el UPDATE (carrera)', async () => {
-      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000) }] });
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, creado_en: new Date(Date.now() - 25 * 60 * 60 * 1000) }] });
       query.mockResolvedValueOnce({ rows: [] });
       query.mockResolvedValueOnce({ rows: [] }); // UPDATE con WHERE email_verified=false no afectó ninguna fila
       bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
@@ -335,7 +335,7 @@ describe('register()', () => {
     // reescribiéndola antes de que su propio enlace, todavía vigente, fuera
     // usado.
     it('NO reclama la fila si el enlace de verificación anterior TODAVÍA está vigente — bloquea en vez de pisar un registro de buena fe', async () => {
-      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-buena-fe', email_verified: false, email_verification_expires: new Date(Date.now() + 60 * 60 * 1000) }] }); // registro propio, su enlace sigue vigente
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-buena-fe', email_verified: false, creado_en: new Date(Date.now() - 60 * 60 * 1000) }] }); // registrado hace 1h — todavía dentro de la ventana de 24h
 
       await expect(register(validData)).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
       // No debe consultar configuracion ni llamar a UPDATE/INSERT.

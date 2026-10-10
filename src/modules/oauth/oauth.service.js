@@ -126,7 +126,7 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
   if (byOAuth.rows[0]) return { user: byOAuth.rows[0], isNewAccount: false };
 
   const byEmail = await query(
-    `SELECT id, nombre, email, rol, activo, email_verified, institucion, avatar_url, perfil_completo, totp_enabled, password_hash, oauth_provider
+    `SELECT id, nombre, email, rol, activo, email_verified, institucion, avatar_url, perfil_completo, totp_enabled, password_hash, oauth_provider, creado_en
      FROM usuarios WHERE email = $1`,
     [profile.email.toLowerCase()],
   );
@@ -186,36 +186,44 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
     // propio enlace — ya ni siquiera hace falta el truco nOAuth de un claim
     // sin verificar, basta con conocer el email de alguien que se está
     // registrando en ese momento. Por eso el reclamo solo es seguro una vez
-    // que el enlace anterior YA EXPIRÓ (24h) — nadie con una verificación
-    // propia todavía vigente puede ser desplazado, y un reclamo abandonado
-    // de verdad (nunca confirmado en 24h) se trata como tal.
-    if (existing.email_verification_expires && new Date(existing.email_verification_expires) > new Date()) {
+    // transcurridas 24h desde que la fila se CREÓ (creado_en) — nadie con
+    // una verificación propia todavía dentro de esa ventana puede ser
+    // desplazado.
+    //
+    // DELIBERADAMENTE se usa creado_en, no email_verification_expires: ese
+    // segundo campo lo puede renovar cualquiera, sin autenticarse, llamando
+    // a reenviarVerificacion(email) -- esa es la revisión automática que
+    // detectó el segundo intento de este fix: un atacante podía mantener su
+    // propio reclamo "vigente" para siempre con solo reenviar la
+    // verificación cada tanto, recreando el DoS permanente que este fix
+    // existe para cerrar. creado_en no lo toca ni el reclamo ni el resend —
+    // es la única fecha que de verdad no se puede extender.
+    const creadoHaceMenosDe24h = new Date(existing.creado_en) > new Date(Date.now() - 24 * 60 * 60 * 1000);
+    if (creadoHaceMenosDe24h) {
       throw Object.assign(
         new Error('Ya hay una verificación en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
         { status: 409, code: 'EMAIL_VERIFICATION_PENDING' },
       );
     }
 
-    // Reclamo previo (de haber alguno) ya expiró sin confirmarse — se trata
-    // como abandonado: se limpia cualquier password_hash o vínculo OAuth
-    // anterior sin verificar y se emite un token de verificación nuevo; el
-    // anterior deja de servir porque ya no coincide con el hash que queda
-    // guardado.
+    // Han pasado más de 24h desde que la fila se creó sin confirmarse — se
+    // trata como abandonada: se limpia cualquier password_hash o vínculo
+    // OAuth anterior sin verificar y se emite un token de verificación
+    // nuevo; el anterior deja de servir porque ya no coincide con el hash
+    // que queda guardado.
     const verificationToken = generateSecureToken();
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    // AND email_verified = false AND (sin expirar o YA expirado): cierra la
+    // AND email_verified = false AND creado_en <= hace 24h: cierra la
     // carrera contra una verificación concurrente de esta misma fila, Y
     // contra un segundo intento concurrente que pase el chequeo de arriba
-    // justo cuando el primero recién emitió un token vigente -- ambas
-    // condiciones se vuelven a confirmar atómicamente en el propio UPDATE,
-    // no solo en el SELECT de más arriba.
+    // justo en el límite -- ambas condiciones se vuelven a confirmar
+    // atómicamente en el propio UPDATE, no solo en el SELECT de más arriba.
     const { rows: reclamada } = await query(
       `UPDATE usuarios SET
          oauth_provider = $1, oauth_id = $2, password_hash = NULL,
          email_verification_token = $3, email_verification_expires = $4,
          actualizado_en = NOW()
-       WHERE id = $5 AND email_verified = false
-         AND (email_verification_expires IS NULL OR email_verification_expires <= NOW())
+       WHERE id = $5 AND email_verified = false AND creado_en <= NOW() - INTERVAL '24 hours'
        RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, email_verified`,
       [providerId, profile.providerId, hashToken(verificationToken), verificationExpires, existing.id],
     );

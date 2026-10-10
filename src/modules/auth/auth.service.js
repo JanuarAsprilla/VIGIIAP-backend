@@ -384,22 +384,28 @@ function perfilToRol(perfil) {
 export async function register(data, { ip, userAgent } = {}) {
   const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
-  const existing = await query('SELECT id, email_verified, email_verification_expires FROM usuarios WHERE email = $1', [email.toLowerCase()]);
+  const existing = await query('SELECT id, email_verified, creado_en FROM usuarios WHERE email = $1', [email.toLowerCase()]);
   if (existing.rows[0]?.email_verified) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
   }
   // REGRESIÓN (account takeover / carrera de reclamo, hallazgo de la
   // revisión automática sobre el primer intento de este mismo fix): no
   // basta con "sin verificar" para permitir el reclamo de abajo -- si la
-  // fila es de alguien que acaba de registrarse de buena fe y su propio
-  // enlace sigue vigente, dejar que OTRA persona que solo conoce ese correo
-  // la reescriba en este mismo instante le "roba" la cuenta real con solo
-  // ganarle la carrera a su propio enlace de verificación. El reclamo solo
-  // es seguro una vez que ese enlace anterior YA EXPIRÓ (24h).
+  // fila es de alguien que acaba de registrarse de buena fe dentro de las
+  // últimas 24h, dejar que OTRA persona que solo conoce ese correo la
+  // reescriba en este mismo instante le "roba" la cuenta real con solo
+  // ganarle la carrera.
+  //
+  // DELIBERADAMENTE se usa creado_en, no email_verification_expires: ese
+  // segundo campo lo puede renovar cualquiera, sin autenticarse, llamando a
+  // reenviarVerificacion(email) -- segundo hallazgo de la revisión
+  // automática: un atacante podía mantener su propio reclamo "vigente" para
+  // siempre reenviando la verificación cada tanto, recreando el DoS
+  // permanente que este fix existe para cerrar. creado_en no lo toca ni el
+  // reclamo ni el resend -- es la única fecha que de verdad no se extiende.
   if (
     existing.rows[0] &&
-    existing.rows[0].email_verification_expires &&
-    new Date(existing.rows[0].email_verification_expires) > new Date()
+    new Date(existing.rows[0].creado_en) > new Date(Date.now() - 24 * 60 * 60 * 1000)
   ) {
     throw Object.assign(
       new Error('Ya hay un registro en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
@@ -442,21 +448,19 @@ export async function register(data, { ip, userAgent } = {}) {
     // email_verified, nunca valida QUIÉN puso esa contraseña. Por eso esta
     // fila se reescribe con los datos de ESTE intento: la contraseña, el
     // token y cualquier vínculo OAuth previos dejan de servir.
-    // `AND email_verified = false AND (sin expirar o YA expirado)` cierra
-    // la carrera contra una verificación concurrente de esta misma fila Y
+    // `AND email_verified = false AND creado_en <= hace 24h` cierra la
+    // carrera contra una verificación concurrente de esta misma fila Y
     // contra un segundo intento concurrente que pase el chequeo de arriba
-    // justo cuando el primero recién emitió un token vigente -- ambas
-    // condiciones se vuelven a confirmar atómicamente en el propio UPDATE,
-    // no solo en el SELECT de más arriba (mismo patrón que
-    // oauth.service.js#findOrCreateUser).
+    // justo en el límite -- ambas condiciones se vuelven a confirmar
+    // atómicamente en el propio UPDATE, no solo en el SELECT de más arriba
+    // (mismo patrón que oauth.service.js#findOrCreateUser).
     const result = await query(
       `UPDATE usuarios SET
          nombre = $1, password_hash = $2, institucion = $3, motivo_acceso = $4,
          rol = 'publico', rol_solicitado = $5, tipo_acceso = $6, activo = $7,
          email_verification_token = $8, email_verification_expires = $9,
          oauth_provider = NULL, oauth_id = NULL, actualizado_en = NOW()
-       WHERE id = $10 AND email_verified = false
-         AND (email_verification_expires IS NULL OR email_verification_expires <= NOW())
+       WHERE id = $10 AND email_verified = false AND creado_en <= NOW() - INTERVAL '24 hours'
        RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
       [
         nombre, password_hash, institucion ?? null, motivo ?? null,
