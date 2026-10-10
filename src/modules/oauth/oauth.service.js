@@ -132,34 +132,95 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
   );
   if (byEmail.rows[0]) {
     const existing = byEmail.rows[0];
-    // Mismo problema de fondo (clase "nOAuth") sin contraseña de por medio:
-    // si esta cuenta ya quedó vinculada a OTRO proveedor, un segundo
-    // proveedor que afirme el mismo correo (p.ej. editando el atributo
-    // mail de un tenant Entra ID propio, sin que eso pruebe nada) no debe
-    // poder re-vincularla en silencio -- sería tan grave como el caso con
-    // contraseña, solo que la cuenta nació por OAuth en vez de con clave.
-    if (existing.oauth_provider && existing.oauth_provider !== providerId) {
-      throw Object.assign(
-        new Error('Ya existe una cuenta con este correo vinculada a otro proveedor. Inicia sesión con ese método.'),
-        { status: 409, code: 'EMAIL_LINKED_TO_OTHER_PROVIDER' },
+
+    if (existing.email_verified) {
+      // Mismo problema de fondo (clase "nOAuth") sin contraseña de por
+      // medio: si esta cuenta YA VERIFICADA quedó vinculada a OTRO
+      // proveedor, un segundo proveedor que afirme el mismo correo (p.ej.
+      // editando el atributo mail de un tenant Entra ID propio, sin que eso
+      // pruebe nada) no debe poder re-vincularla en silencio — sería tan
+      // grave como el caso con contraseña, solo que la cuenta nació por
+      // OAuth en vez de con clave. Estas dos protecciones solo aplican
+      // aquí, sobre una cuenta cuyo correo ya probó tener dueño real — ver
+      // la rama de abajo para el caso sin verificar.
+      if (existing.oauth_provider && existing.oauth_provider !== providerId) {
+        throw Object.assign(
+          new Error('Ya existe una cuenta con este correo vinculada a otro proveedor. Inicia sesión con ese método.'),
+          { status: 409, code: 'EMAIL_LINKED_TO_OTHER_PROVIDER' },
+        );
+      }
+      if (existing.password_hash) {
+        // Nunca vincular en silencio una identidad externa a una cuenta que
+        // ya tiene contraseña propia solo porque el correo coincide — el
+        // proveedor OAuth es quien afirma esa dirección, no quien prueba ser
+        // dueño de la cuenta local. Vincular requiere que el usuario entre
+        // primero con su contraseña (fuera del alcance de este endpoint).
+        throw Object.assign(
+          new Error('Ya existe una cuenta con este correo. Inicia sesión con tu contraseña.'),
+          { status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' },
+        );
+      }
+      await query(
+        `UPDATE usuarios SET oauth_provider = $1, oauth_id = $2, actualizado_en = NOW() WHERE id = $3`,
+        [providerId, profile.providerId, existing.id],
       );
+      return { user: existing, isNewAccount: false };
     }
-    if (existing.password_hash) {
-      // Nunca vincular en silencio una identidad externa a una cuenta que
-      // ya tiene contraseña propia solo porque el correo coincide — el
-      // proveedor OAuth es quien afirma esa dirección, no quien prueba ser
-      // dueño de la cuenta local. Vincular requiere que el usuario entre
-      // primero con su contraseña (fuera del alcance de este endpoint).
-      throw Object.assign(
-        new Error('Ya existe una cuenta con este correo. Inicia sesión con tu contraseña.'),
-        { status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' },
-      );
-    }
-    await query(
-      `UPDATE usuarios SET oauth_provider = $1, oauth_id = $2, actualizado_en = NOW() WHERE id = $3`,
-      [providerId, profile.providerId, existing.id],
+
+    // REGRESIÓN (pre-hijacking / backdoor de verificación): esta fila existe
+    // pero su correo NUNCA quedó verificado — ni por una contraseña que
+    // nadie llegó a confirmar, ni por un proveedor OAuth distinto cuyo
+    // intento anterior tampoco se verificó. Ese reclamo previo no prueba
+    // nada (ver findOrCreateUser más abajo sobre por qué el claim de un
+    // proveedor no basta), así que bloquearlo aquí como arriba tendría DOS
+    // problemas: (1) permite que cualquiera "reserve" el correo de otra
+    // persona y se lo niegue PARA SIEMPRE a su dueño real (ni por OAuth ni
+    // por registro con contraseña, que también choca con este mismo correo)
+    // — clase DoS de pre-hijacking; (2) si en vez de bloquear se vinculara
+    // oauth_provider/oauth_id SIN limpiar el reclamo anterior, el día que el
+    // dueño real verifique este correo por CUALQUIER camino (p.ej.
+    // reenviarVerificacion), el proveedor/identidad que quedó vinculado
+    // primero —el del atacante— seguiría siendo una puerta de entrada
+    // válida y permanente a la cuenta que el dueño real acaba de reclamar:
+    // byOAuth() del próximo login del atacante la encontraría igual, y para
+    // entonces ya pasaría el chequeo de email_verified. Por eso esta fila se
+    // "reescribe" para el intento ACTUAL — que sí pasó la verificación
+    // propia de su proveedor (profile.emailVerified, más arriba): se limpia
+    // cualquier password_hash o vínculo OAuth anterior sin verificar y se
+    // emite un token de verificación nuevo; el anterior (de haber alguno)
+    // deja de servir porque ya no coincide con el hash que queda guardado.
+    const verificationToken = generateSecureToken();
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // AND email_verified = false: cierra la carrera contra una verificación
+    // concurrente de ESTA MISMA fila (otra petición) entre el SELECT de
+    // arriba y este UPDATE -- sin esto, pisaríamos una cuenta que alguien
+    // acaba de confirmar justo en ese instante.
+    const { rows: reclamada } = await query(
+      `UPDATE usuarios SET
+         oauth_provider = $1, oauth_id = $2, password_hash = NULL,
+         email_verification_token = $3, email_verification_expires = $4,
+         actualizado_en = NOW()
+       WHERE id = $5 AND email_verified = false
+       RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, email_verified`,
+      [providerId, profile.providerId, hashToken(verificationToken), verificationExpires, existing.id],
     );
-    return { user: existing, isNewAccount: false };
+    if (!reclamada[0]) {
+      throw Object.assign(
+        new Error('Alguien acaba de verificar este correo. Intenta iniciar sesión de nuevo.'),
+        { status: 409, code: 'EMAIL_VERIFIED_CONCURRENTLY' },
+      );
+    }
+    registrarAuditoria({
+      accion: 'oauth_reclamo_correo_sin_verificar',
+      modulo: 'auth',
+      entidadId: existing.id,
+      descripcion: `Reclamo de correo sin verificar vía ${providerId} — ${existing.email} (reemplaza un reclamo previo que tampoco se verificó)`,
+      usuarioId: existing.id,
+      usuarioEmail: existing.email,
+      ip,
+      userAgent,
+    });
+    return { user: reclamada[0], isNewAccount: true, verificationToken };
   }
 
   // Cuenta nueva — rol 'publico' (mismo nivel que ya está abierto al público

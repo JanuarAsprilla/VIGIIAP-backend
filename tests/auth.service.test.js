@@ -286,12 +286,47 @@ describe('register()', () => {
     expect(bcrypt.hash).toHaveBeenCalledWith(validData.password, 12);
   });
 
-  it('lanza 409 cuando el email ya está registrado', async () => {
-    query.mockResolvedValueOnce({ rows: [{ id: 'uuid-000' }] });
+  it('lanza 409 cuando el email ya está registrado Y VERIFICADO', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'uuid-000', email_verified: true }] });
 
     await expect(register(validData)).rejects.toMatchObject({ status: 409 });
-    // No debe consultar configuracion ni llamar a INSERT
+    // No debe consultar configuracion ni llamar a INSERT/UPDATE
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── REGRESIÓN (pre-hijacking / backdoor de verificación) ──────────────────
+  // Mismo razonamiento que oauth.service.js#findOrCreateUser: una fila sin
+  // verificar nunca probó tener dueño real, así que bloquear el registro aquí
+  // le negaría la cuenta PARA SIEMPRE a quien sí es dueño del correo, y dejar
+  // la contraseña anterior intacta le daría acceso permanente a quien la puso
+  // en cuanto el correo se verifique por cualquier camino.
+  describe('register() → correo ya existente pero SIN verificar (reclamo, no bloqueo)', () => {
+    it('reescribe la fila (UPDATE, no INSERT) con los datos de ESTE intento en vez de devolver 409', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false }] }); // duplicado sin verificar
+      query.mockResolvedValueOnce({ rows: [] }); // requireApproval ausente
+      query.mockResolvedValueOnce({
+        rows: [{ id: 'uuid-squat', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'publico', rolSolicitado: 'investigador' }],
+      });
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed-nuevo');
+
+      const result = await register(validData);
+
+      expect(query.mock.calls[2][0]).toMatch(/UPDATE usuarios/);
+      expect(query.mock.calls[2][0]).toMatch(/email_verified = false/); // guarda contra carrera
+      expect(query.mock.calls[2][0]).toMatch(/oauth_provider = NULL, oauth_id = NULL/); // limpia un vínculo OAuth previo sin verificar
+      expect(query.mock.calls[2][1]).toContain('$2a$12$hashed-nuevo'); // la contraseña NUEVA, no la de quien reservó el correo antes
+      expect(result).toMatchObject({ id: 'uuid-squat', email: 'nuevo@iiap.gob.pe' });
+      expect(result).toHaveProperty('verificationToken');
+    });
+
+    it('lanza 409 si la fila se verificó justo entre el SELECT y el UPDATE (carrera)', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false }] });
+      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] }); // UPDATE con WHERE email_verified=false no afectó ninguna fila
+      bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+      await expect(register(validData)).rejects.toMatchObject({ status: 409 });
+    });
   });
 
   it('perfil no reconocido → sin solicitud de rol pendiente (rol_solicitado null)', async () => {

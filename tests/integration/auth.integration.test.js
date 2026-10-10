@@ -28,11 +28,35 @@ describe('register()', () => {
     expect(rows[0].email_verified).toBe(false);
   });
 
-  it('lanza 409 si el email ya existe', async () => {
-    await register({ nombre: 'A', email: 'dup@iiap.test', password: 'Segura123!', perfil: 'publico' });
+  it('lanza 409 si el email ya existe y YA ESTÁ VERIFICADO', async () => {
+    const primero = await register({ nombre: 'A', email: 'dup@iiap.test', password: 'Segura123!', perfil: 'publico' });
+    await verifyEmail(primero.verificationToken);
     await expect(
       register({ nombre: 'B', email: 'dup@iiap.test', password: 'Segura123!', perfil: 'publico' })
     ).rejects.toMatchObject({ status: 409 });
+  });
+
+  // REGRESIÓN (pre-hijacking / backdoor de verificación): si alguien "reserva"
+  // un correo con el registro pero nunca lo verifica, no debe poder negarle
+  // esa cuenta para siempre a su dueño real — la fila se reclama (reescribe),
+  // no se bloquea con 409.
+  it('un registro previo SIN verificar se puede reclamar con una contraseña nueva en vez de devolver 409', async () => {
+    const primero = await register({ nombre: 'Atacante', email: 'squat@iiap.test', password: 'ContraseñaDelAtacante1!', perfil: 'publico' });
+
+    const segundo = await register({ nombre: 'Dueña Real', email: 'squat@iiap.test', password: 'MiPropiaContraseña1!', perfil: 'publico' });
+    expect(segundo.id).toBe(primero.id); // misma fila, reescrita — no un duplicado
+    expect(segundo.verificationToken).not.toBe(primero.verificationToken);
+
+    // El token del primer intento (el del atacante) ya no sirve.
+    await expect(verifyEmail(primero.verificationToken)).rejects.toMatchObject({ status: 400 });
+
+    // El token del segundo intento sí verifica, y la contraseña vigente es la del segundo intento.
+    await verifyEmail(segundo.verificationToken);
+    await query('UPDATE usuarios SET activo=true WHERE id=$1', [segundo.id]);
+    await expect(login('squat@iiap.test', 'ContraseñaDelAtacante1!', '127.0.0.1', 'vitest'))
+      .rejects.toMatchObject({ status: 401 }); // la contraseña del atacante ya no abre la cuenta
+    const result = await login('squat@iiap.test', 'MiPropiaContraseña1!', '127.0.0.1', 'vitest');
+    expect(result.user.email).toBe('squat@iiap.test');
   });
 });
 

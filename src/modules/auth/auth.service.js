@@ -384,8 +384,8 @@ function perfilToRol(perfil) {
 export async function register(data, { ip, userAgent } = {}) {
   const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
-  const exists = await query('SELECT id FROM usuarios WHERE email = $1', [email.toLowerCase()]);
-  if (exists.rows.length) {
+  const existing = await query('SELECT id, email_verified FROM usuarios WHERE email = $1', [email.toLowerCase()]);
+  if (existing.rows[0]?.email_verified) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
   }
 
@@ -409,25 +409,68 @@ export async function register(data, { ip, userAgent } = {}) {
   );
   const activoInicial = cfg[0]?.valor === 'false';
 
-  const { rows } = await query(
-    `INSERT INTO usuarios
-       (nombre, email, password_hash, institucion, motivo_acceso, rol, rol_solicitado, tipo_acceso, activo,
-        email_verified, email_verification_token, email_verification_expires)
-     VALUES ($1, $2, $3, $4, $5, 'publico', $6, $7, $8, false, $9, $10)
-     RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
-    [
-      nombre,
-      email.toLowerCase(),
-      password_hash,
-      institucion ?? null,
-      motivo ?? null,
-      rolSolicitado,
-      tipoAcceso ?? 'externo',
-      activoInicial,
-      hashToken(verificationToken), // almacenar hash — no el token original
-      verificationExpires,
-    ]
-  );
+  let rows;
+  if (existing.rows[0]) {
+    // REGRESIÓN (pre-hijacking / backdoor de verificación, misma clase que
+    // oauth.service.js#findOrCreateUser): esta fila existe pero su correo
+    // NUNCA quedó verificado -- ni por la contraseña que alguien puso antes
+    // (nadie la confirmó), ni por un proveedor OAuth cuyo intento tampoco se
+    // verificó. Responder 409 aquí le negaría el registro PARA SIEMPRE a la
+    // dueña real del correo si alguien más lo "reservó" antes sin
+    // verificarlo. Y si en vez de bloquear se dejara la contraseña anterior
+    // intacta, quien la puso conservaría acceso permanente el día que la
+    // dueña real termine verificando el correo por cualquier camino (p.ej.
+    // reenviarVerificacion) -- login() solo exige password_hash correcto +
+    // email_verified, nunca valida QUIÉN puso esa contraseña. Por eso esta
+    // fila se reescribe con los datos de ESTE intento: la contraseña, el
+    // token y cualquier vínculo OAuth previos dejan de servir.
+    // `AND email_verified = false` cierra la carrera contra una
+    // verificación concurrente de esta misma fila entre el SELECT de arriba
+    // y este UPDATE.
+    const result = await query(
+      `UPDATE usuarios SET
+         nombre = $1, password_hash = $2, institucion = $3, motivo_acceso = $4,
+         rol = 'publico', rol_solicitado = $5, tipo_acceso = $6, activo = $7,
+         email_verification_token = $8, email_verification_expires = $9,
+         oauth_provider = NULL, oauth_id = NULL, actualizado_en = NOW()
+       WHERE id = $10 AND email_verified = false
+       RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
+      [
+        nombre, password_hash, institucion ?? null, motivo ?? null,
+        rolSolicitado, tipoAcceso ?? 'externo', activoInicial,
+        hashToken(verificationToken), verificationExpires,
+        existing.rows[0].id,
+      ]
+    );
+    if (!result.rows[0]) {
+      throw Object.assign(
+        new Error('El email ya está registrado'),
+        { status: 409 }
+      );
+    }
+    rows = result.rows;
+  } else {
+    const result = await query(
+      `INSERT INTO usuarios
+         (nombre, email, password_hash, institucion, motivo_acceso, rol, rol_solicitado, tipo_acceso, activo,
+          email_verified, email_verification_token, email_verification_expires)
+       VALUES ($1, $2, $3, $4, $5, 'publico', $6, $7, $8, false, $9, $10)
+       RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
+      [
+        nombre,
+        email.toLowerCase(),
+        password_hash,
+        institucion ?? null,
+        motivo ?? null,
+        rolSolicitado,
+        tipoAcceso ?? 'externo',
+        activoInicial,
+        hashToken(verificationToken), // almacenar hash — no el token original
+        verificationExpires,
+      ]
+    );
+    rows = result.rows;
+  }
 
   registrarAuditoria({
     accion: 'registro',

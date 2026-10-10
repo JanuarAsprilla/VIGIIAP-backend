@@ -173,13 +173,61 @@ describe('handleCallback()', () => {
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'victima-uuid', nombre: 'Víctima Admin', email: 'victima-admin@iiap.gov.co', rol: 'admin_sig', activo: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: '$2a$12$hash-real-de-la-victima' }] }); // SELECT por email — tiene contraseña
+      .mockResolvedValueOnce({ rows: [{ id: 'victima-uuid', nombre: 'Víctima Admin', email: 'victima-admin@iiap.gov.co', rol: 'admin_sig', activo: true, email_verified: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: '$2a$12$hash-real-de-la-victima' }] }); // SELECT por email — tiene contraseña, correo YA verificado
 
     await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
       .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' });
 
     // Nunca debe llegar a vincular (UPDATE) ni a emitir tokens para la víctima.
     expect(query).toHaveBeenCalledTimes(2);
+    expect(issueTokenPair).not.toHaveBeenCalled();
+  });
+
+  it('REGRESIÓN (pre-hijacking / backdoor de verificación): un correo "reservado" antes con contraseña pero SIN verificar se puede reclamar por OAuth — no bloquea con 409', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'victima-google-id', email: 'victima@gmail.com', emailVerified: true, nombre: 'Víctima Real', avatarUrl: null,
+    });
+    query
+      .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid', nombre: 'Lo Que Sea', email: 'victima@gmail.com', rol: 'publico', activo: false, email_verified: false, institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: '$2a$12$hash-de-quien-reservo-el-correo' }] }) // SELECT por email — reservado por registro con contraseña, nunca verificado
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid', nombre: 'Víctima Real', email: 'victima@gmail.com', rol: 'publico', activo: false, institucion: null, avatar_url: null, perfil_completo: false, email_verified: false }] }); // UPDATE reclama la fila
+
+    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
+
+    expect(query.mock.calls[2][0]).toMatch(/UPDATE usuarios/);
+    expect(query.mock.calls[2][0]).toMatch(/password_hash = NULL/);
+    expect(query.mock.calls[2][0]).toMatch(/email_verified = false/);
+    expect(result).toMatchObject({ requiresEmailVerification: true, isNewAccount: true, email: 'victima@gmail.com' });
+    expect(issueTokenPair).not.toHaveBeenCalled();
+  });
+
+  it('REGRESIÓN (pre-hijacking / backdoor de verificación): un correo vinculado antes a OTRO proveedor pero SIN verificar también se puede reclamar', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'victima-google-id', email: 'victima2@gmail.com', emailVerified: true, nombre: 'Víctima Real', avatarUrl: null,
+    });
+    query
+      .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-2', nombre: 'Atacante', email: 'victima2@gmail.com', rol: 'publico', activo: true, email_verified: false, institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: null, oauth_provider: 'microsoft' }] }) // SELECT por email — squat previo por otro proveedor, nunca verificado
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-2', nombre: 'Víctima Real', email: 'victima2@gmail.com', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: false, email_verified: false }] });
+
+    const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
+
+    expect(query.mock.calls[2][1]).toEqual(['google', 'victima-google-id', expect.any(String), expect.any(Date), 'squat-uuid-2']);
+    expect(result.requiresEmailVerification).toBe(true);
+    expect(issueTokenPair).not.toHaveBeenCalled();
+  });
+
+  it('REGRESIÓN (carrera): si el correo se verificó justo entre el SELECT y el reclamo, lanza 409 en vez de pisar la cuenta ya confirmada', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'victima-google-id', email: 'victima3@gmail.com', emailVerified: true, nombre: 'Víctima Real', avatarUrl: null,
+    });
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'squat-uuid-3', nombre: 'Lo Que Sea', email: 'victima3@gmail.com', rol: 'publico', activo: true, email_verified: false, institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false, password_hash: null }] })
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE con WHERE email_verified=false no afectó ninguna fila -- ya se verificó
+
+    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
+      .rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFIED_CONCURRENTLY' });
     expect(issueTokenPair).not.toHaveBeenCalled();
   });
 
