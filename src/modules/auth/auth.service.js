@@ -17,13 +17,15 @@ function signToken(payload, expiresIn) {
   });
 }
 
-function generateSecureToken() {
+export function generateSecureToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
 // Tokens se almacenan como SHA-256 para que una brecha de BD no permita usarlos directamente.
-// El valor original solo existe en el email enviado al usuario.
-function hashToken(token) {
+// El valor original solo existe en el email enviado al usuario. Exportado porque
+// oauth.service.js reutiliza el mismo mecanismo para su propia verificación de correo
+// (ver findOrCreateUser) en vez de duplicar la lógica de hashing.
+export function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 

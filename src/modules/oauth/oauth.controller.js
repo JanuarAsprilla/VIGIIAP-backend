@@ -4,6 +4,7 @@ import {
   COOKIE_NAME, authCookieOptions,
   REFRESH_COOKIE_NAME, refreshCookieOptions,
 } from '../../utils/cookieOptions.js';
+import { notifyVerificacionEmail } from '../../utils/mailer.js';
 import logger from '../../utils/logger.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co';
@@ -83,6 +84,21 @@ export async function callback(req, res) {
     // Un solo uso cada una, hayan servido o no para esta llamada.
     res.clearCookie('vigiiap_oauth_csrf', { path: OAUTH_FLOW_PATH });
     res.clearCookie('vigiiap_oauth_cv', { path: OAUTH_FLOW_PATH });
+
+    if (result.requiresEmailVerification) {
+      // Cuenta nueva (ver oauth.service.js#findOrCreateUser) — nunca se
+      // emite sesión sin que el correo quede confirmado primero. El email
+      // se envía aquí, no en el servicio, igual que register() en
+      // auth.controller.js: el token original solo existe en este valor de
+      // retorno, nunca se guarda en claro.
+      logger.info(`[oauth] Cuenta nueva vía ${provider} pendiente de verificar correo: ${result.email}`);
+      notifyVerificacionEmail({
+        email: result.email,
+        nombre: result.nombre,
+        verificationToken: result.verificationToken,
+      }).catch((err) => logger.error(`[oauth] Error enviando verificación a ${result.email}:`, err.message));
+      return res.redirect(`${FRONTEND_URL}/?oauthError=EMAIL_VERIFICATION_SENT`);
+    }
 
     if (result.requiresTwoFactor) {
       // Misma cookie temporal que usa el login con contraseña — el

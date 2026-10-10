@@ -8,8 +8,12 @@ vi.mock('../src/modules/oauth/oauth.service.js', () => ({
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
+vi.mock('../src/utils/mailer.js', () => ({
+  notifyVerificacionEmail: vi.fn().mockResolvedValue(undefined),
+}));
 
 import * as oauthService from '../src/modules/oauth/oauth.service.js';
+import * as mailer from '../src/utils/mailer.js';
 import { listProviders, redirectToProvider, callback } from '../src/modules/oauth/oauth.controller.js';
 
 const mockNext = vi.fn();
@@ -127,6 +131,22 @@ describe('oauth.controller → callback()', () => {
       httpOnly: true, path: '/api/auth/2fa/confirm',
     }));
     expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/login?requiresTwoFactor=1');
+  });
+
+  it('REGRESIÓN (nOAuth / email squatting): si handleCallback pide verificar el correo (cuenta nueva), envía el email y NO pone cookies de sesión', async () => {
+    oauthService.handleCallback.mockResolvedValue({
+      requiresEmailVerification: true, isNewAccount: true,
+      email: 'nueva@gmail.com', nombre: 'Nueva Persona', verificationToken: 'raw-tok',
+    });
+    const r = res();
+
+    await callback(req({ params: { provider: 'google' }, query: { code: 'c', state: 's' } }), r);
+
+    expect(mailer.notifyVerificacionEmail).toHaveBeenCalledWith({
+      email: 'nueva@gmail.com', nombre: 'Nueva Persona', verificationToken: 'raw-tok',
+    });
+    expect(r.cookie).not.toHaveBeenCalled();
+    expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/?oauthError=EMAIL_VERIFICATION_SENT');
   });
 
   it('redirige con oauthError cuando handleCallback lanza (no navega al frontend con la sesión a medias)', async () => {

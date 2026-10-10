@@ -9,6 +9,8 @@ vi.mock('../src/utils/auditLog.js', () => ({
 }));
 vi.mock('../src/modules/auth/auth.service.js', () => ({
   issueTokenPair: vi.fn().mockResolvedValue({ accessToken: 'access-tok', refreshToken: 'refresh-tok' }),
+  generateSecureToken: vi.fn(() => 'raw-verification-token'),
+  hashToken: vi.fn((t) => `hashed(${t})`),
 }));
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -152,7 +154,7 @@ describe('handleCallback()', () => {
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'existing-uuid', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'investigador', activo: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: null }] }) // SELECT por email — existe, sin contraseña
+      .mockResolvedValueOnce({ rows: [{ id: 'existing-uuid', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'investigador', activo: true, email_verified: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: null }] }) // SELECT por email — existe, sin contraseña
       .mockResolvedValueOnce({ rows: [] }); // UPDATE vincula oauth_provider/oauth_id
 
     const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
@@ -186,7 +188,7 @@ describe('handleCallback()', () => {
       providerId: 'g-2fa', email: 'con2fa@iiap.gov.co', emailVerified: true, nombre: 'Con 2FA', avatarUrl: null,
     });
     query.mockResolvedValueOnce({
-      rows: [{ id: 'u-2fa', nombre: 'Con 2FA', email: 'con2fa@iiap.gov.co', rol: 'admin_sig', activo: true, institucion: null, avatar_url: null, perfil_completo: true, totp_enabled: true }],
+      rows: [{ id: 'u-2fa', nombre: 'Con 2FA', email: 'con2fa@iiap.gov.co', rol: 'admin_sig', activo: true, email_verified: true, institucion: null, avatar_url: null, perfil_completo: true, totp_enabled: true }],
     });
 
     const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
@@ -198,21 +200,47 @@ describe('handleCallback()', () => {
     expect(issueTokenPair).not.toHaveBeenCalled();
   });
 
-  it('crea una cuenta nueva con rol publico y perfil_completo=false cuando no existe por provider ni por email', async () => {
+  it('REGRESIÓN (nOAuth / email squatting): cuenta nueva se crea con email_verified=false y NO abre sesión — exige verificar el correo primero', async () => {
     mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
       providerId: 'g-456', email: 'nueva@gmail.com', emailVerified: true, nombre: 'Nueva Persona', avatarUrl: 'https://x/y.png',
     });
     query
       .mockResolvedValueOnce({ rows: [] }) // por provider — no existe
       .mockResolvedValueOnce({ rows: [] }) // por email — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'new-uuid', nombre: 'Nueva Persona', email: 'nueva@gmail.com', rol: 'publico', activo: true, institucion: null, avatar_url: 'https://x/y.png', perfil_completo: false }] }); // INSERT
+      .mockResolvedValueOnce({ rows: [{ id: 'new-uuid', nombre: 'Nueva Persona', email: 'nueva@gmail.com', rol: 'publico', activo: true, email_verified: false, institucion: null, avatar_url: 'https://x/y.png', perfil_completo: false }] }); // INSERT
 
     const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
 
     expect(query.mock.calls[2][0]).toMatch(/INSERT INTO usuarios/);
-    expect(query.mock.calls[2][1]).toEqual(['Nueva Persona', 'nueva@gmail.com', 'google', 'g-456', 'https://x/y.png']);
-    expect(result.perfilCompleto).toBe(false);
-    expect(result.user).toMatchObject({ id: 'new-uuid', rol: 'publico' });
+    expect(query.mock.calls[2][0]).toMatch(/email_verification_token/);
+    // 'publico', activo=true, email_verified=false son literales en el VALUES — solo
+    // nombre/email/token-hasheado/expiración/provider/providerId/avatarUrl son placeholders.
+    expect(query.mock.calls[2][1]).toEqual([
+      'Nueva Persona', 'nueva@gmail.com',
+      'hashed(raw-verification-token)', expect.any(Date),
+      'google', 'g-456', 'https://x/y.png',
+    ]);
+    expect(result).toEqual({
+      requiresEmailVerification: true,
+      isNewAccount: true,
+      email: 'nueva@gmail.com',
+      nombre: 'Nueva Persona',
+      verificationToken: 'raw-verification-token',
+    });
+    expect(issueTokenPair).not.toHaveBeenCalled();
+  });
+
+  it('REGRESIÓN (nOAuth / email squatting): una cuenta ya creada por OAuth pero aún sin verificar (reintento) se bloquea en vez de abrir sesión', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'g-456', email: 'nueva@gmail.com', emailVerified: true, nombre: 'Nueva Persona', avatarUrl: null,
+    });
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'new-uuid', nombre: 'Nueva Persona', email: 'nueva@gmail.com', rol: 'publico', activo: true, email_verified: false, institucion: null, avatar_url: null, perfil_completo: false, totp_enabled: false }],
+    }); // encontrada por (provider, oauth_id) — ya existía de un intento anterior sin verificar
+
+    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
+      .rejects.toMatchObject({ status: 403, code: 'EMAIL_NOT_VERIFIED' });
+    expect(issueTokenPair).not.toHaveBeenCalled();
   });
 
   it('rechaza cuentas inactivas (pendientes de aprobación) tras encontrarlas', async () => {
@@ -220,7 +248,7 @@ describe('handleCallback()', () => {
       providerId: 'g-789', email: 'pendiente@iiap.gov.co', emailVerified: true, nombre: 'Pendiente', avatarUrl: null,
     });
     query.mockResolvedValueOnce({
-      rows: [{ id: 'p-uuid', nombre: 'Pendiente', email: 'pendiente@iiap.gov.co', rol: 'publico', activo: false, institucion: null, avatar_url: null, perfil_completo: false }],
+      rows: [{ id: 'p-uuid', nombre: 'Pendiente', email: 'pendiente@iiap.gov.co', rol: 'publico', activo: false, email_verified: true, institucion: null, avatar_url: null, perfil_completo: false }],
     });
 
     await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
@@ -232,7 +260,7 @@ describe('handleCallback()', () => {
       providerId: 'g-1', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null,
     });
     query.mockResolvedValueOnce({
-      rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: true }],
+      rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, email_verified: true, institucion: null, avatar_url: null, perfil_completo: true }],
     });
 
     await handleCallback('google', 'code-abc', fakeState(), REDIRECT_URI, callbackOpts({ codeVerifierCookie: 'el-verifier-correcto' }));
@@ -269,7 +297,7 @@ describe('PKCE — code_verifier vía Redis (ruta principal, sin degradar a cook
       providerId: 'g-1', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null,
     });
     query.mockResolvedValueOnce({
-      rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, institucion: null, avatar_url: null, perfil_completo: true }],
+      rows: [{ id: 'u1', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'publico', activo: true, email_verified: true, institucion: null, avatar_url: null, perfil_completo: true }],
     });
 
     const state = fakeState('google', { nonce: 'abc123' });

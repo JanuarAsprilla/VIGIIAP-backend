@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { getProvider, PROVIDERS } from './oauth.providers.js';
-import { issueTokenPair } from '../auth/auth.service.js';
+import { issueTokenPair, generateSecureToken, hashToken } from '../auth/auth.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { getRedisClient } from '../../middlewares/cache.js';
 import logger from '../../utils/logger.js';
@@ -117,16 +117,16 @@ export async function buildAuthorizationUrl(providerId, redirectUri, csrfCookieV
 // cuenta con contraseña propia y ahora entra por primera vez con OAuth queda
 // vinculado a la misma cuenta en vez de crear un duplicado. Solo si ninguna
 // de las dos coincide se crea un usuario nuevo.
-async function findOrCreateUser(providerId, profile) {
+async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
   const byOAuth = await query(
-    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, totp_enabled
+    `SELECT id, nombre, email, rol, activo, email_verified, institucion, avatar_url, perfil_completo, totp_enabled
      FROM usuarios WHERE oauth_provider = $1 AND oauth_id = $2`,
     [providerId, profile.providerId],
   );
   if (byOAuth.rows[0]) return { user: byOAuth.rows[0], isNewAccount: false };
 
   const byEmail = await query(
-    `SELECT id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, totp_enabled, password_hash, oauth_provider
+    `SELECT id, nombre, email, rol, activo, email_verified, institucion, avatar_url, perfil_completo, totp_enabled, password_hash, oauth_provider
      FROM usuarios WHERE email = $1`,
     [profile.email.toLowerCase()],
   );
@@ -163,30 +163,45 @@ async function findOrCreateUser(providerId, profile) {
   }
 
   // Cuenta nueva — rol 'publico' (mismo nivel que ya está abierto al público
-  // en mapas/documentos/geovisor/herramientas), activa de inmediato porque el
-  // proveedor externo ya verificó el correo. perfil_completo=false porque no
-  // hay institución todavía — dispara la alerta de completar perfil.
-  //
-  // RESIDUAL CONOCIDO (clase nOAuth, no cerrado aquí): si NO existe ninguna
-  // cuenta previa con este correo, cualquiera que logre que el proveedor
-  // afirme ese email (p.ej. editando el atributo mail de un tenant Entra ID
-  // propio) puede "reservarlo" primero, antes de que su dueño real use
-  // OAuth alguna vez — Microsoft mismo documenta que el claim email no está
-  // verificado y no debe usarse para decisiones de autorización. El rol
-  // 'publico' que se le da limita el daño (mismo nivel que un visitante
-  // anónimo), pero no evita el secuestro del correo. Cerrarlo de verdad
-  // exige una decisión de producto fuera del alcance de este parche: exigir
-  // confirmación por correo antes de activar la cuenta, o restringir el
-  // alta por OAuth a dominios institucionales verificados.
+  // en mapas/documentos/geovisor/herramientas), activa de inmediato (igual
+  // que antes) pero SIN dar por verificado el correo que solo afirma el
+  // proveedor — Microsoft mismo documenta que ese claim no está verificado y
+  // no debe usarse para decisiones de autorización. Cierra aquí la clase
+  // nOAuth que antes quedaba como residual: si nadie tenía ya esta cuenta,
+  // exigir la misma confirmación por correo que usa el registro con
+  // contraseña (generateSecureToken/hashToken + verifyEmail, ver
+  // auth.service.js) es lo único que prueba que quien hizo el login es
+  // dueño real del correo, no solo alguien a quien el proveedor se lo
+  // afirmó (p.ej. editando el atributo mail de un tenant Entra ID propio).
+  // perfil_completo=false porque no hay institución todavía — la alerta de
+  // completar perfil solo aplica una vez que el correo quede verificado,
+  // ya que handleCallback bloquea el login hasta entonces.
+  const verificationToken = generateSecureToken();
+  const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h, igual que register()
   const { rows } = await query(
     `INSERT INTO usuarios
        (nombre, email, password_hash, rol, activo, email_verified,
+        email_verification_token, email_verification_expires,
         oauth_provider, oauth_id, avatar_url, perfil_completo)
-     VALUES ($1, $2, NULL, 'publico', true, true, $3, $4, $5, false)
-     RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo`,
-    [profile.nombre, profile.email.toLowerCase(), providerId, profile.providerId, profile.avatarUrl],
+     VALUES ($1, $2, NULL, 'publico', true, false, $3, $4, $5, $6, $7, false)
+     RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, email_verified`,
+    [
+      profile.nombre, profile.email.toLowerCase(),
+      hashToken(verificationToken), verificationExpires,
+      providerId, profile.providerId, profile.avatarUrl,
+    ],
   );
-  return { user: rows[0], isNewAccount: true };
+  registrarAuditoria({
+    accion: 'oauth_registro',
+    modulo: 'auth',
+    entidadId: rows[0].id,
+    descripcion: `Cuenta creada vía ${providerId} — ${rows[0].email} (pendiente de verificar correo)`,
+    usuarioId: rows[0].id,
+    usuarioEmail: rows[0].email,
+    ip,
+    userAgent,
+  });
+  return { user: rows[0], isNewAccount: true, verificationToken };
 }
 
 export async function handleCallback(providerId, code, rawState, redirectUri, { ip, userAgent, csrfCookieValor, codeVerifierCookie } = {}) {
@@ -206,7 +221,32 @@ export async function handleCallback(providerId, code, rawState, redirectUri, { 
     throw Object.assign(new Error(`El correo de tu cuenta de ${provider.name} no está verificado.`), { status: 400 });
   }
 
-  const { user, isNewAccount } = await findOrCreateUser(providerId, profile);
+  const { user, isNewAccount, verificationToken } = await findOrCreateUser(providerId, profile, { ip, userAgent });
+
+  // Mismo orden que login() con contraseña (ver auth.service.js#login): el
+  // correo sin verificar bloquea ANTES de mirar `activo` — ver residual
+  // nOAuth documentado en findOrCreateUser(). Una cuenta recién creada
+  // necesita que el controlador envíe el correo con `verificationToken`
+  // (nunca se guarda en claro, solo existe en este valor de retorno); una ya
+  // existente que sigue sin verificar (reintento con un enlace vencido o sin
+  // usar) ya recibió ese correo antes, así que solo se bloquea — puede pedir
+  // uno nuevo con el mismo POST /api/auth/reenviar-verificacion que usa el
+  // registro con contraseña.
+  if (!user.email_verified) {
+    if (isNewAccount) {
+      return {
+        requiresEmailVerification: true,
+        isNewAccount: true,
+        email: user.email,
+        nombre: user.nombre,
+        verificationToken,
+      };
+    }
+    throw Object.assign(
+      new Error('Debes verificar tu correo antes de ingresar. Revisa el enlace que te enviamos o solicita uno nuevo.'),
+      { status: 403, code: 'EMAIL_NOT_VERIFIED' },
+    );
+  }
 
   if (!user.activo) {
     throw Object.assign(
@@ -233,11 +273,15 @@ export async function handleCallback(providerId, code, rawState, redirectUri, { 
     { ip, userAgent },
   );
 
+  // isNewAccount ya no llega aquí en true: toda cuenta nueva retorna antes
+  // (requiresEmailVerification) o lanza EMAIL_NOT_VERIFIED en el chequeo de
+  // arriba — el alta en sí ya quedó auditada como 'oauth_registro' dentro de
+  // findOrCreateUser() al crearse.
   registrarAuditoria({
-    accion: isNewAccount ? 'oauth_registro' : 'oauth_login',
+    accion: 'oauth_login',
     modulo: 'auth',
     entidadId: user.id,
-    descripcion: `${isNewAccount ? 'Cuenta creada' : 'Login'} vía ${provider.name} — ${user.email}`,
+    descripcion: `Login vía ${provider.name} — ${user.email}`,
     usuarioId: user.id,
     usuarioEmail: user.email,
     ip,
