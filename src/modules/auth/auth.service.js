@@ -384,9 +384,27 @@ function perfilToRol(perfil) {
 export async function register(data, { ip, userAgent } = {}) {
   const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
-  const existing = await query('SELECT id, email_verified FROM usuarios WHERE email = $1', [email.toLowerCase()]);
+  const existing = await query('SELECT id, email_verified, email_verification_expires FROM usuarios WHERE email = $1', [email.toLowerCase()]);
   if (existing.rows[0]?.email_verified) {
     throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
+  }
+  // REGRESIÓN (account takeover / carrera de reclamo, hallazgo de la
+  // revisión automática sobre el primer intento de este mismo fix): no
+  // basta con "sin verificar" para permitir el reclamo de abajo -- si la
+  // fila es de alguien que acaba de registrarse de buena fe y su propio
+  // enlace sigue vigente, dejar que OTRA persona que solo conoce ese correo
+  // la reescriba en este mismo instante le "roba" la cuenta real con solo
+  // ganarle la carrera a su propio enlace de verificación. El reclamo solo
+  // es seguro una vez que ese enlace anterior YA EXPIRÓ (24h).
+  if (
+    existing.rows[0] &&
+    existing.rows[0].email_verification_expires &&
+    new Date(existing.rows[0].email_verification_expires) > new Date()
+  ) {
+    throw Object.assign(
+      new Error('Ya hay un registro en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
+      { status: 409, code: 'EMAIL_VERIFICATION_PENDING' }
+    );
   }
 
   // La cuenta siempre nace 'publico' — igual que el registro por OAuth
@@ -424,9 +442,13 @@ export async function register(data, { ip, userAgent } = {}) {
     // email_verified, nunca valida QUIÉN puso esa contraseña. Por eso esta
     // fila se reescribe con los datos de ESTE intento: la contraseña, el
     // token y cualquier vínculo OAuth previos dejan de servir.
-    // `AND email_verified = false` cierra la carrera contra una
-    // verificación concurrente de esta misma fila entre el SELECT de arriba
-    // y este UPDATE.
+    // `AND email_verified = false AND (sin expirar o YA expirado)` cierra
+    // la carrera contra una verificación concurrente de esta misma fila Y
+    // contra un segundo intento concurrente que pase el chequeo de arriba
+    // justo cuando el primero recién emitió un token vigente -- ambas
+    // condiciones se vuelven a confirmar atómicamente en el propio UPDATE,
+    // no solo en el SELECT de más arriba (mismo patrón que
+    // oauth.service.js#findOrCreateUser).
     const result = await query(
       `UPDATE usuarios SET
          nombre = $1, password_hash = $2, institucion = $3, motivo_acceso = $4,
@@ -434,6 +456,7 @@ export async function register(data, { ip, userAgent } = {}) {
          email_verification_token = $8, email_verification_expires = $9,
          oauth_provider = NULL, oauth_id = NULL, actualizado_en = NOW()
        WHERE id = $10 AND email_verified = false
+         AND (email_verification_expires IS NULL OR email_verification_expires <= NOW())
        RETURNING id, nombre, email, rol, rol_solicitado AS "rolSolicitado"`,
       [
         nombre, password_hash, institucion ?? null, motivo ?? null,
@@ -444,8 +467,8 @@ export async function register(data, { ip, userAgent } = {}) {
     );
     if (!result.rows[0]) {
       throw Object.assign(
-        new Error('El email ya está registrado'),
-        { status: 409 }
+        new Error('Ya hay un registro en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
+        { status: 409, code: 'EMAIL_VERIFICATION_PENDING' }
       );
     }
     rows = result.rows;
@@ -536,6 +559,15 @@ export async function verifyEmail(token, { ip, userAgent } = {}) {
 }
 
 // ─── Reenviar email de verificación ──────────────────────────────────────────
+// RESIDUAL CONOCIDO (no cerrado aquí, requiere decisión de producto): a
+// diferencia de register()/findOrCreateUser(), esta función reemite un
+// token sin limpiar un password_hash/oauth_provider previos. Si una fila
+// quedó "reclamable" (ver REGRESIÓN en register()) y en vez de pasar por
+// register()/OAuth de nuevo el dueño real usa este resend directo, la
+// credencial anterior seguiría siendo válida tras verificar. Cerrarlo bien
+// exige forzar un reset de contraseña tras cualquier resend -- una UX peor
+// para el caso común y benigno (solo no llegó el primer correo) que no se
+// cambia unilateralmente sin decidirlo con el usuario.
 export async function reenviarVerificacion(email) {
   const { rows } = await query(
     'SELECT id, nombre, email, email_verified FROM usuarios WHERE email = $1',

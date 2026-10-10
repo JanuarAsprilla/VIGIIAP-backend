@@ -171,43 +171,58 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
     // pero su correo NUNCA quedó verificado — ni por una contraseña que
     // nadie llegó a confirmar, ni por un proveedor OAuth distinto cuyo
     // intento anterior tampoco se verificó. Ese reclamo previo no prueba
-    // nada (ver findOrCreateUser más abajo sobre por qué el claim de un
-    // proveedor no basta), así que bloquearlo aquí como arriba tendría DOS
-    // problemas: (1) permite que cualquiera "reserve" el correo de otra
-    // persona y se lo niegue PARA SIEMPRE a su dueño real (ni por OAuth ni
-    // por registro con contraseña, que también choca con este mismo correo)
-    // — clase DoS de pre-hijacking; (2) si en vez de bloquear se vinculara
-    // oauth_provider/oauth_id SIN limpiar el reclamo anterior, el día que el
-    // dueño real verifique este correo por CUALQUIER camino (p.ej.
-    // reenviarVerificacion), el proveedor/identidad que quedó vinculado
-    // primero —el del atacante— seguiría siendo una puerta de entrada
-    // válida y permanente a la cuenta que el dueño real acaba de reclamar:
-    // byOAuth() del próximo login del atacante la encontraría igual, y para
-    // entonces ya pasaría el chequeo de email_verified. Por eso esta fila se
-    // "reescribe" para el intento ACTUAL — que sí pasó la verificación
-    // propia de su proveedor (profile.emailVerified, más arriba): se limpia
-    // cualquier password_hash o vínculo OAuth anterior sin verificar y se
-    // emite un token de verificación nuevo; el anterior (de haber alguno)
-    // deja de servir porque ya no coincide con el hash que queda guardado.
+    // nada, así que bloquearlo aquí PARA SIEMPRE (como el caso ya verificado
+    // de arriba) sería dejar que cualquiera "reserve" el correo de otra
+    // persona y se lo niegue para siempre a su dueño real — DoS de
+    // pre-hijacking.
+    //
+    // PERO reescribirla de inmediato, solo porque está sin verificar, abre
+    // un hueco PEOR (lo que la revisión automática de esta misma sesión
+    // marcó tras el primer intento de este fix): si alguien que apenas
+    // registró o intentó OAuth con su PROPIO correo (de buena fe, su propio
+    // enlace de verificación todavía vigente) es pisado por un segundo
+    // intento de OTRA persona que solo conoce ese correo, esa segunda
+    // persona le "roba" la cuenta real con solo ganarle la carrera a su
+    // propio enlace — ya ni siquiera hace falta el truco nOAuth de un claim
+    // sin verificar, basta con conocer el email de alguien que se está
+    // registrando en ese momento. Por eso el reclamo solo es seguro una vez
+    // que el enlace anterior YA EXPIRÓ (24h) — nadie con una verificación
+    // propia todavía vigente puede ser desplazado, y un reclamo abandonado
+    // de verdad (nunca confirmado en 24h) se trata como tal.
+    if (existing.email_verification_expires && new Date(existing.email_verification_expires) > new Date()) {
+      throw Object.assign(
+        new Error('Ya hay una verificación en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
+        { status: 409, code: 'EMAIL_VERIFICATION_PENDING' },
+      );
+    }
+
+    // Reclamo previo (de haber alguno) ya expiró sin confirmarse — se trata
+    // como abandonado: se limpia cualquier password_hash o vínculo OAuth
+    // anterior sin verificar y se emite un token de verificación nuevo; el
+    // anterior deja de servir porque ya no coincide con el hash que queda
+    // guardado.
     const verificationToken = generateSecureToken();
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    // AND email_verified = false: cierra la carrera contra una verificación
-    // concurrente de ESTA MISMA fila (otra petición) entre el SELECT de
-    // arriba y este UPDATE -- sin esto, pisaríamos una cuenta que alguien
-    // acaba de confirmar justo en ese instante.
+    // AND email_verified = false AND (sin expirar o YA expirado): cierra la
+    // carrera contra una verificación concurrente de esta misma fila, Y
+    // contra un segundo intento concurrente que pase el chequeo de arriba
+    // justo cuando el primero recién emitió un token vigente -- ambas
+    // condiciones se vuelven a confirmar atómicamente en el propio UPDATE,
+    // no solo en el SELECT de más arriba.
     const { rows: reclamada } = await query(
       `UPDATE usuarios SET
          oauth_provider = $1, oauth_id = $2, password_hash = NULL,
          email_verification_token = $3, email_verification_expires = $4,
          actualizado_en = NOW()
        WHERE id = $5 AND email_verified = false
+         AND (email_verification_expires IS NULL OR email_verification_expires <= NOW())
        RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, email_verified`,
       [providerId, profile.providerId, hashToken(verificationToken), verificationExpires, existing.id],
     );
     if (!reclamada[0]) {
       throw Object.assign(
-        new Error('Alguien acaba de verificar este correo. Intenta iniciar sesión de nuevo.'),
-        { status: 409, code: 'EMAIL_VERIFIED_CONCURRENTLY' },
+        new Error('Ya hay una verificación en curso para este correo. Revisa tu bandeja de entrada o intenta más tarde.'),
+        { status: 409, code: 'EMAIL_VERIFICATION_PENDING' },
       );
     }
     registrarAuditoria({

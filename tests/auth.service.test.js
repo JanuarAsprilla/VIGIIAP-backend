@@ -301,8 +301,8 @@ describe('register()', () => {
   // la contraseña anterior intacta le daría acceso permanente a quien la puso
   // en cuanto el correo se verifique por cualquier camino.
   describe('register() → correo ya existente pero SIN verificar (reclamo, no bloqueo)', () => {
-    it('reescribe la fila (UPDATE, no INSERT) con los datos de ESTE intento en vez de devolver 409', async () => {
-      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false }] }); // duplicado sin verificar
+    it('reescribe la fila (UPDATE, no INSERT) con los datos de ESTE intento en vez de devolver 409 — solo si el enlace anterior YA EXPIRÓ', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000) }] }); // duplicado sin verificar, expirado
       query.mockResolvedValueOnce({ rows: [] }); // requireApproval ausente
       query.mockResolvedValueOnce({
         rows: [{ id: 'uuid-squat', nombre: 'Nuevo Usuario', email: 'nuevo@iiap.gob.pe', rol: 'publico', rolSolicitado: 'investigador' }],
@@ -320,12 +320,26 @@ describe('register()', () => {
     });
 
     it('lanza 409 si la fila se verificó justo entre el SELECT y el UPDATE (carrera)', async () => {
-      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false }] });
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-squat', email_verified: false, email_verification_expires: new Date(Date.now() - 60 * 60 * 1000) }] });
       query.mockResolvedValueOnce({ rows: [] });
       query.mockResolvedValueOnce({ rows: [] }); // UPDATE con WHERE email_verified=false no afectó ninguna fila
       bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
 
-      await expect(register(validData)).rejects.toMatchObject({ status: 409 });
+      await expect(register(validData)).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
+    });
+
+    // REGRESIÓN (account takeover / carrera de reclamo): hallazgo real de la
+    // revisión automática sobre el primer intento de este fix — sin el
+    // chequeo de expiración, cualquiera que solo conociera el correo de
+    // alguien registrándose en ese instante podía "robarle" la cuenta
+    // reescribiéndola antes de que su propio enlace, todavía vigente, fuera
+    // usado.
+    it('NO reclama la fila si el enlace de verificación anterior TODAVÍA está vigente — bloquea en vez de pisar un registro de buena fe', async () => {
+      query.mockResolvedValueOnce({ rows: [{ id: 'uuid-buena-fe', email_verified: false, email_verification_expires: new Date(Date.now() + 60 * 60 * 1000) }] }); // registro propio, su enlace sigue vigente
+
+      await expect(register(validData)).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
+      // No debe consultar configuracion ni llamar a UPDATE/INSERT.
+      expect(query).toHaveBeenCalledTimes(1);
     });
   });
 

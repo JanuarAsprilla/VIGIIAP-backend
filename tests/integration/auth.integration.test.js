@@ -36,12 +36,27 @@ describe('register()', () => {
     ).rejects.toMatchObject({ status: 409 });
   });
 
+  // REGRESIÓN (account takeover / carrera de reclamo): mientras el enlace del
+  // PRIMER intento sigue vigente (24h), un segundo intento con el mismo
+  // correo debe bloquearse — reclamarlo de inmediato dejaría que cualquiera
+  // que solo conozca el correo de alguien registrándose en este momento le
+  // "robe" la cuenta ganándole la carrera a su propio enlace.
+  it('un registro previo SIN verificar, con el enlace TODAVÍA vigente, bloquea un segundo intento en vez de reescribirlo', async () => {
+    await register({ nombre: 'Dueña Real', email: 'buena-fe@iiap.test', password: 'MiPropiaContraseña1!', perfil: 'publico' });
+
+    await expect(
+      register({ nombre: 'Atacante', email: 'buena-fe@iiap.test', password: 'ContraseñaDelAtacante1!', perfil: 'publico' })
+    ).rejects.toMatchObject({ status: 409, code: 'EMAIL_VERIFICATION_PENDING' });
+  });
+
   // REGRESIÓN (pre-hijacking / backdoor de verificación): si alguien "reserva"
-  // un correo con el registro pero nunca lo verifica, no debe poder negarle
-  // esa cuenta para siempre a su dueño real — la fila se reclama (reescribe),
-  // no se bloquea con 409.
-  it('un registro previo SIN verificar se puede reclamar con una contraseña nueva en vez de devolver 409', async () => {
+  // un correo con el registro pero nunca lo verifica Y ese enlace YA EXPIRÓ,
+  // no debe poder negarle esa cuenta para siempre a su dueño real — la fila
+  // se reclama (reescribe), no se bloquea con 409.
+  it('un registro previo SIN verificar, con el enlace YA EXPIRADO, se puede reclamar con una contraseña nueva', async () => {
     const primero = await register({ nombre: 'Atacante', email: 'squat@iiap.test', password: 'ContraseñaDelAtacante1!', perfil: 'publico' });
+    // Simula el paso de las 24h sin que nadie lo haya confirmado.
+    await query('UPDATE usuarios SET email_verification_expires = NOW() - INTERVAL \'1 minute\' WHERE id=$1', [primero.id]);
 
     const segundo = await register({ nombre: 'Dueña Real', email: 'squat@iiap.test', password: 'MiPropiaContraseña1!', perfil: 'publico' });
     expect(segundo.id).toBe(primero.id); // misma fila, reescrita — no un duplicado
