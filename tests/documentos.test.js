@@ -60,7 +60,7 @@ describe('GET /api/documentos', () => {
     const res = await request(app).get('/api/documentos?tipo=informe&anio=2024');
     expect(res.status).toBe(200);
     expect(docService.getAll).toHaveBeenCalledWith(
-      expect.objectContaining({ tipo: 'informe', anio: '2024' }),
+      expect.objectContaining({ tipo: 'informe', anio: 2024 }),
       undefined,
     );
   });
@@ -69,6 +69,16 @@ describe('GET /api/documentos', () => {
     docService.getAll.mockRejectedValue(new Error('db down'));
     const res = await request(app).get('/api/documentos');
     expect(res.status).toBe(500);
+  });
+
+  // REGRESIÓN (hallazgo de auditoría dinámica con ZAP): un anio no numérico
+  // llegaba crudo hasta `d.anio = $N` contra una columna smallint y Postgres
+  // tiraba un 500 con su propio mensaje de error -- ahora lo rechaza el
+  // esquema Zod antes de llegar al servicio, nunca alcanza la BD.
+  it('rechaza con 422 un anio no numérico en vez de dejarlo llegar a la base de datos', async () => {
+    const res = await request(app).get('/api/documentos?anio=noesunano');
+    expect(res.status).toBe(422);
+    expect(docService.getAll).not.toHaveBeenCalled();
   });
 });
 

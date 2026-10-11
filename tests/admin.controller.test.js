@@ -478,6 +478,16 @@ describe('admin.controller → auditLog()', () => {
     await auditLog({ query: {} }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  // REGRESIÓN (auditoría dinámica con ZAP, mismo patrón que el 500 de
+  // documentos?anio=): fechaDesde/fechaHasta llegaban crudos hasta
+  // `creado_en >= $N` contra una columna TIMESTAMPTZ sin validar el
+  // formato -- ahora el esquema Zod lo rechaza antes de llegar al servicio.
+  it('llama next(ZodError) si fechaDesde no tiene formato YYYY-MM-DD, sin llegar al servicio', async () => {
+    await auditLog({ query: { fechaDesde: 'no-es-una-fecha' } }, res(), mockNext);
+    expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(adminService.getAuditLog).not.toHaveBeenCalled();
+  });
 });
 
 // ── errorLog() ───────────────────────────────────────────────────────────

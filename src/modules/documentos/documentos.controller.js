@@ -1,11 +1,14 @@
-import { createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema } from './documentos.schema.js';
+import { createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema, listDocumentosQuerySchema } from './documentos.schema.js';
 import * as docService from './documentos.service.js';
 import { invalidateCache } from '../../middlewares/cache.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
 export async function index(req, res, next) {
-  try { res.json(await docService.getAll(req.query, req.user)); } catch (err) { next(err); }
+  try {
+    const listQuery = listDocumentosQuerySchema.parse(req.query);
+    res.json(await docService.getAll(listQuery, req.user));
+  } catch (err) { next(err); }
 }
 
 export async function show(req, res, next) {
