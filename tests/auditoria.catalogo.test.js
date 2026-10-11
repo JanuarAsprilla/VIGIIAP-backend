@@ -39,8 +39,17 @@ describe('condicionSeveridad()', () => {
     const params = ['x', 'y'];
     const sql = condicionSeveridad('critica', params);
 
-    expect(params).toHaveLength(4);
+    expect(params).toHaveLength(3);
     expect(sql).toContain('$3::text[]');
+  });
+
+  // Regresión (la encontró la prueba de integración con Postgres real): un $N agregado a
+  // `params` pero ausente del SQL hace que Postgres falle con "could not determine data type".
+  it.each(SEVERIDADES)('todo parámetro que agrega para "%s" aparece en el SQL', (severidad) => {
+    const params = [];
+    const sql = condicionSeveridad(severidad, params);
+
+    params.forEach((_, i) => expect(sql).toContain(`$${i + 1}::text[]`));
   });
 
   it('advertencia excluye las críticas e incluye prefijos delete_/export_', () => {
