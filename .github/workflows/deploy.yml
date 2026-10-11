@@ -12,15 +12,22 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
     name: Build y publicar imagen
+    # event == push: el CI de un PR cuya cabeza es main (p. ej. la sincronización
+    # main → develop) no debe volver a desplegar un commit ya desplegado.
     # head_repository check: workflow_run se dispara para CUALQUIER ejecución
     # del workflow CI, incluida la de un PR desde un fork — sin esta guarda,
     # ese fork podría hacer que este job (que sí tiene secrets) se ejecute
     # contra su propio código.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:

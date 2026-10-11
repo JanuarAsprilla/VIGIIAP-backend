@@ -33,6 +33,7 @@ export async function pageview(req, res, next) {
     await analiticaService.registrarPageview({
       ...parseResult.data,
       userAgent: req.get('user-agent'),
+      ip: req.ip,
     });
     res.status(204).end();
   } catch (err) { next(err); }
@@ -65,5 +66,17 @@ export async function fuentesTrafico(req, res, next) {
 export async function entradaSalida(req, res, next) {
   try {
     res.json(await analiticaService.getEntradaSalida(rangoFechas(req)));
+  } catch (err) { next(err); }
+}
+
+export async function ubicaciones(req, res, next) {
+  try {
+    res.json(await analiticaService.getUbicaciones(rangoFechas(req)));
+  } catch (err) { next(err); }
+}
+
+export async function sesionesRecientes(_req, res, next) {
+  try {
+    res.json(await analiticaService.getSesionesRecientes());
   } catch (err) { next(err); }
 }

@@ -12,6 +12,8 @@ vi.mock('../src/modules/analitica/analitica.service.js', () => ({
   getDispositivos: vi.fn(),
   getFuentesTrafico: vi.fn(),
   getEntradaSalida: vi.fn(),
+  getUbicaciones: vi.fn(),
+  getSesionesRecientes: vi.fn(),
 }));
 
 // query() aquí solo lo consume requireModulo (tienePermisoModulo) — el
@@ -71,6 +73,25 @@ describe('Rutas /api/analitica — auth guards', () => {
     analiticaService.getResumen.mockResolvedValue({ paginasVistas: {} });
     const res = await request(app).get('/api/analitica/resumen').set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
+  });
+
+  it('GET /api/analitica/ubicaciones y /sesiones-recientes → 401 sin token', async () => {
+    expect((await request(app).get('/api/analitica/ubicaciones')).status).toBe(401);
+    expect((await request(app).get('/api/analitica/sesiones-recientes')).status).toBe(401);
+  });
+
+  it('GET /api/analitica/sesiones-recientes → 403 con rol no admin_sig (la IP no es pública)', async () => {
+    const token = jwt.sign({ id: 'u1', email: 'i@iiap.org.co', rol: 'investigador' }, process.env.JWT_SECRET);
+    const res = await request(app).get('/api/analitica/sesiones-recientes').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /api/analitica/ubicaciones y /sesiones-recientes → 200 con token admin_sig', async () => {
+    analiticaService.getUbicaciones.mockResolvedValue({ paises: [], departamentos: [], sinUbicacion: 0 });
+    analiticaService.getSesionesRecientes.mockResolvedValue([]);
+    const a = await request(app).get('/api/analitica/ubicaciones').set('Authorization', `Bearer ${adminToken}`);
+    const b = await request(app).get('/api/analitica/sesiones-recientes').set('Authorization', `Bearer ${adminToken}`);
+    expect([a.status, b.status]).toEqual([200, 200]);
   });
 
   it('GET /api/analitica/paginas-top → 401 sin token', async () => {

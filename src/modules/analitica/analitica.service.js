@@ -1,4 +1,5 @@
 import { query } from '../../config/database.js';
+import { normalizarIp, ubicarIp } from '../../utils/geolocalizacion.js';
 
 const VENTANA_DIAS = 14;
 
@@ -48,25 +49,29 @@ export function esBot(userAgent) {
 }
 
 /**
- * Registra una vista de página anónima. Crea la sesión si `sessionId` es
- * nuevo; si ya existe, solo actualiza `ultima_actividad_en`. Nunca recibe ni
- * guarda IP o identidad de usuario -- ver decisión en la migración 050.
+ * Registra una vista de página. Crea la sesión si `sessionId` es nuevo (con la IP y la
+ * ubicación aproximada de quien la abre, salvo bots); si ya existe, solo actualiza
+ * `ultima_actividad_en`. La IP se borra sola pasado el plazo de retención (retencionDatos.js)
+ * y nunca se liga a un usuario -- ver migraciones 050 y 059.
  */
 export async function registrarPageview({
   sessionId, ruta, titulo, dispositivo, navegador, sistemaOperativo,
-  referrerInicial, utmSource, utmMedium, utmCampaign, esAreaAdmin, userAgent,
+  referrerInicial, utmSource, utmMedium, utmCampaign, esAreaAdmin, userAgent, ip,
 }) {
   const bot = esBot(userAgent);
   const { rows } = await query('SELECT id FROM analytics_sessions WHERE id = $1', [sessionId]);
   const esSesionNueva = rows.length === 0;
 
   if (esSesionNueva) {
+    const ubicacion = bot ? null : ubicarIp(ip);
     await query(
       `INSERT INTO analytics_sessions
-         (id, dispositivo, navegador, sistema_operativo, referrer_inicial, utm_source, utm_medium, utm_campaign, es_bot)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         (id, dispositivo, navegador, sistema_operativo, referrer_inicial, utm_source, utm_medium, utm_campaign, es_bot,
+          ip, pais, departamento, ciudad)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [sessionId, dispositivo, navegador ?? null, sistemaOperativo ?? null,
-        referrerInicial ?? null, utmSource ?? null, utmMedium ?? null, utmCampaign ?? null, bot],
+        referrerInicial ?? null, utmSource ?? null, utmMedium ?? null, utmCampaign ?? null, bot,
+        bot ? null : normalizarIp(ip), ubicacion?.pais ?? null, ubicacion?.departamento ?? null, ubicacion?.ciudad ?? null],
     );
   } else {
     await query('UPDATE analytics_sessions SET ultima_actividad_en = NOW() WHERE id = $1', [sessionId]);
@@ -207,4 +212,41 @@ export async function getEntradaSalida({ desde, hasta, limit = 10 }) {
     [desde, hasta, limit],
   );
   return { entradas, salidas };
+}
+
+/** Sesiones por país y, dentro de Colombia, por departamento. Las sin ubicación se cuentan aparte. */
+export async function getUbicaciones({ desde, hasta, limit = 40 }) {
+  const { rows: paises } = await query(
+    `SELECT pais, COUNT(*)::int AS sesiones
+     FROM analytics_sessions
+     WHERE primera_visita_en BETWEEN $1 AND $2 AND es_bot = false AND pais IS NOT NULL
+     GROUP BY pais ORDER BY sesiones DESC LIMIT $3`,
+    [desde, hasta, limit],
+  );
+  const { rows: departamentos } = await query(
+    `SELECT COALESCE(departamento, 'Sin determinar') AS departamento, COUNT(*)::int AS sesiones
+     FROM analytics_sessions
+     WHERE primera_visita_en BETWEEN $1 AND $2 AND es_bot = false AND pais = 'CO'
+     GROUP BY COALESCE(departamento, 'Sin determinar') ORDER BY sesiones DESC LIMIT $3`,
+    [desde, hasta, limit],
+  );
+  const { rows: sinUbicacion } = await query(
+    `SELECT COUNT(*)::int AS sesiones
+     FROM analytics_sessions
+     WHERE primera_visita_en BETWEEN $1 AND $2 AND es_bot = false AND pais IS NULL`,
+    [desde, hasta],
+  );
+  return { paises, departamentos, sinUbicacion: sinUbicacion[0]?.sesiones ?? 0 };
+}
+
+/** Últimas sesiones con su IP (mientras no se haya purgado) y ubicación; solo para administradores. */
+export async function getSesionesRecientes({ limit = 50 } = {}) {
+  const { rows } = await query(
+    `SELECT id, primera_visita_en, ip, pais, departamento, ciudad, dispositivo, navegador, sistema_operativo
+     FROM analytics_sessions
+     WHERE es_bot = false
+     ORDER BY primera_visita_en DESC LIMIT $1`,
+    [limit],
+  );
+  return rows;
 }
