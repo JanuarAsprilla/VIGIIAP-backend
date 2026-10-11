@@ -14,13 +14,13 @@ export const EXCLUIR_SUPER_ADMIN =
   `(usuario_id IS NULL OR usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin'))`;
 
 const CRITICAS = [
-  'refresh_token_reuse', 'login_blocked',
+  'refresh_token_reuse', 'login_blocked', 'alerta_rafaga_login',
   'delete_usuario', 'update_rol', 'update_permisos_modulo', 'create_admin', 'update_configuracion',
   'create_conexion_geoserver', 'update_conexion_geoserver', 'delete_conexion_geoserver',
 ];
 
 const ADVERTENCIAS = [
-  'login_failed', 'acceso_denegado', 'change_password', 'password_reset',
+  'login_failed', 'acceso_denegado', 'login_ubicacion_nueva', 'change_password', 'password_reset',
   'sesion_revocada', 'todas_sesiones_revocadas', 'update_usuario', 'rate_limit_auto_scale',
 ];
 
