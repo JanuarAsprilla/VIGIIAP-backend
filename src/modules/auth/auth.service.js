@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { query } from '../../config/database.js';
-import { registrarAuditoria } from '../../utils/auditLog.js';
+import { registrarAuditoria, enmascararEmail } from '../../utils/auditLog.js';
 import { notifyNuevoInicioSesion } from '../../utils/mailer.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
 import logger from '../../utils/logger.js';
@@ -153,6 +153,12 @@ export async function login(email, password, ip, userAgent) {
   if (!user) {
     // Comparación dummy para igualar tiempo de respuesta con cuentas inexistentes
     await bcrypt.compare(password, DUMMY_HASH);
+    // Sin await: el tiempo de respuesta debe seguir igualando al de una cuenta existente.
+    registrarAuditoria({
+      accion: 'login_failed', modulo: 'auth',
+      descripcion: `Login fallido — cuenta inexistente (${enmascararEmail(email)})`,
+      ip, userAgent,
+    });
     throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
   }
 

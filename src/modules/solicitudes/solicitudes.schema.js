@@ -16,3 +16,21 @@ export const updateEstadoSchema = z.object({
 export const responderSchema = z.object({
   respuesta: z.string().trim().min(10, 'La respuesta debe tener al menos 10 caracteres').max(2000),
 });
+
+export const paginationQuerySchema = z.object({
+  page:  z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().optional(),
+});
+
+// REGRESIÓN (hallazgo de auditoría dinámica con ZAP, mismo patrón que
+// documentos.schema.js#listDocumentosQuerySchema): GET / nunca validaba
+// req.query -- `tipo` ya tiraba 400 a mano si no estaba en TIPOS, pero
+// `estado` inválido se ignoraba en silencio (devolvía TODOS los resultados
+// en vez de fallar). Este esquema cierra las dos inconsistencias a la vez.
+export const listSolicitudesQuerySchema = z.object({
+  page:   z.coerce.number().int().positive().optional(),
+  limit:  z.coerce.number().int().positive().optional(),
+  estado: z.enum(ESTADOS, { errorMap: () => ({ message: `Estado debe ser uno de: ${ESTADOS.join(', ')}` }) }).optional(),
+  tipo:   z.enum(TIPOS, { errorMap: () => ({ message: `Tipo debe ser uno de: ${TIPOS.join(', ')}` }) }).optional(),
+  q:      z.string().trim().max(200).optional(),
+});

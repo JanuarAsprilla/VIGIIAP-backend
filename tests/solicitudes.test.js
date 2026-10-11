@@ -96,6 +96,17 @@ describe('GET /api/solicitudes (admin)', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
   });
+
+  // REGRESIÓN (auditoría dinámica con ZAP): antes `estado` inválido se
+  // ignoraba en silencio (devolvía TODOS los resultados) en vez de fallar
+  // -- ahora se valida igual que `tipo`, que ya tiraba 400 a mano.
+  it('rechaza con 422 un estado que no exista, en vez de ignorarlo en silencio', async () => {
+    const res = await request(app)
+      .get('/api/solicitudes?estado=noexiste')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(422);
+    expect(solService.getAll).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/solicitudes/mis-solicitudes', () => {

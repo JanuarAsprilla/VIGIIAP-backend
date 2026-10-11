@@ -39,6 +39,14 @@ describe('GET /api/mapas', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
   });
+
+  // REGRESIÓN (auditoría dinámica con ZAP): mismo esquema que documentos.test.js
+  // -- el valor de admin ahora se valida contra un enum en vez de leerse crudo.
+  it('rechaza con 422 un valor de admin que no sea "true"/"false"', async () => {
+    const res = await request(app).get('/api/mapas?admin=cualquiercosa');
+    expect(res.status).toBe(422);
+    expect(mapaService.getAll).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/mapas/:slug', () => {

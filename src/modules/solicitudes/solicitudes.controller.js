@@ -1,4 +1,4 @@
-import { createSolicitudSchema, updateEstadoSchema, responderSchema } from './solicitudes.schema.js';
+import { createSolicitudSchema, updateEstadoSchema, responderSchema, listSolicitudesQuerySchema, paginationQuerySchema } from './solicitudes.schema.js';
 import * as solService from './solicitudes.service.js';
 import { notifySolicitudEstado, notifyAdminNuevaSolicitud, notifySolicitudRespuesta, notifySolicitudRecibida } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
@@ -10,11 +10,17 @@ import logger from '../../utils/logger.js';
 import { streamPrivateFile } from '../../utils/streamFile.js';
 
 export async function index(req, res, next) {
-  try { res.json(await solService.getAll(req.query)); } catch (err) { next(err); }
+  try {
+    const listQuery = listSolicitudesQuerySchema.parse(req.query);
+    res.json(await solService.getAll(listQuery));
+  } catch (err) { next(err); }
 }
 
 export async function mine(req, res, next) {
-  try { res.json(await solService.getMine(req.user.id, req.query)); } catch (err) { next(err); }
+  try {
+    const listQuery = paginationQuerySchema.parse(req.query);
+    res.json(await solService.getMine(req.user.id, listQuery));
+  } catch (err) { next(err); }
 }
 
 export async function show(req, res, next) {

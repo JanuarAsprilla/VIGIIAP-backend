@@ -11,6 +11,8 @@ import { paginate } from '../../utils/paginate.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado, clearMailConfigCache, notifyCambioConfigCritica } from '../../utils/mailer.js';
 import { SUPER_ADMIN_ONLY_KEYS, CONFIG_LABELS } from './configSchema.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { interpretarUserAgent } from '../../utils/userAgent.js';
+import { EXCLUIR_SUPER_ADMIN, ACCIONES_CRITICAS, condicionSeveridad, severidadDeAccion } from './auditoriaCatalogo.js';
 import { setMaintenanceState } from '../../middlewares/maintenanceMode.js';
 import { clearDynamicConfigCache, getAdminEmailFallback } from '../../config/dynamicConfig.js';
 
@@ -336,15 +338,16 @@ export async function getAdminEmails() {
  */
 export async function getAuditLog(reqQuery, viewerRol) {
   const { limit, offset, meta } = paginate(reqQuery);
-  const { modulo, accion, fechaDesde, fechaHasta, q } = reqQuery;
+  const { modulo, accion, fechaDesde, fechaHasta, q, usuario, ip, severidad } = reqQuery;
   const conditions = [];
   const params = [];
 
-  if (viewerRol !== 'super_admin') {
-    conditions.push(`usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`);
-  }
+  if (viewerRol !== 'super_admin') conditions.push(EXCLUIR_SUPER_ADMIN);
   if (modulo) { params.push(modulo); conditions.push(`modulo = $${params.length}`); }
   if (accion) { params.push(accion); conditions.push(`accion = $${params.length}`); }
+  if (severidad) conditions.push(condicionSeveridad(severidad, params));
+  if (usuario) { params.push(`%${usuario}%`); conditions.push(`usuario_email ILIKE $${params.length}`); }
+  if (ip) { params.push(`${ip}%`); conditions.push(`ip LIKE $${params.length}`); }
   if (fechaDesde) { params.push(fechaDesde); conditions.push(`creado_en >= $${params.length}`); }
   if (fechaHasta) { params.push(fechaHasta); conditions.push(`creado_en <= $${params.length}`); }
   if (q) {
@@ -359,7 +362,7 @@ export async function getAuditLog(reqQuery, viewerRol) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, creado_en
+      `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, user_agent, creado_en
        FROM audit_log ${where}
        ORDER BY creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -368,7 +371,48 @@ export async function getAuditLog(reqQuery, viewerRol) {
     query(`SELECT COUNT(*) FROM audit_log ${where}`, params.slice(0, -2)),
   ]);
 
-  return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
+  return { data: data.rows.map(enriquecerEventoAuditoria), meta: meta(Number(count.rows[0].count)) };
+}
+
+/** Agrega gravedad y datos del dispositivo; el User-Agent crudo se expone recortado. */
+function enriquecerEventoAuditoria({ user_agent: userAgent, ...evento }) {
+  return {
+    ...evento,
+    severidad: severidadDeAccion(evento.accion),
+    ...interpretarUserAgent(userAgent),
+    userAgent: userAgent ? userAgent.slice(0, 300) : null,
+  };
+}
+
+/**
+ * Resumen de las últimas 24 h para la cabecera de Actividad. Respeta la misma visibilidad
+ * que el listado: un admin_sig no ve cuentas super_admin.
+ */
+export async function getAuditResumen(viewerRol) {
+  const visibilidad = viewerRol === 'super_admin' ? 'TRUE' : EXCLUIR_SUPER_ADMIN;
+  const { rows } = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE creado_en >= date_trunc('day', NOW()))                  AS eventos_hoy,
+       COUNT(*) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours')               AS eventos_24h,
+       COUNT(*) FILTER (WHERE accion = 'login_failed' AND creado_en >= NOW() - INTERVAL '24 hours')  AS logins_fallidos_24h,
+       COUNT(*) FILTER (WHERE accion = 'login_blocked' AND creado_en >= NOW() - INTERVAL '24 hours') AS bloqueos_24h,
+       COUNT(*) FILTER (WHERE accion = ANY($1::text[]) AND creado_en >= NOW() - INTERVAL '24 hours') AS criticos_24h,
+       COUNT(DISTINCT ip) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours')     AS ips_distintas_24h,
+       COUNT(DISTINCT usuario_id) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours') AS usuarios_activos_24h
+     FROM audit_log
+     WHERE ${visibilidad}`,
+    [ACCIONES_CRITICAS]
+  );
+  const fila = rows[0];
+  return {
+    eventosHoy: Number(fila.eventos_hoy),
+    eventos24h: Number(fila.eventos_24h),
+    loginsFallidos24h: Number(fila.logins_fallidos_24h),
+    bloqueos24h: Number(fila.bloqueos_24h),
+    criticos24h: Number(fila.criticos_24h),
+    ipsDistintas24h: Number(fila.ips_distintas_24h),
+    usuariosActivos24h: Number(fila.usuarios_activos_24h),
+  };
 }
 
 /** Estadísticas extendidas para el panel super_admin */

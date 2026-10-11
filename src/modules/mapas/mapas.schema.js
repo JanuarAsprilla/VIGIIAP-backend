@@ -72,3 +72,17 @@ export const updateMapaSchema = mapaBase.partial().refine(
 export const toggleMapaSchema = z.object({
   activo: z.coerce.boolean(),
 });
+
+// REGRESIÓN (hallazgo de auditoría dinámica con ZAP, mismo patrón que
+// documentos.schema.js#listDocumentosQuerySchema): GET / nunca validaba
+// req.query. Este módulo no tenía un filtro numérico estricto que reventara
+// como `anio` en documentos, pero igual queda sin la misma protección que
+// el resto del código -- cerrarlo aquí por consistencia, no por un crash
+// confirmado.
+export const listMapasQuerySchema = z.object({
+  page:      z.coerce.number().int().positive().optional(),
+  limit:     z.coerce.number().int().positive().optional(),
+  categoria: z.string().trim().min(1).max(100).optional(),
+  q:         z.string().trim().max(200).optional(),
+  admin:     z.enum(['true', 'false']).optional(),
+});

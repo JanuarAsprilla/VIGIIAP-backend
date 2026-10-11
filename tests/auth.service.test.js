@@ -8,6 +8,7 @@ vi.mock('../src/config/database.js', () => ({
 
 vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
+  enmascararEmail: (email) => `${String(email).slice(0, 2)}***@x`,
 }));
 
 vi.mock('bcryptjs', () => ({
@@ -130,6 +131,21 @@ describe('login()', () => {
     // bcrypt.compare DEBE llamarse con el hash dummy para igualar el tiempo de respuesta
     // y evitar que un atacante distinga emails registrados de los que no existen (timing attack).
     expect(bcrypt.compare).toHaveBeenCalledOnce();
+  });
+
+  it('registra el intento contra un correo inexistente, con correo enmascarado, IP y navegador', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(login('noexiste@iiap.gob.pe', 'pass', '203.0.113.9', 'Mozilla/5.0 test')).rejects.toMatchObject({ status: 401 });
+
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({
+      accion: 'login_failed',
+      modulo: 'auth',
+      ip: '203.0.113.9',
+      userAgent: 'Mozilla/5.0 test',
+      descripcion: expect.stringContaining('cuenta inexistente'),
+    }));
+    expect(registrarAuditoria.mock.calls.at(-1)[0].descripcion).not.toContain('noexiste@iiap.gob.pe');
   });
 
   it('lanza 401 cuando la contraseña es incorrecta', async () => {
