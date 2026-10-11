@@ -1,4 +1,4 @@
-import { createMapaSchema, updateMapaSchema, toggleMapaSchema } from './mapas.schema.js';
+import { createMapaSchema, updateMapaSchema, toggleMapaSchema, listMapasQuerySchema } from './mapas.schema.js';
 import * as mapaService from './mapas.service.js';
 import { invalidateCache } from '../../middlewares/cache.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
@@ -6,7 +6,8 @@ import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
 export async function index(req, res, next) {
   try {
-    res.json(await mapaService.getAll(req.query, req.user));
+    const listQuery = listMapasQuerySchema.parse(req.query);
+    res.json(await mapaService.getAll(listQuery, req.user));
   } catch (err) { next(err); }
 }
 

@@ -6,11 +6,16 @@ import { MODULOS, setPermisosAdmin } from './modulos.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
+import {
+  paginationQuerySchema, listUsuariosQuerySchema, auditLogQuerySchema,
+  listAdministradoresQuerySchema, reportesQuerySchema,
+} from './admin.schema.js';
 
 /** GET /api/admin/reportes?periodo=dia|semana|mes|anio|custom&desde=&hasta= */
 export async function reportes(req, res, next) {
   try {
-    res.json(await adminService.getReporte(req.query));
+    const listQuery = reportesQuerySchema.parse(req.query);
+    res.json(await adminService.getReporte(listQuery));
   } catch (err) { next(err); }
 }
 
@@ -136,7 +141,8 @@ export async function dashboardTendencias(req, res, next) {
 /** GET /api/admin/usuarios */
 export async function listarUsuarios(req, res, next) {
   try {
-    const result = await adminService.listarUsuarios(req.query);
+    const listQuery = listUsuariosQuerySchema.parse(req.query);
+    const result = await adminService.listarUsuarios(listQuery);
     res.json(result);
   } catch (err) {
     next(err);
@@ -212,7 +218,8 @@ export async function eliminarUsuario(req, res, next) {
 /** GET /api/admin/audit */
 export async function auditLog(req, res, next) {
   try {
-    const result = await adminService.getAuditLog(req.query, req.user?.rol);
+    const listQuery = auditLogQuerySchema.parse(req.query);
+    const result = await adminService.getAuditLog(listQuery, req.user?.rol);
     res.json(result);
   } catch (err) {
     next(err);
@@ -222,7 +229,8 @@ export async function auditLog(req, res, next) {
 /** GET /api/admin/errores */
 export async function errorLog(req, res, next) {
   try {
-    const result = await adminService.getErrorLog(req.query);
+    const listQuery = paginationQuerySchema.parse(req.query);
+    const result = await adminService.getErrorLog(listQuery);
     res.json(result);
   } catch (err) {
     next(err);
@@ -252,7 +260,8 @@ export async function actualizarEstadoError(req, res, next) {
 /** GET /api/admin/administradores — exclusivo super_admin */
 export async function listarAdministradores(req, res, next) {
   try {
-    res.json(await adminService.listarAdministradores(req.query));
+    const listQuery = listAdministradoresQuerySchema.parse(req.query);
+    res.json(await adminService.listarAdministradores(listQuery));
   } catch (err) { next(err); }
 }
 
