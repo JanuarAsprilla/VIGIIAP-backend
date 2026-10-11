@@ -95,6 +95,7 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
         registrarAuditoria({
           accion:      'refresh_token_reuse',
           modulo:      'auth',
+          resultado:   'fallo',
           entidadId:   stolen[0].usuario_id,
           descripcion: 'Refresh token reutilizado fuera de la ventana de gracia — posible robo de token. Sesiones revocadas.',
           ip:          ip ?? null,
@@ -155,7 +156,7 @@ export async function login(email, password, ip, userAgent) {
     await bcrypt.compare(password, DUMMY_HASH);
     // Sin await: el tiempo de respuesta debe seguir igualando al de una cuenta existente.
     registrarAuditoria({
-      accion: 'login_failed', modulo: 'auth',
+      accion: 'login_failed', modulo: 'auth', resultado: 'fallo',
       descripcion: `Login fallido — cuenta inexistente (${enmascararEmail(email)})`,
       ip, userAgent,
     });
@@ -227,6 +228,7 @@ export async function login(email, password, ip, userAgent) {
     registrarAuditoria({
       accion:      bloquear ? 'login_blocked' : 'login_failed',
       modulo:      'auth',
+      resultado:   'fallo',
       entidadId:   user.id,
       descripcion: bloquear
         ? `Cuenta bloqueada ${LOCKOUT_MINS}min por ${MAX_INTENTOS} intentos fallidos — ${user.email}`
