@@ -40,15 +40,15 @@ export function severidadDeAccion(accion) {
  */
 export function condicionSeveridad(severidad, params) {
   params.push(CRITICAS);
-  const iCriticas = params.length;
-  params.push(ADVERTENCIAS);
-  const iAdvertencias = params.length;
-  const prefijos = PREFIJOS_ADVERTENCIA.map((p) => `accion LIKE '${p.replace('_', '\\_')}%'`).join(' OR ');
-
-  const esCritica = `accion = ANY($${iCriticas}::text[])`;
-  const esAdvertencia = `(accion = ANY($${iAdvertencias}::text[]) OR ${prefijos})`;
-
+  const esCritica = `accion = ANY($${params.length}::text[])`;
   if (severidad === 'critica') return esCritica;
+
+  // Solo se agrega el segundo parámetro cuando se usa: un $N declarado y sin usar hace
+  // que Postgres no pueda inferir su tipo ("could not determine data type of parameter").
+  params.push(ADVERTENCIAS);
+  const prefijos = PREFIJOS_ADVERTENCIA.map((p) => `accion LIKE '${p.replace('_', '\\_')}%'`).join(' OR ');
+  const esAdvertencia = `(accion = ANY($${params.length}::text[]) OR ${prefijos})`;
+
   if (severidad === 'advertencia') return `(NOT ${esCritica} AND ${esAdvertencia})`;
   return `(NOT ${esCritica} AND NOT ${esAdvertencia})`;
 }
