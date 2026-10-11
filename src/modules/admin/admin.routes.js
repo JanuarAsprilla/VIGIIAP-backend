@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getPapelera, restaurar, purgar } from './papelera.controller.js';
 import { exportUsuarios, exportSolicitudes, exportAudit, exportDescargas } from './export.controller.js';
 import {
-  stats, dashboardTendencias, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, auditResumen, errorLog,
+  stats, dashboardTendencias, listarUsuarios, crearUsuario, actualizarUsuario, eliminarUsuario, auditLog, auditResumen, auditIntegridad, errorLog,
   actualizarEstadoError,
   getConfiguracion, setConfiguracion, probarCorreo, reportes,
   superStats, crearAdmin, listarAdministradores, setPermisosAdminController,
@@ -32,6 +32,7 @@ router.patch('/usuarios/:id',   requireModulo('usuarios', 'editar'), actualizarU
 router.delete('/usuarios/:id',  requireModulo('usuarios', 'editar'), eliminarUsuario);
 router.get('/audit',            requireModulo('actividad', 'ver'), auditLog);
 router.get('/audit/resumen',    requireModulo('actividad', 'ver'), auditResumen);
+router.get('/audit/integridad', requireSuperAdmin, auditIntegridad);
 router.get('/errores',          requireModulo('errores', 'ver'), errorLog);
 router.patch('/errores/:id/estado', requireModulo('errores', 'editar'), actualizarEstadoError);
 router.get('/configuracion',    requireModulo('configuracion', 'ver'), getConfiguracion);
