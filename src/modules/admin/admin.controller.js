@@ -226,6 +226,15 @@ export async function auditLog(req, res, next) {
   }
 }
 
+/** GET /api/admin/audit/resumen */
+export async function auditResumen(req, res, next) {
+  try {
+    res.json(await adminService.getAuditResumen(req.user?.rol));
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** GET /api/admin/errores */
 export async function errorLog(req, res, next) {
   try {
