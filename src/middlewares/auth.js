@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { isRevoked } from '../utils/tokenBlacklist.js';
 import { COOKIE_NAME } from '../utils/cookieOptions.js';
+import { asignarUsuarioAlContexto } from '../utils/contextoPeticion.js';
+import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
 
 /**
  * Extrae el JWT de la cookie HttpOnly (preferido) o del header Authorization: Bearer.
@@ -45,6 +47,7 @@ export function authenticate(req, res, next) {
       return res.status(401).json({ error: 'Token no válido para este endpoint' });
     }
     req.user = payload;
+    asignarUsuarioAlContexto(payload);
     next();
   } catch {
     res.status(401).json({ error: 'Token inválido o expirado' });
@@ -62,7 +65,10 @@ export function optionalAuthenticate(req, res, next) {
       const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       // Mismo chequeo que authenticate(): un token de scope '2fa' o
       // 'password-change' no debe tratarse como sesión válida tampoco aquí.
-      if (hasValidAccessScope(payload)) req.user = payload;
+      if (hasValidAccessScope(payload)) {
+        req.user = payload;
+        asignarUsuarioAlContexto(payload);
+      }
     } catch {
       // Token inválido/expirado — continuar como anónimo
     }
@@ -81,6 +87,7 @@ export function authorize(...roles) {
     // super_admin tiene acceso absoluto a todas las rutas protegidas
     if (req.user?.rol === 'super_admin') return next();
     if (!roles.includes(req.user?.rol)) {
+      registrarAccesoDenegado(req, `requiere rol ${roles.join(' o ')}`);
       return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     }
     next();
@@ -90,6 +97,7 @@ export function authorize(...roles) {
 /** Solo el super_admin puede acceder. */
 export function requireSuperAdmin(req, res, next) {
   if (req.user?.rol !== 'super_admin') {
+    registrarAccesoDenegado(req, 'reservado al Super Administrador');
     return res.status(403).json({ error: 'Acción reservada para el Super Administrador' });
   }
   next();
