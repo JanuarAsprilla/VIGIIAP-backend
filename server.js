@@ -5,6 +5,7 @@ import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
 import { loadBlacklist } from './src/utils/tokenBlacklist.js';
 import { loadMaintenanceState, startMaintenanceStatePolling, stopMaintenanceStatePolling } from './src/middlewares/maintenanceMode.js';
+import { startRetencionAuditoria, stopRetencionAuditoria } from './src/utils/retencionAuditoria.js';
 import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportScheduler } from './src/utils/weeklyReportScheduler.js';
 import { startRateLimitAutoScaler, stopRateLimitAutoScaler } from './src/utils/rateLimitAutoScaler.js';
 import logger from './src/utils/logger.js';
@@ -136,6 +137,7 @@ async function start() {
   await loadWeeklyReportState();
   startWeeklyReportScheduler();
   startRateLimitAutoScaler();
+  startRetencionAuditoria();
 
   // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
   const { query } = await import('./src/config/database.js');
@@ -156,6 +158,7 @@ async function start() {
     stopMaintenanceStatePolling();
     stopWeeklyReportScheduler();
     stopRateLimitAutoScaler();
+    stopRetencionAuditoria();
     server.close(async () => {
       try {
         await pool.end();
