@@ -572,7 +572,7 @@ describe('admin.service → setConfiguracion()', () => {
 });
 
 // ─── Additional imports ────────────────────────────────────────────────────
-import { getAuditLog, getErrorLog, actualizarEstadoError, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
+import { getAuditLog, getAuditResumen, getErrorLog, actualizarEstadoError, getSuperStats, crearAdminSig, getAdminEmails } from '../src/modules/admin/admin.service.js';
 import { query } from '../src/config/database.js';
 
 describe('admin.service → getAuditLog()', () => {
@@ -651,6 +651,102 @@ describe('admin.service → getAuditLog()', () => {
     await getAuditLog({}, 'super_admin');
     const sql = query.mock.calls[0][0];
     expect(sql).not.toMatch(/super_admin/);
+  });
+
+  // Regresión: `usuario_id NOT IN (...)` descarta las filas con usuario_id NULL (NULL NOT IN
+  // (...) no es verdadero), así que un admin_sig nunca veía accesos anónimos ni intentos
+  // contra correos inexistentes.
+  it('para un admin_sig conserva los eventos sin usuario (usuario_id NULL)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({}, 'admin_sig');
+    expect(query.mock.calls[0][0]).toMatch(/usuario_id IS NULL OR usuario_id NOT IN/);
+  });
+
+  it('filtra por usuario con coincidencia parcial sobre el correo', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({ usuario: 'lagarejo' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/usuario_email ILIKE \$\d+/);
+    expect(params).toContain('%lagarejo%');
+  });
+
+  it('filtra por IP como prefijo', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({ ip: '186.96' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/ip LIKE \$\d+/);
+    expect(params).toContain('186.96%');
+  });
+
+  it('filtra por gravedad con la misma clasificación que se muestra', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    await getAuditLog({ severidad: 'critica' });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/accion = ANY\(\$\d+::text\[\]\)/);
+    expect(params.some((p) => Array.isArray(p) && p.includes('login_blocked'))).toBe(true);
+  });
+
+  it('cada evento sale con su gravedad y los datos del dispositivo, sin exponer el User-Agent completo', async () => {
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36';
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'e1', accion: 'login_blocked', ip: '203.0.113.9', user_agent: ua }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+    const { data } = await getAuditLog({});
+
+    expect(data[0]).toMatchObject({
+      severidad: 'critica', dispositivo: 'escritorio', navegador: 'Chrome', sistema: 'macOS', userAgent: ua,
+    });
+    expect(data[0]).not.toHaveProperty('user_agent');
+  });
+
+  it('un evento sin User-Agent no rompe la respuesta', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'e2', accion: 'login', user_agent: null }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+    const { data } = await getAuditLog({});
+
+    expect(data[0]).toMatchObject({ severidad: 'info', dispositivo: null, navegador: null, userAgent: null });
+  });
+});
+
+describe('admin.service → getAuditResumen()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const fila = {
+    eventos_hoy: '12', eventos_24h: '40', logins_fallidos_24h: '3', bloqueos_24h: '1',
+    criticos_24h: '2', ips_distintas_24h: '5', usuarios_activos_24h: '4',
+  };
+
+  it('devuelve los contadores como números', async () => {
+    query.mockResolvedValueOnce({ rows: [fila] });
+    const resumen = await getAuditResumen('super_admin');
+
+    expect(resumen).toEqual({
+      eventosHoy: 12, eventos24h: 40, loginsFallidos24h: 3, bloqueos24h: 1,
+      criticos24h: 2, ipsDistintas24h: 5, usuariosActivos24h: 4,
+    });
+  });
+
+  it('para un admin_sig excluye la actividad de super_admin conservando los eventos sin usuario', async () => {
+    query.mockResolvedValueOnce({ rows: [fila] });
+    await getAuditResumen('admin_sig');
+
+    expect(query.mock.calls[0][0]).toMatch(/usuario_id IS NULL OR usuario_id NOT IN/);
+  });
+
+  it('para un super_admin no aplica ningún filtro de visibilidad', async () => {
+    query.mockResolvedValueOnce({ rows: [fila] });
+    await getAuditResumen('super_admin');
+
+    expect(query.mock.calls[0][0]).not.toMatch(/super_admin/);
   });
 });
 
