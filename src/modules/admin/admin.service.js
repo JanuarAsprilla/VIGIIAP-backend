@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 import { paginate } from '../../utils/paginate.js';
+import { diffCambios } from '../../utils/cambios.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado, clearMailConfigCache, notifyCambioConfigCritica } from '../../utils/mailer.js';
 import { SUPER_ADMIN_ONLY_KEYS, CONFIG_LABELS } from './configSchema.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
@@ -245,6 +246,7 @@ export async function getConfiguracion() {
 
 /** Guarda (upsert) un mapa clave→valor en configuracion */
 export async function setConfiguracion(config, adminId, adminEmail) {
+  const antes = await getConfiguracion();
   for (const [clave, valor] of Object.entries(config)) {
     await query(
       `INSERT INTO configuracion (clave, valor, actualizado_en)
@@ -284,6 +286,8 @@ export async function setConfiguracion(config, adminId, adminEmail) {
     accion:      'update_configuracion',
     modulo:      'admin',
     descripcion: `Configuración del sistema actualizada (${Object.keys(config).length} campos)`,
+    entidadTipo: 'configuracion',
+    cambios:     diffCambios(antes, Object.fromEntries(Object.entries(config).map(([k, v]) => [k, String(v)])), Object.keys(config)),
     usuarioId:   adminId,
     usuarioEmail: adminEmail,
   });
@@ -338,7 +342,7 @@ export async function getAdminEmails() {
  */
 export async function getAuditLog(reqQuery, viewerRol) {
   const { limit, offset, meta } = paginate(reqQuery);
-  const { modulo, accion, fechaDesde, fechaHasta, q, usuario, ip, severidad } = reqQuery;
+  const { modulo, accion, fechaDesde, fechaHasta, q, usuario, ip, severidad, resultado } = reqQuery;
   const conditions = [];
   const params = [];
 
@@ -346,6 +350,7 @@ export async function getAuditLog(reqQuery, viewerRol) {
   if (modulo) { params.push(modulo); conditions.push(`modulo = $${params.length}`); }
   if (accion) { params.push(accion); conditions.push(`accion = $${params.length}`); }
   if (severidad) conditions.push(condicionSeveridad(severidad, params));
+  if (resultado) { params.push(resultado); conditions.push(`resultado = $${params.length}`); }
   if (usuario) { params.push(`%${usuario}%`); conditions.push(`usuario_email ILIKE $${params.length}`); }
   if (ip) { params.push(`${ip}%`); conditions.push(`ip LIKE $${params.length}`); }
   if (fechaDesde) { params.push(fechaDesde); conditions.push(`creado_en >= $${params.length}`); }
@@ -362,7 +367,8 @@ export async function getAuditLog(reqQuery, viewerRol) {
 
   const [data, count] = await Promise.all([
     query(
-      `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, user_agent, creado_en
+      `SELECT id, accion, modulo, entidad_id, entidad_tipo, descripcion, usuario_email, ip, user_agent,
+              resultado, request_id, cambios, creado_en
        FROM audit_log ${where}
        ORDER BY creado_en DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -397,6 +403,7 @@ export async function getAuditResumen(viewerRol) {
        COUNT(*) FILTER (WHERE accion = 'login_failed' AND creado_en >= NOW() - INTERVAL '24 hours')  AS logins_fallidos_24h,
        COUNT(*) FILTER (WHERE accion = 'login_blocked' AND creado_en >= NOW() - INTERVAL '24 hours') AS bloqueos_24h,
        COUNT(*) FILTER (WHERE accion = ANY($1::text[]) AND creado_en >= NOW() - INTERVAL '24 hours') AS criticos_24h,
+       COUNT(*) FILTER (WHERE resultado = 'denegado' AND creado_en >= NOW() - INTERVAL '24 hours')   AS denegados_24h,
        COUNT(DISTINCT ip) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours')     AS ips_distintas_24h,
        COUNT(DISTINCT usuario_id) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours') AS usuarios_activos_24h
      FROM audit_log
@@ -410,6 +417,7 @@ export async function getAuditResumen(viewerRol) {
     loginsFallidos24h: Number(fila.logins_fallidos_24h),
     bloqueos24h: Number(fila.bloqueos_24h),
     criticos24h: Number(fila.criticos_24h),
+    accesosDenegados24h: Number(fila.denegados_24h),
     ipsDistintas24h: Number(fila.ips_distintas_24h),
     usuariosActivos24h: Number(fila.usuarios_activos_24h),
   };

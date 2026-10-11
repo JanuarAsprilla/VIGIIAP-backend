@@ -1,4 +1,5 @@
 import { tienePermisoModulo } from '../modules/admin/modulos.service.js';
+import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
 
 /**
  * Exige que req.user tenga el módulo `clave` habilitado con la acción dada.
@@ -11,6 +12,7 @@ export function requireModulo(clave, accion = 'ver') {
     try {
       const permitido = await tienePermisoModulo(req.user, clave, accion);
       if (!permitido) {
+        registrarAccesoDenegado(req, `sin permiso de ${accion} en el módulo ${clave}`);
         return res.status(403).json({ error: `No tienes acceso al módulo de ${clave}` });
       }
       next();

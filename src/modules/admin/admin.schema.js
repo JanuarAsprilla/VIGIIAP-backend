@@ -35,6 +35,7 @@ export const auditLogQuerySchema = z.object({
   modulo:     z.string().trim().min(1).max(100).optional(),
   accion:     z.string().trim().min(1).max(100).optional(),
   severidad:  z.enum(SEVERIDADES).optional(),
+  resultado:  z.enum(['exito', 'fallo', 'denegado']).optional(),
   usuario:    z.string().trim().min(1).max(255).optional(),
   // Solo caracteres de una dirección IPv4/IPv6: el valor se usa como prefijo en un LIKE.
   ip:         z.string().trim().regex(/^[0-9a-fA-F:.]{1,45}$/, 'IP inválida').optional(),

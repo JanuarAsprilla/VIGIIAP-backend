@@ -19,6 +19,8 @@
 import { query } from '../../config/database.js';
 import { isPublicUrl } from '../../config/r2.js';
 import { registrarDescarga } from '../../utils/dataCustody.js';
+import { registrarAuditoria } from '../../utils/auditLog.js';
+import { registrarAccesoDenegado } from '../../utils/accesoDenegado.js';
 import { streamPrivateFile } from '../../utils/streamFile.js';
 
 /**
@@ -31,6 +33,22 @@ function canAccess(visibilidad, user) {
   if (['admin_sig', 'investigador', 'super_admin'].includes(user.rol)) return true;
   if (visibilidad === 'usuarios') return true;
   return false; // 'acreditados' requiere rol elevado
+}
+
+/**
+ * Las descargas de recursos que no son públicos (para usuarios o acreditados) quedan también en
+ * el registro de actividad: son pocas y son justo las que interesa poder revisar. Las públicas
+ * ya se cuentan en descarga_log y no se repiten aquí.
+ */
+function registrarDescargaRestringida(tipo, recurso) {
+  if (recurso.visibilidad === 'publico') return;
+  registrarAuditoria({
+    accion: 'descarga_restringida',
+    modulo: 'descargas',
+    entidadId: recurso.id,
+    entidadTipo: tipo,
+    descripcion: `Descarga de ${tipo}: ${recurso.titulo} (acceso ${recurso.visibilidad})`,
+  });
 }
 
 /** GET /api/descargar/mapa/:id?campo=archivo_pdf|archivo_img */
@@ -50,6 +68,7 @@ export async function descargarMapa(req, res, next) {
       return res.status(404).json({ error: 'Mapa no encontrado' });
     }
     if (!canAccess(mapa.visibilidad, req.user)) {
+      registrarAccesoDenegado(req, `descarga del mapa "${mapa.titulo}" (visibilidad ${mapa.visibilidad})`);
       return res.status(403).json({ error: 'No tienes acceso a este recurso' });
     }
 
@@ -67,6 +86,7 @@ export async function descargarMapa(req, res, next) {
       ip:            req.ip,
       archivoUrl:    fileUrl,
     });
+    registrarDescargaRestringida('mapa', mapa);
 
     // Archivos públicos (imágenes, thumbnails) se sirven directamente --
     // no llevan credenciales que proteger. Archivos privados (PDFs) se
@@ -91,6 +111,7 @@ export async function descargarDocumento(req, res, next) {
       return res.status(404).json({ error: 'Documento no encontrado' });
     }
     if (!canAccess(doc.visibilidad, req.user)) {
+      registrarAccesoDenegado(req, `descarga del documento "${doc.titulo}" (visibilidad ${doc.visibilidad})`);
       return res.status(403).json({ error: 'No tienes acceso a este recurso' });
     }
     if (!doc.archivo_url) {
@@ -106,6 +127,7 @@ export async function descargarDocumento(req, res, next) {
       ip:            req.ip,
       archivoUrl:    doc.archivo_url,
     });
+    registrarDescargaRestringida('documento', doc);
 
     if (isPublicUrl(doc.archivo_url)) {
       return res.redirect(302, doc.archivo_url);

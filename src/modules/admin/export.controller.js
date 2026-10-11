@@ -5,7 +5,7 @@
  */
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
-import { EXCLUIR_SUPER_ADMIN } from './auditoriaCatalogo.js';
+import { EXCLUIR_SUPER_ADMIN, SEVERIDADES, condicionSeveridad } from './auditoriaCatalogo.js';
 
 const MAX_ROWS = 10_000;
 
@@ -120,7 +120,20 @@ export async function exportSolicitudes(req, res, next) {
   } catch (err) { next(err); }
 }
 
-/** GET /api/admin/export/audit?formato=csv|json&desde=&hasta= */
+const RESULTADOS = ['exito', 'fallo', 'denegado'];
+const IP_VALIDA = /^[0-9a-fA-F:.]{1,45}$/;
+
+/** Filtros de la pantalla de Actividad que también aplican al export (valores desconocidos se ignoran). */
+function filtrosAuditoria({ modulo, accion, severidad, resultado, usuario, ip }, params, conditions) {
+  if (modulo) { params.push(String(modulo).slice(0, 100)); conditions.push(`modulo = $${params.length}`); }
+  if (accion) { params.push(String(accion).slice(0, 100)); conditions.push(`accion = $${params.length}`); }
+  if (SEVERIDADES.includes(severidad)) conditions.push(condicionSeveridad(severidad, params));
+  if (RESULTADOS.includes(resultado)) { params.push(resultado); conditions.push(`resultado = $${params.length}`); }
+  if (usuario) { params.push(`%${String(usuario).slice(0, 255)}%`); conditions.push(`usuario_email ILIKE $${params.length}`); }
+  if (ip && IP_VALIDA.test(ip)) { params.push(`${ip}%`); conditions.push(`ip LIKE $${params.length}`); }
+}
+
+/** GET /api/admin/export/audit?formato=csv|json&desde=&hasta=&modulo=&accion=&severidad=&resultado=&usuario=&ip= */
 export async function exportAudit(req, res, next) {
   try {
     const formato = req.query.formato === 'json' ? 'json' : 'csv';
@@ -129,10 +142,11 @@ export async function exportAudit(req, res, next) {
     // criterio en getAuditLog, admin.service.js).
     const params = [], conditions = req.user?.rol === 'super_admin' ? [] : [EXCLUIR_SUPER_ADMIN];
     dateFilter(req.query.desde, req.query.hasta, 'creado_en', params, conditions);
+    filtrosAuditoria(req.query, params, conditions);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(MAX_ROWS);
     const { rows } = await query(
-      `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, creado_en
+      `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, resultado, request_id, creado_en
        FROM audit_log ${where} ORDER BY creado_en DESC LIMIT $${params.length}`,
       params
     );

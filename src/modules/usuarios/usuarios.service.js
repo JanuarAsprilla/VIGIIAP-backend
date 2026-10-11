@@ -44,6 +44,12 @@ export async function getAll(reqQuery) {
   return { data: data.rows, meta: meta(Number(count.rows[0].count)) };
 }
 
+/** Rol y estado actuales de una cuenta, para registrar el antes/después de un cambio. null si no existe. */
+export async function getEstadoCuenta(id) {
+  const { rows } = await query('SELECT email, rol, activo FROM usuarios WHERE id = $1', [id]);
+  return rows[0] ?? null;
+}
+
 export async function updateRol(id, rol, activo, caller = {}) {
   if (!ROLES.includes(rol)) throw Object.assign(new Error('Rol inválido'), { status: 400 });
   // Nadie puede modificar su propia cuenta desde este panel
