@@ -621,3 +621,20 @@ export async function notifyCambioConfigCritica({ email, cambios, adminEmail }) 
     }),
   });
 }
+
+/** Aviso genérico de seguridad: un título, una explicación y una tabla de detalles. */
+export async function notifyAlertaSeguridad({ email, titulo, mensaje, detalles = [], ctaPath, ctaLabel }) {
+  await send({
+    to: email,
+    subject: `[VIGI-IIAP] ${titulo}`,
+    html: baseTemplate({
+      eyebrow: 'Alerta de seguridad',
+      title: titulo,
+      accent: RED,
+      body: bodyText(escHtml(mensaje))
+        + (detalles.length ? detailPanel(detalles.map(([etiqueta, valor]) => detailRow(escHtml(etiqueta), escHtml(valor)))) : '')
+        + bodyText('Si no reconoces esta actividad, cambia tu contraseña y avisa al equipo administrador.'),
+      cta: ctaPath ? { url: `${BASE_URL}${ctaPath}`, label: ctaLabel } : undefined,
+    }),
+  });
+}
