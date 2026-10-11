@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { query } from '../../config/database.js';
 import { registrarAuditoria, enmascararEmail } from '../../utils/auditLog.js';
+import { evaluarUbicacionNueva, registrarFalloLogin } from '../../utils/alertasSeguridad.js';
 import { notifyNuevoInicioSesion } from '../../utils/mailer.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
 import logger from '../../utils/logger.js';
@@ -160,6 +161,7 @@ export async function login(email, password, ip, userAgent) {
       descripcion: `Login fallido — cuenta inexistente (${enmascararEmail(email)})`,
       ip, userAgent,
     });
+    registrarFalloLogin(ip);
     throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
   }
 
@@ -238,6 +240,7 @@ export async function login(email, password, ip, userAgent) {
       ip,
       userAgent,
     });
+    registrarFalloLogin(ip);
     const msg = bloquear
       ? `Cuenta bloqueada ${LOCKOUT_MINS} minutos por ${MAX_INTENTOS} intentos fallidos consecutivos.`
       : 'Credenciales incorrectas';
@@ -308,6 +311,7 @@ export async function login(email, password, ip, userAgent) {
     { ip, userAgent }
   );
 
+  evaluarUbicacionNueva(user, ip);
   registrarAuditoria({
     accion: 'login',
     modulo: 'auth',
