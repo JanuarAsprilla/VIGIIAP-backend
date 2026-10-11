@@ -123,7 +123,7 @@ describe('contexto de Fase 2 (resultado, cambios, request id)', () => {
       usuarioId: adminId, usuarioEmail: 'admin@iiap.test', ip: '186.96.117.11', requestId: 'req-abc',
     });
     await registrarAuditoria({
-      accion: 'update_rol', modulo: 'usuarios', entidadTipo: 'usuario', usuarioId: adminId,
+      accion: 'update_rol', modulo: 'usuarios', entidadTipo: 'usuario', usuarioId: adminId, usuarioEmail: 'admin@iiap.test',
       cambios: { rol: { antes: 'tecnico', despues: 'investigador' } },
     });
   });
