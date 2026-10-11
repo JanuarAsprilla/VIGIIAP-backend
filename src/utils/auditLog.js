@@ -4,6 +4,7 @@
  */
 import { query } from '../config/database.js';
 import logger from './logger.js';
+import { contextoActual } from './contextoPeticion.js';
 
 /**
  * Correo parcialmente oculto para registrar intentos contra cuentas que no existen
@@ -26,6 +27,13 @@ export function enmascararEmail(email) {
  * @param {string} [params.usuarioEmail]
  * @param {string} [params.ip]
  * @param {string} [params.userAgent]
+ * @param {'exito'|'fallo'|'denegado'} [params.resultado]
+ * @param {object} [params.cambios]     - { campo: { antes, despues } } (ver utils/cambios.js)
+ * @param {string} [params.entidadTipo] - 'usuario', 'geovisor', ...
+ * @param {string} [params.requestId]
+ *
+ * IP, navegador, ID de petición y usuario se completan solos con los de la petición en curso
+ * cuando el llamador no los indica (ver contextoPeticion.js); lo explícito siempre manda.
  */
 export async function registrarAuditoria({
   accion,
@@ -36,12 +44,28 @@ export async function registrarAuditoria({
   usuarioEmail = null,
   ip = null,
   userAgent = null,
+  resultado = 'exito',
+  cambios = null,
+  entidadTipo = null,
+  requestId = null,
 }) {
   try {
+    const contexto = contextoActual();
     await query(
-      `INSERT INTO audit_log (accion, modulo, entidad_id, descripcion, usuario_id, usuario_email, ip, user_agent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [accion, modulo, entidadId, descripcion, usuarioId, usuarioEmail, ip, userAgent]
+      `INSERT INTO audit_log (accion, modulo, entidad_id, descripcion, usuario_id, usuario_email, ip, user_agent,
+                              resultado, request_id, cambios, entidad_tipo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)`,
+      [
+        accion, modulo, entidadId, descripcion,
+        usuarioId ?? contexto?.usuarioId ?? null,
+        usuarioEmail ?? contexto?.usuarioEmail ?? null,
+        ip ?? contexto?.ip ?? null,
+        userAgent ?? contexto?.userAgent ?? null,
+        resultado,
+        requestId ?? contexto?.requestId ?? null,
+        cambios ? JSON.stringify(cambios) : null,
+        entidadTipo,
+      ]
     );
   } catch (err) {
     // No romper el flujo principal si falla el log
