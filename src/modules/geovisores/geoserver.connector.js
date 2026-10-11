@@ -69,8 +69,10 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
     if (intento < MAX_REINTENTOS) {
       return solicitarConTimeout(conexion, url, aceptar, intento + 1);
     }
+    // undici esconde el motivo real (ECONNRESET, timeout, DNS...) en error.cause.
+    const detalle = error.cause?.code ?? error.cause?.message;
     throw Object.assign(
-      new Error(`GeoServer no respondió a tiempo o no está disponible: ${error.message}`),
+      new Error(`GeoServer no respondió a tiempo o no está disponible: ${error.message}${detalle ? ` (${detalle})` : ''}`),
       { status: 503, code: 'GEOSERVER_NO_DISPONIBLE' },
     );
   } finally {
@@ -231,6 +233,22 @@ export async function contarFeaturesCapa(conexion, capaId) {
  * contra geo.siatpc.co en producción: sin esto, ninguna ficha tendría
  * centroide para el mini-mapa del checklist admin.
  */
+/**
+ * GeoServer responde 400 cuando propertyName pide un campo que la capa ya no tiene (p. ej. se
+ * renombró o se quitó la columna que la ficha usa como identificador). Se convierte en un error
+ * accionable que dice cuál campo falla y cuáles hay, en vez de un genérico "respondió 400".
+ */
+function errorDeCampoInexistente(cuerpo, capaId) {
+  const coincidencia = cuerpo.match(/Requested property:\s*(.+?) is not available[^\[]*(?:\[([^\]]*)\])?/s);
+  if (!coincidencia) return null;
+  const [, campo, disponibles] = coincidencia;
+  const lista = disponibles ? ` Campos disponibles: ${disponibles.trim()}.` : '';
+  return Object.assign(
+    new Error(`El campo "${campo.trim()}" configurado para fichas ya no existe en la capa ${capaId}.${lista} Actualiza la configuración de fichas de la capa.`),
+    { status: 422, code: 'CAMPO_FICHAS_INEXISTENTE' },
+  );
+}
+
 export async function listarFeaturesCapa(conexion, capaId, campoIdentificador, campoEtiqueta) {
   const propiedadGeometria = await obtenerNombrePropiedadGeometria(conexion, capaId);
   const propiedades = [campoIdentificador, campoEtiqueta, propiedadGeometria].filter(Boolean).join(',');
@@ -246,6 +264,10 @@ export async function listarFeaturesCapa(conexion, capaId, campoIdentificador, c
 
   const respuesta = await solicitarConTimeout(conexion, url);
   if (!respuesta.ok) {
+    if (respuesta.status === 400) {
+      const errorCampo = errorDeCampoInexistente(await respuesta.text().catch(() => ''), capaId);
+      if (errorCampo) throw errorCampo;
+    }
     throw Object.assign(
       new Error(`GeoServer respondió ${respuesta.status} al listar features de ${capaId}`),
       { status: 502, code: 'GEOSERVER_NO_DISPONIBLE' },
