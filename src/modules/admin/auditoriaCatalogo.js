@@ -20,7 +20,7 @@ const CRITICAS = [
 ];
 
 const ADVERTENCIAS = [
-  'login_failed', 'change_password', 'password_reset',
+  'login_failed', 'acceso_denegado', 'change_password', 'password_reset',
   'sesion_revocada', 'todas_sesiones_revocadas', 'update_usuario', 'rate_limit_auto_scale',
 ];
 
