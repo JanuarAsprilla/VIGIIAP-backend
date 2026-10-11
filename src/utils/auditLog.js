@@ -6,6 +6,17 @@ import { query } from '../config/database.js';
 import logger from './logger.js';
 
 /**
+ * Correo parcialmente oculto para registrar intentos contra cuentas que no existen
+ * ("ab***@iiap.org.co"): sirve para reconocer el patrón sin guardar el dato completo.
+ */
+export function enmascararEmail(email) {
+  const texto = String(email ?? '').trim().toLowerCase().slice(0, 254);
+  const arroba = texto.lastIndexOf('@');
+  if (arroba < 1) return '***';
+  return `${texto.slice(0, Math.min(2, arroba))}***${texto.slice(arroba)}`;
+}
+
+/**
  * @param {object} params
  * @param {string} params.accion     - 'login', 'registro', 'create_usuario', etc.
  * @param {string} params.modulo     - 'auth', 'usuarios', 'solicitudes', etc.

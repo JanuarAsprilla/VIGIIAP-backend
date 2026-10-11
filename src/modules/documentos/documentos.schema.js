@@ -43,3 +43,17 @@ export const updateDocumentoSchema = z.object({
 );
 
 export const toggleDocumentoSchema = z.object({ activo: z.coerce.boolean() });
+
+// REGRESIÓN (hallazgo de auditoría dinámica con ZAP): a diferencia de los
+// esquemas de arriba, GET / nunca validaba req.query -- un anio no numérico
+// llegaba crudo hasta `d.anio = $N` contra una columna smallint y Postgres
+// tiraba un 500 con su propio mensaje de error (expone el motor de BD y el
+// tipo de columna en cualquier entorno que no sea NODE_ENV=production).
+export const listDocumentosQuerySchema = z.object({
+  page:  z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().optional(),
+  tipo:  z.string().trim().min(1).max(100).optional(),
+  anio:  z.coerce.number().int().min(1900).max(CURRENT_YEAR + 1).optional(),
+  q:     z.string().trim().max(200).optional(),
+  admin: z.enum(['true', 'false']).optional(),
+});

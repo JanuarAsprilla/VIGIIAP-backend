@@ -5,6 +5,7 @@
  */
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { EXCLUIR_SUPER_ADMIN } from './auditoriaCatalogo.js';
 
 const MAX_ROWS = 10_000;
 
@@ -126,9 +127,7 @@ export async function exportAudit(req, res, next) {
     // Excluir acciones del super_admin — nunca visibles para admin_sig, pero
     // SÍ visibles cuando quien exporta es otro super_admin (ver mismo
     // criterio en getAuditLog, admin.service.js).
-    const params = [], conditions = req.user?.rol === 'super_admin'
-      ? []
-      : [`usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin')`];
+    const params = [], conditions = req.user?.rol === 'super_admin' ? [] : [EXCLUIR_SUPER_ADMIN];
     dateFilter(req.query.desde, req.query.hasta, 'creado_en', params, conditions);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(MAX_ROWS);
