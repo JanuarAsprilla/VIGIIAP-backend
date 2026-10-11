@@ -1,0 +1,29 @@
+name: Flujo de ramas
+
+# Hace cumplir el modelo develop → main: producción solo recibe versiones
+# desde develop, correcciones urgentes (hotfix/*) o la rama de release automática.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  origen:
+    name: Origen del PR hacia main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar rama de origen
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            develop|hotfix/*|release-please--*)
+              echo "Origen permitido: $HEAD_REF"
+              ;;
+            *)
+              echo "::error::Los PR hacia main solo pueden venir de develop, hotfix/* o la rama de release automática. Origen recibido: $HEAD_REF"
+              exit 1
+              ;;
+          esac
