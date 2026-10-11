@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SEVERIDADES } from './auditoriaCatalogo.js';
 
 // REGRESIÓN (hallazgo de auditoría dinámica con ZAP, mismo patrón que
 // documentos.schema.js#listDocumentosQuerySchema): ninguno de los endpoints
@@ -33,6 +34,10 @@ export const auditLogQuerySchema = z.object({
   ...paginationFields,
   modulo:     z.string().trim().min(1).max(100).optional(),
   accion:     z.string().trim().min(1).max(100).optional(),
+  severidad:  z.enum(SEVERIDADES).optional(),
+  usuario:    z.string().trim().min(1).max(255).optional(),
+  // Solo caracteres de una dirección IPv4/IPv6: el valor se usa como prefijo en un LIKE.
+  ip:         z.string().trim().regex(/^[0-9a-fA-F:.]{1,45}$/, 'IP inválida').optional(),
   fechaDesde: fechaIso.optional(),
   fechaHasta: fechaIso.optional(),
   q:          z.string().trim().max(200).optional(),
