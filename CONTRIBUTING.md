@@ -1,21 +1,47 @@
 # Guía de contribución — VIGIIAP
 
-Este documento resume cómo trabajamos. Aplica a los dos repositorios de la plataforma:
+Aplica a los dos repositorios de la plataforma:
 [VIGIIAP](https://github.com/JanuarAsprilla/VIGIIAP) (frontend) y
 [VIGIIAP-backend](https://github.com/JanuarAsprilla/VIGIIAP-backend) (API).
 
-## Flujo de trabajo
+## Modelo de ramas
 
-Trabajamos sobre una sola rama permanente, `main`, siempre desplegable y protegida.
+Seguimos un flujo **GitFlow simplificado**, con dos ramas permanentes y protegidas:
 
-1. Crea una rama corta desde `main` con un nombre descriptivo:
-   `feat/…`, `fix/…`, `chore/…`, `docs/…`, `perf/…`, `test/…`.
+| Rama | Propósito | Recibe cambios de |
+|---|---|---|
+| `develop` | Integración. Es la rama por defecto y contiene lo que irá a la próxima versión. | Ramas de trabajo (`feat/…`, `fix/…`, …) |
+| `main` | Producción. Cada fusión despliega. | **Solo** `develop` (versiones) y `hotfix/…` (urgencias) |
+
+**Reglas, verificadas automáticamente:**
+
+- Nadie hace push directo a `develop` ni a `main`; todo entra por Pull Request.
+- El CI completo debe pasar antes de fusionar.
+- Un PR hacia `main` solo se acepta si su origen es `develop`, `hotfix/…` o la rama de release automática.
+  La verificación «Origen del PR hacia main» lo comprueba y bloquea el resto.
+
+## Flujo de trabajo diario
+
+1. Crea una rama corta **desde `develop`**: `feat/…`, `fix/…`, `chore/…`, `docs/…`, `perf/…`, `test/…`.
 2. Haz commits pequeños y atómicos.
-3. Abre un Pull Request hacia `main`. El título sigue la convención de commits.
-4. Espera a que el CI pase completo y fusiona con **Squash and merge**.
-   Las ramas fusionadas se borran solas.
+3. Abre un Pull Request **hacia `develop`**. El título sigue la convención de commits.
+4. Cuando el CI pase, fusiona con **Squash and merge**. La rama de trabajo se borra sola.
 
-`main` no admite pushes directos ni force-push.
+## Publicar una versión (`develop` → `main`)
+
+1. Verifica que `develop` está estable y con el CI en verde.
+2. Abre un Pull Request de `develop` hacia `main`.
+3. Fusiona con **Create a merge commit** (nunca squash: así `develop` y `main` comparten historia).
+4. El despliegue a producción es automático al fusionar en `main`.
+5. **release-please** abre un PR de versión (changelog y número de versión) sobre `main`; fusiónalo para publicar la versión.
+6. **Sincroniza `develop`:** abre un PR de `main` hacia `develop` y fusiónalo con merge commit, de modo que
+   `develop` incorpore la versión publicada. `develop` debe quedar siempre al día con `main`.
+
+## Hotfix (error crítico en producción)
+
+1. Crea `hotfix/descripcion` desde `main`.
+2. Abre el PR hacia `main`, con el CI en verde, y fusiónalo.
+3. Sincroniza `develop` con `main` (paso 6 anterior) para no perder la corrección.
 
 ## Commits convencionales
 
@@ -37,11 +63,8 @@ Seguimos [Conventional Commits](https://www.conventionalcommits.org):
 
 Ejemplos: `feat(geovisores): asistente por pasos`, `fix(auth): renovar sesión con cookie caducada`.
 
-## Versiones
-
-Las versiones y el `CHANGELOG.md` los genera **release-please** a partir de los commits.
-No edites la versión ni el changelog a mano: al fusionar a `main`, release-please abre
-(o actualiza) un PR «release». Fusionarlo publica la versión.
+Las versiones y el `CHANGELOG.md` los genera **release-please** a partir de estos commits;
+no los edites a mano.
 
 ## Antes de abrir un Pull Request
 
