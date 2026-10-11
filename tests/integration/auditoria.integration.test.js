@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { cleanDatabase } from './setup.js';
 import { getAuditLog, getAuditResumen } from '../../src/modules/admin/admin.service.js';
 import { query } from '../../src/config/database.js';
+import { registrarAuditoria } from '../../src/utils/auditLog.js';
 
 const UA_CHROME_MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36';
 
@@ -112,5 +113,44 @@ describe('resumen de 24 horas', () => {
 
     expect(r.eventos24h).toBe(5);
     expect(r.criticos24h).toBe(1);
+  });
+});
+
+describe('contexto de Fase 2 (resultado, cambios, request id)', () => {
+  beforeEach(async () => {
+    await registrarAuditoria({
+      accion: 'acceso_denegado', modulo: 'seguridad', resultado: 'denegado',
+      usuarioId: adminId, usuarioEmail: 'admin@iiap.test', ip: '186.96.117.11', requestId: 'req-abc',
+    });
+    await registrarAuditoria({
+      accion: 'update_rol', modulo: 'usuarios', entidadTipo: 'usuario', usuarioId: adminId,
+      cambios: { rol: { antes: 'tecnico', despues: 'investigador' } },
+    });
+  });
+
+  it('guarda y devuelve resultado, request id, tipo de entidad y cambios', async () => {
+    const { data } = await getAuditLog({ accion: 'acceso_denegado' }, 'super_admin');
+    expect(data[0]).toMatchObject({ resultado: 'denegado', request_id: 'req-abc' });
+
+    const { data: cambios } = await getAuditLog({ usuario: 'admin@', accion: 'update_rol' }, 'super_admin');
+    const conCambios = cambios.find((e) => e.cambios);
+    expect(conCambios).toMatchObject({ entidad_tipo: 'usuario', cambios: { rol: { antes: 'tecnico', despues: 'investigador' } } });
+  });
+
+  it('filtra por resultado y los eventos antiguos cuentan como éxito', async () => {
+    const denegados = await getAuditLog({ resultado: 'denegado' }, 'super_admin');
+    const exitos = await getAuditLog({ resultado: 'exito' }, 'super_admin');
+
+    expect(denegados.data.map((e) => e.accion)).toEqual(['acceso_denegado']);
+    expect(exitos.meta.total).toBe(7);
+  });
+
+  it('el resumen cuenta los accesos denegados de 24 horas', async () => {
+    const r = await getAuditResumen('super_admin');
+    expect(r.accesosDenegados24h).toBe(1);
+  });
+
+  it('la base rechaza un resultado fuera del catálogo', async () => {
+    await expect(query(`INSERT INTO audit_log (accion, modulo, resultado) VALUES ('x','y','raro')`)).rejects.toThrow();
   });
 });
