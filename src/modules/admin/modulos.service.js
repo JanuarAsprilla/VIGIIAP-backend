@@ -5,6 +5,7 @@
  */
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { diffCambios } from '../../utils/cambios.js';
 
 /** Catálogo fijo de módulos delegables del panel — mismo set que las secciones
  *  "Gestión" y "Sistema" del sidebar admin, menos Papelera (exclusiva de
@@ -68,10 +69,17 @@ export async function permisosDeAdmin(usuarioId) {
   }));
 }
 
+function nivelesDePermiso(lista) {
+  return Object.fromEntries(lista.map(({ modulo, puede_ver, puede_editar }) => [
+    modulo,
+    puede_editar ? 'ver+editar' : puede_ver ? 'ver' : 'sin acceso',
+  ]));
+}
+
 /** Reemplaza (upsert) los permisos de un admin_sig. Exclusivo de super_admin
  *  (ver requireSuperAdmin en admin.routes.js). */
 export async function setPermisosAdmin(usuarioId, permisos, { superAdminId }) {
-  const { rows: target } = await query('SELECT rol FROM usuarios WHERE id = $1', [usuarioId]);
+  const { rows: target } = await query('SELECT rol, email FROM usuarios WHERE id = $1', [usuarioId]);
   if (!target[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
   if (target[0].rol !== 'admin_sig') {
     throw Object.assign(new Error('Los permisos por módulo solo aplican a administradores SIG'), { status: 400 });
@@ -82,6 +90,8 @@ export async function setPermisosAdmin(usuarioId, permisos, { superAdminId }) {
       throw Object.assign(new Error(`Módulo inválido: ${permiso.modulo}`), { status: 400 });
     }
   }
+
+  const antes = await permisosDeAdmin(usuarioId);
 
   for (const { modulo, puede_ver, puede_editar } of permisos) {
     // puede_editar implica puede_ver — evita el estado inconsistente "edita
@@ -97,13 +107,16 @@ export async function setPermisosAdmin(usuarioId, permisos, { superAdminId }) {
     );
   }
 
+  const despues = await permisosDeAdmin(usuarioId);
   registrarAuditoria({
     accion: 'update_permisos_modulo',
     modulo: 'admin',
     entidadId: usuarioId,
-    descripcion: `Super admin actualizó permisos por módulo (${permisos.length} módulos)`,
+    entidadTipo: 'usuario',
+    descripcion: `Super admin actualizó permisos por módulo de ${target[0].email ?? 'un administrador'}`,
+    cambios: diffCambios(nivelesDePermiso(antes), nivelesDePermiso(despues)),
     usuarioId: superAdminId,
   });
 
-  return permisosDeAdmin(usuarioId);
+  return despues;
 }

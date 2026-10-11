@@ -105,7 +105,8 @@ describe('modulos.service → setPermisosAdmin()', () => {
 
   it('hace upsert de cada permiso y registra auditoría', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] })  // target check
+      .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig', email: 'a1@iiap.org' }] })  // target check
+      .mockResolvedValueOnce({ rows: [] })                       // permisosDeAdmin() antes
       .mockResolvedValueOnce({ rows: [] })                       // upsert mapas
       .mockResolvedValueOnce({ rows: [] })                       // upsert documentos
       .mockResolvedValueOnce({ rows: [] });                      // permisosDeAdmin() al final
@@ -126,6 +127,7 @@ describe('modulos.service → setPermisosAdmin()', () => {
   it('fuerza puede_ver=true cuando puede_editar=true, aunque no se envíe explícito', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ rol: 'admin_sig' }] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 

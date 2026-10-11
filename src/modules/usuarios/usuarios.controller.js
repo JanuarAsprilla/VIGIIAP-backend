@@ -7,6 +7,7 @@ import {
   REFRESH_COOKIE_NAME, clearRefreshCookieOptions,
 } from '../../utils/cookieOptions.js';
 import { validarLongitudMinima } from '../../utils/passwordPolicy.js';
+import { diffCambios } from '../../utils/cambios.js';
 
 export async function getMe(req, res, next) {
   try { res.json(await userService.getProfile(req.user.id)); } catch (err) { next(err); }

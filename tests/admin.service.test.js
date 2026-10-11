@@ -509,10 +509,10 @@ describe('admin.service → setConfiguracion()', () => {
       'admin@iiap.org.co'
     );
 
-    // 2 upserts + 1 SELECT de emails de super_admin (modoMantenimiento es
-    // una clave crítica — dispara la alerta, ver describe de más abajo)
-    expect(query).toHaveBeenCalledTimes(3);
-    const firstSql = query.mock.calls[0][0];
+    // 1 SELECT del estado previo + 2 upserts + 1 SELECT de emails de super_admin
+    // (modoMantenimiento es una clave crítica — dispara la alerta, ver describe de más abajo)
+    expect(query).toHaveBeenCalledTimes(4);
+    const firstSql = query.mock.calls[1][0];
     expect(firstSql).toMatch(/INSERT INTO configuracion/i);
     expect(firstSql).toMatch(/ON CONFLICT/i);
   });
@@ -559,13 +559,14 @@ describe('admin.service → setConfiguracion()', () => {
     await setConfiguracion({ activo: true, limite: 100 }, 'admin-uuid', 'admin@iiap.org.co');
 
     // Verificar que los params del upsert incluyen strings
-    const params1 = query.mock.calls[0][1];
+    const params1 = query.mock.calls[1][1];
     expect(typeof params1[1]).toBe('string'); // valor convertido a string
   });
 
-  it('no hace queries si el objeto de configuración está vacío', async () => {
+  it('no hace upserts si el objeto de configuración está vacío', async () => {
+    query.mockResolvedValue({ rows: [] });
     await setConfiguracion({}, 'admin-uuid', 'admin@iiap.org.co');
-    expect(query).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(1);
     // Pero sí llama a auditoría
     expect(registrarAuditoria).toHaveBeenCalledOnce();
   });
@@ -722,7 +723,7 @@ describe('admin.service → getAuditResumen()', () => {
 
   const fila = {
     eventos_hoy: '12', eventos_24h: '40', logins_fallidos_24h: '3', bloqueos_24h: '1',
-    criticos_24h: '2', ips_distintas_24h: '5', usuarios_activos_24h: '4',
+    criticos_24h: '2', ips_distintas_24h: '5', usuarios_activos_24h: '4', denegados_24h: '6',
   };
 
   it('devuelve los contadores como números', async () => {
@@ -731,7 +732,7 @@ describe('admin.service → getAuditResumen()', () => {
 
     expect(resumen).toEqual({
       eventosHoy: 12, eventos24h: 40, loginsFallidos24h: 3, bloqueos24h: 1,
-      criticos24h: 2, ipsDistintas24h: 5, usuariosActivos24h: 4,
+      criticos24h: 2, ipsDistintas24h: 5, usuariosActivos24h: 4, accesosDenegados24h: 6,
     });
   });
 

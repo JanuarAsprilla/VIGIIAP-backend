@@ -2,6 +2,7 @@ import { createGeovisorSchema, updateGeovisorSchema, toggleGeovisorSchema } from
 import * as geovisorService from './geovisores.service.js';
 import { esGeometriaValida } from '../../utils/geometry.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { diffCambios } from '../../utils/cambios.js';
 
 export async function index(req, res, next) {
   try {
@@ -109,12 +110,16 @@ export async function store(req, res, next) {
 export async function update(req, res, next) {
   try {
     const data = updateGeovisorSchema.parse(req.body);
+    const antes = await geovisorService.getById(req.params.id);
     const geovisor = await geovisorService.update(req.params.id, data);
+    const campos = Object.keys(data).filter((campo) => campo in antes);
     registrarAuditoria({
       accion: 'update_geovisor',
       modulo: 'geovisores',
       entidadId: geovisor.id,
+      entidadTipo: 'geovisor',
       descripcion: `Geovisor actualizado: ${geovisor.titulo}`,
+      cambios: diffCambios(antes, data, campos),
       usuarioId: req.user.id,
       usuarioEmail: req.user.email,
       ip: req.ip,

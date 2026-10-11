@@ -211,6 +211,30 @@ describe('exportAudit()', () => {
     expect(sql).toMatch(/creado_en >= \$1/);
   });
 
+  it('aplica los filtros de usuario, IP, resultado, módulo y gravedad', async () => {
+    query.mockResolvedValueOnce({ rows: [AUDIT_ROW] });
+    const req = {
+      query: { usuario: 'x@', ip: '10.0', resultado: 'denegado', modulo: 'auth', severidad: 'critica' },
+      user: ADMIN_USER, ip: '10.0.0.1',
+    };
+    await exportAudit(req, mockRes(), mockNext);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/usuario_email ILIKE/);
+    expect(sql).toMatch(/ip LIKE/);
+    expect(sql).toMatch(/resultado = /);
+    expect(sql).toMatch(/modulo = /);
+    expect(params).toEqual(expect.arrayContaining(['%x@%', '10.0%', 'denegado', 'auth']));
+  });
+
+  it('ignora resultado y gravedad desconocidos y una IP con caracteres inválidos', async () => {
+    query.mockResolvedValueOnce({ rows: [AUDIT_ROW] });
+    const req = { query: { resultado: 'raro', severidad: 'x', ip: "1' OR 1=1" }, user: { ...ADMIN_USER, rol: 'super_admin' }, ip: '10.0.0.1' };
+    await exportAudit(req, mockRes(), mockNext);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).not.toMatch(/resultado = |ip LIKE/);
+    expect(params).toEqual([10000]);
+  });
+
   it('excluye actividad de super_admin cuando quien exporta es admin_sig', async () => {
     query.mockResolvedValueOnce({ rows: [AUDIT_ROW] });
     const req = { query: {}, user: ADMIN_USER, ip: '10.0.0.1' };
