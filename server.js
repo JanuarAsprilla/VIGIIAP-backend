@@ -5,6 +5,7 @@ import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
 import { loadBlacklist } from './src/utils/tokenBlacklist.js';
 import { loadMaintenanceState, startMaintenanceStatePolling, stopMaintenanceStatePolling } from './src/middlewares/maintenanceMode.js';
+import { startRetencionScheduler, stopRetencionScheduler } from './src/utils/retencionDatos.js';
 import { startRetencionAuditoria, stopRetencionAuditoria } from './src/utils/retencionAuditoria.js';
 import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportScheduler } from './src/utils/weeklyReportScheduler.js';
 import { startRateLimitAutoScaler, stopRateLimitAutoScaler } from './src/utils/rateLimitAutoScaler.js';
@@ -136,6 +137,7 @@ async function start() {
   startMaintenanceStatePolling();
   await loadWeeklyReportState();
   startWeeklyReportScheduler();
+  startRetencionScheduler();
   startRateLimitAutoScaler();
   startRetencionAuditoria();
 
@@ -157,6 +159,7 @@ async function start() {
     logger.info(`[shutdown] ${signal} recibido — cerrando servidor...`);
     stopMaintenanceStatePolling();
     stopWeeklyReportScheduler();
+    stopRetencionScheduler();
     stopRateLimitAutoScaler();
     stopRetencionAuditoria();
     server.close(async () => {
