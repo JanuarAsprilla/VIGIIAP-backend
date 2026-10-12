@@ -11,6 +11,7 @@ vi.mock('../src/utils/logger.js', () => ({
 import { query } from '../src/config/database.js';
 import {
   maintenanceGate,
+  estadoMantenimiento,
   loadMaintenanceState,
   setMaintenanceState,
   startMaintenanceStatePolling,
@@ -196,5 +197,62 @@ describe('startMaintenanceStatePolling() — refresco periódico ante ediciones 
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('maintenanceGate() — pausa total con lista de rutas permitidas', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setMaintenanceState({ modoMantenimiento: true, mensajeMantenimiento: 'Volvemos pronto.' });
+  });
+  afterEach(() => setMaintenanceState({ modoMantenimiento: false, mensajeMantenimiento: '' }));
+
+  const pasa = (metodo, ruta, user) => {
+    const res = { ...mockRes(), set: vi.fn() };
+    const next = vi.fn();
+    maintenanceGate({ method: metodo, path: ruta, user }, res, next);
+    return { permitido: next.mock.calls.length === 1, res };
+  };
+
+  it.each([
+    ['POST', '/auth/login'], ['POST', '/auth/refresh'], ['POST', '/auth/logout'],
+    ['POST', '/auth/2fa/confirm'], ['POST', '/auth/recuperar-password'], ['POST', '/auth/reset-password'],
+    ['GET', '/auth/me'], ['GET', '/auth/csrf-token'],
+  ])('deja pasar %s %s para que un administrador pueda entrar a desactivarlo', (metodo, ruta) => {
+    expect(pasa(metodo, ruta).permitido).toBe(true);
+  });
+
+  it.each([
+    ['POST', '/auth/visitante'], ['POST', '/auth/registro'], ['GET', '/mapas'], ['GET', '/documentos'],
+    ['GET', '/geovisores/estaciones/wms'], ['GET', '/herramientas'], ['POST', '/analitica/pageview'],
+    ['GET', '/notificaciones'], ['GET', '/admin/usuarios'], ['GET', '/auth/login'], ['POST', '/auth/me'],
+  ])('bloquea %s %s con 503 y Retry-After', (metodo, ruta) => {
+    const { permitido, res } = pasa(metodo, ruta);
+    expect(permitido).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '300');
+  });
+
+  it('un administrador con sesión pasa en cualquier ruta', () => {
+    expect(pasa('GET', '/admin/usuarios', { rol: 'admin_sig' }).permitido).toBe(true);
+    expect(pasa('POST', '/auth/visitante', { rol: 'super_admin' }).permitido).toBe(true);
+  });
+
+  it('un usuario sin rol de administrador no pasa ni en rutas de datos aunque tenga sesión', () => {
+    expect(pasa('GET', '/mapas', { rol: 'investigador' }).permitido).toBe(false);
+  });
+});
+
+describe('estadoMantenimiento()', () => {
+  afterEach(() => setMaintenanceState({ modoMantenimiento: false, mensajeMantenimiento: '' }));
+
+  it('desactivado: no trae mensaje', () => {
+    setMaintenanceState({ modoMantenimiento: false });
+    expect(estadoMantenimiento()).toEqual({ mantenimiento: false, mensaje: null });
+  });
+
+  it('activado: trae el mensaje configurado', () => {
+    setMaintenanceState({ modoMantenimiento: true, mensajeMantenimiento: 'Volvemos pronto.' });
+    expect(estadoMantenimiento()).toEqual({ mantenimiento: true, mensaje: 'Volvemos pronto.' });
   });
 });
