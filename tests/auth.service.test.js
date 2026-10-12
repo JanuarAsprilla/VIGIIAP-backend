@@ -51,6 +51,7 @@ import {
   register,
   getProfile,
   loginVisitante,
+  getNombreVisitante,
   resetPassword,
   completarPerfil,
 } from '../src/modules/auth/auth.service.js';
@@ -692,6 +693,18 @@ describe('loginVisitante()', () => {
     expect(insertParams[0]).toBeNull(); // nombre → null
   });
 
+  it('recorta los espacios del nombre y trata un nombre en blanco como anónimo', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'vis-010' }] }).mockResolvedValueOnce({ rows: [{ id: 'vis-011' }] });
+
+    const conNombre = await loginVisitante({ nombre: '  Ana Pérez  ', ip: null, userAgent: null });
+    const enBlanco = await loginVisitante({ nombre: '   ', ip: null, userAgent: null });
+
+    expect(query.mock.calls[0][1][0]).toBe('Ana Pérez');
+    expect(conNombre.user.nombre).toBe('Ana Pérez');
+    expect(query.mock.calls[1][1][0]).toBeNull();
+    expect(enBlanco.user.nombre).toBe('Visitante');
+  });
+
   it('firma el token con rol "visitante" y expiración de 8h', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: 'vis-004' }] });
 
@@ -1091,5 +1104,21 @@ describe('refreshTokens() — token reutilizado (stolen)', () => {
       .rejects.toMatchObject({ status: 401 });
     // Solo 2 queries — NO se ejecuta el UPDATE de revocación masiva de la familia completa
     expect(query).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('getNombreVisitante()', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('devuelve el nombre guardado al entrar', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: 'Ana Pérez' }] });
+    expect(await getNombreVisitante('vis-1')).toBe('Ana Pérez');
+    expect(query.mock.calls[0][1]).toEqual(['vis-1']);
+  });
+
+  it('devuelve null si entró sin nombre o el visitante no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [{ nombre: null }] }).mockResolvedValueOnce({ rows: [] });
+    expect(await getNombreVisitante('vis-2')).toBeNull();
+    expect(await getNombreVisitante('vis-3')).toBeNull();
   });
 });
