@@ -308,6 +308,58 @@ describe('contarFeaturesCapa', () => {
   });
 });
 
+describe('listarFeaturesCapa — campo configurado inexistente', () => {
+  const xmlDescribe = `<?xml version="1.0"?><xsd:schema><xsd:element name="the_geom" type="gml:PointPropertyType"/></xsd:schema>`;
+  const excepcionOws = `<?xml version="1.0"?><ows:ExceptionReport><ows:Exception exceptionCode="InvalidParameterValue" locator="GetFeature">
+    <ows:ExceptionText>Requested property: Codigo is not available for Especiales:Camaras_Trampa.  The possible propertyName values are: [the_geom, Localidad, ObjectID]</ows:ExceptionText>
+    </ows:Exception></ows:ExceptionReport>`;
+
+  function stubConError400(cuerpo) {
+    vi.stubGlobal('fetch', vi.fn(async (entrada) => {
+      const url = typeof entrada === 'string' ? new URL(entrada) : entrada;
+      if (url.searchParams.get('request') === 'DescribeFeatureType') {
+        return { ok: true, status: 200, text: () => Promise.resolve(xmlDescribe), headers: { get: () => 'text/xml' } };
+      }
+      return { ok: false, status: 400, text: () => Promise.resolve(cuerpo), headers: { get: () => 'text/xml' } };
+    }));
+  }
+
+  it('un 400 por propertyName inexistente se explica: qué campo falla y cuáles hay', async () => {
+    stubConError400(excepcionOws);
+
+    await expect(listarFeaturesCapa(conexion, 'Especiales:Camaras_Trampa', 'Codigo', undefined)).rejects.toMatchObject({
+      status: 422,
+      code: 'CAMPO_FICHAS_INEXISTENTE',
+      message: expect.stringContaining('"Codigo"'),
+    });
+    await expect(listarFeaturesCapa(conexion, 'Especiales:Camaras_Trampa', 'Codigo', undefined)).rejects.toThrow(
+      /Campos disponibles: the_geom, Localidad, ObjectID/,
+    );
+  });
+
+  it('un 400 distinto sigue siendo el error genérico de GeoServer', async () => {
+    stubConError400('<ows:ExceptionReport>otra cosa</ows:ExceptionReport>');
+
+    await expect(listarFeaturesCapa(conexion, 'Especiales:Camaras_Trampa', 'Codigo', undefined)).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringContaining('respondió 400'),
+    });
+  });
+});
+
+describe('solicitarConTimeout — causa del fallo de red', () => {
+  it('incluye la causa real cuando fetch falla con "fetch failed"', async () => {
+    const error = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
+
+    await expect(contarFeaturesCapa(conexion, 'capa:x')).rejects.toMatchObject({
+      status: 503,
+      code: 'GEOSERVER_NO_DISPONIBLE',
+      message: expect.stringContaining('fetch failed (ECONNRESET)'),
+    });
+  });
+});
+
 describe('listarFeaturesCapa', () => {
   it('restringe propertyName al identificador + etiqueta + geometría, con srsName EPSG:4326', async () => {
     const fetchMock = stubFetchPorOperacion({
