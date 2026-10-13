@@ -28,7 +28,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.7.1",
     "express-validator": "^7.1.0",
-    "geoip-lite": "1.4.10",
+    "geoip-lite": "2.0.3",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
