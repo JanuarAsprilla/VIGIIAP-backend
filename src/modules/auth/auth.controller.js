@@ -292,9 +292,11 @@ export async function resetPassword(req, res, next) {
 export async function me(req, res, next) {
   try {
     if (req.user?.tipo === 'visitante') {
+      // Sin esto el nombre que el visitante dio al entrar se perdía al recargar la página.
+      const nombre = await authService.getNombreVisitante(req.user.visitanteId).catch(() => null);
       return res.json({
         id:     req.user.visitanteId,
-        nombre: 'Visitante',
+        nombre: nombre ?? 'Visitante',
         email:  null,
         rol:    'visitante',
         tipo:   'visitante',
