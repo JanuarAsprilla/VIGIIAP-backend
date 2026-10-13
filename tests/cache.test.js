@@ -20,7 +20,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import { createClient } from 'redis';
 import logger from '../src/utils/logger.js';
-import { getRedisClient, cacheMiddleware, invalidateCache } from '../src/middlewares/cache.js';
+import { getRedisClient, cacheMiddleware, invalidateCache, invalidarRecurso } from '../src/middlewares/cache.js';
 
 // Helper para obtener la instancia mockCliente actual
 function getClient() {
@@ -286,5 +286,88 @@ describe('invalidateCache()', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Error invalidando')
     );
+  });
+});
+
+// ─── Regresión: /documentos y /categorias compartían la misma clave ──────────────
+
+describe('cacheMiddleware() — la clave incluye el montaje del router', () => {
+  const mockNext = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const client = getRedisClient();
+    client.isReady = true;
+    client.get.mockResolvedValue(null);
+  });
+
+  const clavePara = async (baseUrl, path = '/') => {
+    const client = getRedisClient();
+    client.get.mockClear();
+    await cacheMiddleware(60)({ query: {}, cookies: {}, headers: {}, baseUrl, path }, mockRes(), mockNext);
+    return client.get.mock.calls[0][0];
+  };
+
+  it('el listado de documentos y el de categorías ya no comparten clave', async () => {
+    const documentos = await clavePara('/api/v1/documentos');
+    const categorias = await clavePara('/api/v1/categorias');
+
+    expect(documentos).not.toBe(categorias);
+    expect(documentos).toContain('/api/v1/documentos');
+    expect(categorias).toContain('/api/v1/categorias');
+  });
+
+  it('las dos rutas de montaje (/api y /api/v1) del mismo recurso tampoco se mezclan entre recursos', async () => {
+    expect(await clavePara('/api/documentos')).not.toBe(await clavePara('/api/categorias'));
+  });
+
+  it('solo cachea respuestas 200: un 404 o un 500 no se guardan', async () => {
+    const client = getRedisClient();
+    const res = { ...mockRes(), statusCode: 404 };
+    await cacheMiddleware(60)({ query: {}, cookies: {}, headers: {}, baseUrl: '/api/v1/documentos', path: '/x' }, res, mockNext);
+
+    res.json({ error: 'no encontrado' });
+
+    expect(client.setEx).not.toHaveBeenCalled();
+  });
+
+  it('una respuesta 200 sí se guarda', async () => {
+    const client = getRedisClient();
+    const res = { ...mockRes(), statusCode: 200 };
+    await cacheMiddleware(60)({ query: {}, cookies: {}, headers: {}, baseUrl: '/api/v1/documentos', path: '/' }, res, mockNext);
+
+    res.json({ data: [] });
+
+    expect(client.setEx).toHaveBeenCalledWith(expect.stringContaining('/api/v1/documentos'), 60, JSON.stringify({ data: [] }));
+  });
+});
+
+describe('invalidateCache() — SCAN en vez de KEYS', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    getRedisClient().isReady = true;
+  });
+
+  it('usa scanIterator cuando el cliente lo ofrece y borra las claves encontradas', async () => {
+    const client = getRedisClient();
+    client.scanIterator = vi.fn(() => (async function* () { yield ['cache:/api/v1/documentos:a', 'cache:/api/v1/documentos:b']; })());
+
+    await invalidateCache('cache:/api/v1/documentos*');
+
+    expect(client.scanIterator).toHaveBeenCalledWith({ MATCH: 'cache:/api/v1/documentos*', COUNT: 200 });
+    expect(client.del).toHaveBeenCalledWith(['cache:/api/v1/documentos:a', 'cache:/api/v1/documentos:b']);
+    delete client.scanIterator;
+  });
+
+  it('invalidarRecurso limpia las dos rutas de montaje del recurso', async () => {
+    const client = getRedisClient();
+    client.keys.mockResolvedValue([]);
+
+    await invalidarRecurso('documentos');
+
+    expect(client.keys).toHaveBeenCalledWith('cache:/api/documentos*');
+    expect(client.keys).toHaveBeenCalledWith('cache:/api/v1/documentos*');
   });
 });
