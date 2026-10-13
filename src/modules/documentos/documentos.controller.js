@@ -1,6 +1,6 @@
 import { createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema, listDocumentosQuerySchema } from './documentos.schema.js';
 import * as docService from './documentos.service.js';
-import { invalidateCache } from '../../middlewares/cache.js';
+import { invalidarRecurso } from '../../middlewares/cache.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { registrarCustodia, ACCION } from '../../utils/dataCustody.js';
 
@@ -37,6 +37,7 @@ export async function store(req, res, next) {
       ip:           req.ip,
       metadatos:    { titulo: doc.titulo, tipo: doc.tipo, tamano_bytes: doc.tamano_bytes },
     });
+    invalidarRecurso('documentos').catch(() => {});
     res.status(201).json(doc);
   } catch (err) { next(err); }
 }
@@ -63,6 +64,7 @@ export async function update(req, res, next) {
       ip:           req.ip,
       metadatos:    { titulo: doc.titulo, campos: Object.keys(data) },
     });
+    invalidarRecurso('documentos').catch(() => {});
     res.json(doc);
   } catch (err) { next(err); }
 }
@@ -87,7 +89,7 @@ export async function destroy(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
-    invalidateCache('cache:/api/documentos*').catch(() => {});
+    invalidarRecurso('documentos').catch(() => {});
     res.status(204).end();
   } catch (err) { next(err); }
 }
@@ -113,6 +115,7 @@ export async function patchActivo(req, res, next) {
       usuarioEmail: req.user.email,
       ip:           req.ip,
     });
+    invalidarRecurso('documentos').catch(() => {});
     res.json(doc);
   } catch (err) { next(err); }
 }
