@@ -64,9 +64,29 @@ export function setMaintenanceState({ modoMantenimiento, mensajeMantenimiento })
   }
 }
 
-/** Aplica a rutas de contenido público — admin_sig/super_admin siempre pasan. */
+/**
+ * Con el modo mantenimiento activo la plataforma entera queda en pausa: todo lo que cuelga de
+ * /api/v1 responde 503, salvo lo imprescindible para que un administrador pueda entrar a
+ * desactivarlo (login, renovar sesión, 2FA, recuperar contraseña) y el endpoint público de estado.
+ * Las cuentas admin_sig/super_admin con sesión válida pasan siempre.
+ */
+const RUTAS_PERMITIDAS = [
+  { metodo: 'POST', ruta: /^\/auth\/(login|refresh|logout|change-expired-password|recuperar-password|reset-password)$/ },
+  { metodo: 'POST', ruta: /^\/auth\/2fa\/(confirm|verify)$/ },
+  { metodo: 'GET', ruta: /^\/auth\/(me|csrf-token)$/ },
+];
+
+const ROLES_ADMIN = ['admin_sig', 'super_admin'];
+
+/** Lo que muestra GET /estado: lo único que el frontend necesita saber sin sesión. */
+export function estadoMantenimiento() {
+  return { mantenimiento: state.activo, mensaje: state.activo ? state.mensaje : null };
+}
+
 export function maintenanceGate(req, res, next) {
-  if (req.user && ['admin_sig', 'super_admin'].includes(req.user.rol)) return next();
+  if (req.user && ROLES_ADMIN.includes(req.user.rol)) return next();
   if (!state.activo) return next();
+  if (RUTAS_PERMITIDAS.some(({ metodo, ruta }) => metodo === req.method && ruta.test(req.path ?? ''))) return next();
+  res.set?.('Retry-After', '300');
   res.status(503).json({ error: state.mensaje, maintenance: true });
 }

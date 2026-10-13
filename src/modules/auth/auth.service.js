@@ -347,11 +347,12 @@ export async function login(email, password, ip, userAgent) {
 }
 
 // ─── Login visitante (acceso rápido sin credenciales) ─────────────────────────
-export async function loginVisitante({ nombre, ip, userAgent }) {
+export async function loginVisitante({ nombre: nombreCrudo, ip, userAgent }) {
+  const nombre = typeof nombreCrudo === 'string' ? nombreCrudo.trim() || null : null;
   const { rows } = await query(
     `INSERT INTO visitantes (nombre, tipo, ip, user_agent)
      VALUES ($1, 'externo', $2, $3) RETURNING id`,
-    [nombre ?? null, ip ?? null, userAgent ?? null]
+    [nombre, ip ?? null, userAgent ?? null]
   );
 
   const visitanteId = rows[0].id;
@@ -380,6 +381,12 @@ export async function loginVisitante({ nombre, ip, userAgent }) {
       tipo:   'visitante',
     },
   };
+}
+
+/** Nombre que el visitante dio al entrar (el token no lo lleva); null si entró sin nombre. */
+export async function getNombreVisitante(visitanteId) {
+  const { rows } = await query('SELECT nombre FROM visitantes WHERE id = $1', [visitanteId]);
+  return rows[0]?.nombre ?? null;
 }
 
 // ─── Registro ─────────────────────────────────────────────────────────────────

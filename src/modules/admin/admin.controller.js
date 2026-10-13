@@ -5,6 +5,7 @@ import * as adminService from './admin.service.js';
 import { MODULOS, setPermisosAdmin } from './modulos.service.js';
 import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { verificarIntegridadAuditoria } from './integridadAuditoria.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
 import {
   paginationQuerySchema, listUsuariosQuerySchema, auditLogQuerySchema,
@@ -230,6 +231,22 @@ export async function auditLog(req, res, next) {
 export async function auditResumen(req, res, next) {
   try {
     res.json(await adminService.getAuditResumen(req.user?.rol));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /api/admin/audit/integridad — exclusivo super_admin */
+export async function auditIntegridad(req, res, next) {
+  try {
+    const resultado = await verificarIntegridadAuditoria();
+    registrarAuditoria({
+      accion: 'verificar_integridad_auditoria', modulo: 'admin', usuarioId: req.user.id, usuarioEmail: req.user.email,
+      descripcion: resultado.integra
+        ? `Integridad verificada: ${resultado.verificados} eventos sin alteraciones`
+        : `Integridad comprometida: ${resultado.problemas.length} evento(s) con problemas`,
+    });
+    res.json(resultado);
   } catch (err) {
     next(err);
   }
