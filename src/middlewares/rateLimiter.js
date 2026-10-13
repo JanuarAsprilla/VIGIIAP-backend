@@ -147,11 +147,17 @@ export const downloadRateLimiter = rateLimit({
   message: { error: 'Demasiadas descargas. Intenta de nuevo en unos minutos.' },
 });
 
-/** Operaciones administrativas: máximo 200 por 15 minutos por IP. */
+/**
+ * Operaciones administrativas: máximo 600 por 15 minutos POR ADMINISTRADOR. Antes era por IP (200):
+ * todo el equipo del instituto sale por la misma IP pública y una sola carga del panel dispara ~10
+ * peticiones (dashboard, auditoría, errores, solicitudes, usuarios), así que unas pocas personas
+ * agotaban el cupo de todas y el panel respondía 429. Este limitador va después de authenticate,
+ * así que solo cuenta peticiones de administradores con sesión válida.
+ */
 export const adminRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
-  keyGenerator: normalizeIp,
+  max: Number(process.env.ADMIN_RATE_LIMIT_MAX) || 600,
+  keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas operaciones administrativas.' },
