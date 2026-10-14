@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.9.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.8.0...v1.9.0) (2026-10-14)
+
+
+### Features
+
+* **actividad:** fase 1 — registro legible, filtros, gravedad y resumen ([#194](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/194)) ([88004ad](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/88004ad70c6f1381f3bdbe04247263e046110ba6))
+* **actividad:** fase 2 — resultado, request id, accesos denegados y cambios ([#196](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/196)) ([56437ef](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/56437ef5323b4260b658237920d9d6ab3d169505))
+* **actividad:** fase 3 — ubicación e IP de las visitas, retención y alertas de seguridad ([#200](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/200)) ([dc124b7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/dc124b7aa21b5206fa5d6ac72b2d9dccefc5f20d))
+* **actividad:** registro de auditoría encadenado, de solo anexado y con retención ([#202](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/202)) ([b2aa5af](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b2aa5afeb71d2263e496c423cc9d75657197cb78))
+
+
+### Bug Fixes
+
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([5c5283d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5c5283db0e67269c05c4ec81839fdba974217dc6))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([8401092](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8401092e3b81e6170e121f7dc56eb821eba15d25))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([5b38440](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5b384408e5bdc7e020b0e98248098ce80f359e4b))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([a8a6fb6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a8a6fb6ad0be85f967ef2a6e93b2a88b6a920a31))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([fd7f387](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/fd7f387f785b82a4d46865619bc4a62ed52bf11c))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([b436a1f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b436a1f6287c4b4375eea92fd18693f18c3370ba))
+* cierra hallazgos de auditoría de seguridad + residual nOAuth (OAuth email verification) ([d1aac10](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d1aac10e2d973abfcc7785e1f5080ab22962ec3a))
+* **ci:** release-please publica desde main aunque develop sea la rama por defecto ([#192](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/192)) ([2220f6d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2220f6de355bc87e47d59ebbd1009cea6fd7a420))
+* **geovisores:** explicar el 400 por campo de fichas inexistente y la causa de los fallos de red ([#205](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/205)) ([d520a65](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d520a65fcddd964dedffb389ca252864b512259a))
+
 ## [1.8.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.1...v1.8.0) (2026-10-09)
 
 
