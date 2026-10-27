@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 
 vi.mock('../src/modules/geovisores/conexionesGeoserver.service.js', () => ({
   getAll:              vi.fn(),
+  getSeleccionables:   vi.fn(),
   getById:             vi.fn(),
   create:              vi.fn(),
   update:              vi.fn(),
@@ -78,6 +79,54 @@ describe('Conexiones GeoServer routes — auth guards via supertest', () => {
       .get('/api/admin/conexiones-geoserver')
       .set('Authorization', `Bearer ${pubToken}`);
     expect(res.status).toBe(403);
+  });
+
+  // Regresión: quien tenía Geovisores pero no Conexiones recibía 403 al listar las conexiones, la
+  // lista quedaba vacía y el botón «Nuevo geovisor» se desactivaba.
+  describe('GET /api/admin/conexiones-geoserver/seleccionables', () => {
+    const permisosPorModulo = (habilitados) => (_sql, params = []) =>
+      Promise.resolve({ rows: params.some((p) => habilitados.includes(p)) ? [{ puede_ver: true, puede_editar: true }] : [] });
+
+    it('con el módulo geovisores (y sin conexiones_geoserver) devuelve la lista mínima', async () => {
+      query.mockImplementation(permisosPorModulo(['geovisores']));
+      conexionService.getSeleccionables.mockResolvedValue([{ id: 'c1', nombre: 'GeoServer IIAP', tipo: 'propio', activo: true }]);
+
+      const res = await request(app).get('/api/admin/conexiones-geoserver/seleccionables').set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([{ id: 'c1', nombre: 'GeoServer IIAP', tipo: 'propio', activo: true }]);
+    });
+
+    it('el listado completo sigue exigiendo el módulo conexiones_geoserver', async () => {
+      query.mockImplementation(permisosPorModulo(['geovisores']));
+
+      const res = await request(app).get('/api/admin/conexiones-geoserver').set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(403);
+      expect(conexionService.getAll).not.toHaveBeenCalled();
+    });
+
+    it('sin el módulo geovisores responde 403', async () => {
+      query.mockImplementation(permisosPorModulo(['conexiones_geoserver']));
+
+      const res = await request(app).get('/api/admin/conexiones-geoserver/seleccionables').set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(403);
+      expect(conexionService.getSeleccionables).not.toHaveBeenCalled();
+    });
+
+    it('sin token 401 y con rol publico 403', async () => {
+      expect((await request(app).get('/api/admin/conexiones-geoserver/seleccionables')).status).toBe(401);
+      expect((await request(app).get('/api/admin/conexiones-geoserver/seleccionables').set('Authorization', `Bearer ${pubToken}`)).status).toBe(403);
+    });
+
+    it('no se confunde con /:id (no consulta la conexión llamada "seleccionables")', async () => {
+      conexionService.getSeleccionables.mockResolvedValue([]);
+
+      await request(app).get('/api/admin/conexiones-geoserver/seleccionables').set('Authorization', `Bearer ${superToken}`);
+
+      expect(conexionService.getById).not.toHaveBeenCalled();
+    });
   });
 
   it('GET /api/admin/conexiones-geoserver/:id/workspaces → admin_sig con módulo geovisores habilitado obtiene 200', async () => {

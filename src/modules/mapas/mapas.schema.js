@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parcialSinDefaults } from '../../utils/zodParcial.js';
 
 // URLs solo permitidas del almacenamiento propio (R2) o del geovisor institucional.
 // Previene que un admin comprometido apunte recursos a dominios maliciosos externos.
@@ -64,7 +65,7 @@ export const createMapaSchema = mapaBase
     { message: 'bbox_este debe ser mayor que bbox_oeste', path: ['bbox_este'] },
   );
 
-export const updateMapaSchema = mapaBase.partial().refine(
+export const updateMapaSchema = parcialSinDefaults(mapaBase).refine(
   (d) => Object.values(d).some((v) => v !== undefined),
   { message: 'Debe enviar al menos un campo a actualizar' },
 );

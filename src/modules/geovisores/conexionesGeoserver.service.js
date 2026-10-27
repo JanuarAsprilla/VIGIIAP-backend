@@ -12,6 +12,16 @@ export async function getAll() {
   return rows;
 }
 
+/**
+ * Lo mínimo para ELEGIR una conexión al armar un geovisor: nunca URL, usuario ni credenciales.
+ * Quien tiene el módulo Geovisores pero no el de Conexiones GeoServer puede usar las conexiones
+ * existentes sin poder verlas ni administrarlas.
+ */
+export async function getSeleccionables() {
+  const { rows } = await query('SELECT id, nombre, tipo, activo FROM conexiones_geoserver ORDER BY nombre', []);
+  return rows;
+}
+
 export async function getById(id) {
   const { rows } = await query(`SELECT ${COLUMNAS_PUBLICAS} FROM conexiones_geoserver WHERE id = $1`, [id]);
   if (!rows[0]) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });

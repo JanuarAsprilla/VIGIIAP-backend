@@ -19,6 +19,7 @@ vi.mock('../src/modules/auth/auth.service.js', () => ({
   issueTokenPair:         vi.fn(),
   getAdminEmails:         vi.fn().mockResolvedValue([]),
   completarPerfil:        vi.fn(),
+  getNombreVisitante:     vi.fn().mockResolvedValue(null),
 }));
 vi.mock('../src/utils/tokenBlacklist.js', () => ({
   revokeToken:   vi.fn().mockResolvedValue(undefined),
@@ -90,11 +91,26 @@ describe('auth.controller → me()', () => {
     expect(r.json).toHaveBeenCalledWith(profile);
   });
 
-  it('retorna perfil de visitante sin llamar al servicio', async () => {
+  it('retorna perfil de visitante sin cargar el perfil de una cuenta', async () => {
     const r = res();
     await me({ user: { tipo: 'visitante', visitanteId: 'v1' } }, r, mockNext);
     expect(authService.getProfile).not.toHaveBeenCalled();
-    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ rol: 'visitante' }));
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ rol: 'visitante', nombre: 'Visitante' }));
+  });
+
+  it('el visitante conserva el nombre que dio al entrar al recargar la página', async () => {
+    authService.getNombreVisitante.mockResolvedValueOnce('Ana Pérez');
+    const r = res();
+    await me({ user: { tipo: 'visitante', visitanteId: 'v1' } }, r, mockNext);
+    expect(authService.getNombreVisitante).toHaveBeenCalledWith('v1');
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ nombre: 'Ana Pérez' }));
+  });
+
+  it('si no se puede leer el nombre del visitante, responde igual como "Visitante"', async () => {
+    authService.getNombreVisitante.mockRejectedValueOnce(new Error('db'));
+    const r = res();
+    await me({ user: { tipo: 'visitante', visitanteId: 'v1' } }, r, mockNext);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ nombre: 'Visitante' }));
   });
 
   it('llama next(err) si getProfile lanza', async () => {

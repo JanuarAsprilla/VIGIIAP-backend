@@ -48,7 +48,7 @@ export async function create(req, res, next) {
   try {
     const parseResult = crearSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return res.status(400).json({ error: parseResult.error.errors[0].message });
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
     }
     const result = await herramientasService.crear(parseResult.data);
     invalidarCacheHerramientas();
@@ -71,7 +71,7 @@ export async function update(req, res, next) {
     const clave = decodeURIComponent(req.params.clave);
     const parseResult = actualizarSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return res.status(400).json({ error: parseResult.error.errors[0].message });
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
     }
     const result = await herramientasService.actualizar(clave, parseResult.data);
     invalidarCacheHerramientas();
@@ -88,7 +88,7 @@ export async function reorder(req, res, next) {
   try {
     const parseResult = reordenarSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return res.status(400).json({ error: parseResult.error.errors[0].message });
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
     }
     await herramientasService.reordenar(parseResult.data);
     invalidarCacheHerramientas();

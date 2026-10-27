@@ -26,7 +26,7 @@ import { optionalAuthenticate } from './middlewares/auth.js';
 import { requestId } from './middlewares/requestId.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { notFound } from './middlewares/notFound.js';
-import { maintenanceGate } from './middlewares/maintenanceMode.js';
+import { maintenanceGate, estadoMantenimiento } from './middlewares/maintenanceMode.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
 import mapassRoutes from './modules/mapas/mapas.routes.js';
@@ -243,17 +243,24 @@ const noStore = (_req, res, next) => {
   next();
 };
 
+// Estado público de la plataforma (sin sesión): el frontend lo consulta para mostrar la pantalla
+// de mantenimiento. Va antes de la compuerta para que siga respondiendo durante el mantenimiento.
+v1.get('/estado', noStore, (_req, res) => res.json(estadoMantenimiento()));
+
+// Modo mantenimiento: pausa toda la API salvo el acceso de administradores (ver maintenanceMode.js).
+v1.use(maintenanceGate);
+
 v1.use('/auth',        noStore, authRoutes);
-v1.use('/mapas',               maintenanceGate, mapassRoutes);
-v1.use('/documentos',          maintenanceGate, documentosRoutes);
-v1.use('/solicitudes', noStore, maintenanceGate, solicitudesRoutes);
+v1.use('/mapas',               mapassRoutes);
+v1.use('/documentos',          documentosRoutes);
+v1.use('/solicitudes', noStore, solicitudesRoutes);
 v1.use('/usuarios',    noStore, usuariosRoutes);
 v1.use('/admin',       noStore, adminRoutes);
-v1.use('/categorias',          maintenanceGate, categoriasRoutes);
-v1.use('/herramientas',        maintenanceGate, herramientasRoutes);
-v1.use('/descargar',   noStore, maintenanceGate, descargasRoutes);
-v1.use('/public',              maintenanceGate, publicRoutes);
-v1.use('/geovisores',           maintenanceGate, geovisoresRoutes);
+v1.use('/categorias',          categoriasRoutes);
+v1.use('/herramientas',        herramientasRoutes);
+v1.use('/descargar',   noStore, descargasRoutes);
+v1.use('/public',              publicRoutes);
+v1.use('/geovisores',           geovisoresRoutes);
 v1.use('/admin/geovisores', noStore, geovisoresAdminRoutes);
 v1.use('/admin/conexiones-geoserver', noStore, conexionesGeoserverRoutes);
 v1.use('/admin/fichas-capa', noStore, fichasRoutes);

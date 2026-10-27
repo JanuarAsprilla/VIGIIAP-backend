@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  index, show, store, update, destroy, workspaces, wmsPreview, leyendaPreview, atributosCapa,
+  index, seleccionables, show, store, update, destroy, workspaces, wmsPreview, leyendaPreview, atributosCapa,
 } from './conexionesGeoserver.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
@@ -9,10 +9,14 @@ import { tileRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 
-// admin_sig puede LEER (para elegir a cuál apunta un geovisor nuevo) pero nunca escribir -- el
-// service ya excluye password_cifrado de toda respuesta, aquí solo se restringe la escritura a
-// super_admin, que es quien gestiona la infraestructura de conexiones.
+// El detalle de las conexiones (URL, usuario) se ve con el módulo 'conexiones_geoserver'; la
+// escritura es solo de super_admin, que gestiona la infraestructura. El service nunca devuelve
+// password_cifrado.
 router.get('/', authenticate, authorize('admin_sig'), requireModulo('conexiones_geoserver', 'ver'), index);
+// Constructor de geovisores: lista mínima (id, nombre, tipo, activo) para elegir a cuál conexión
+// apuntar. Se gatea por 'geovisores', no por 'conexiones_geoserver': quien puede construir
+// geovisores puede usar las conexiones sin ver ni administrar sus datos. Va antes de /:id.
+router.get('/seleccionables', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'ver'), seleccionables);
 router.get('/:id', authenticate, authorize('admin_sig'), requireModulo('conexiones_geoserver', 'ver'), show);
 
 // Constructor de geovisores: descubrir workspaces y previsualizar capas ANTES de guardar el
