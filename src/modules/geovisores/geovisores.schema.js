@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parcialSinDefaults } from '../../utils/zodParcial.js';
 import { urlApuntaARedPrivada } from '../../utils/ssrfGuard.js';
 
 const visibilidadEnum = z.enum(['publico', 'usuarios', 'acreditados']).default('publico');
@@ -82,7 +83,7 @@ const geovisorBase = z.object({
 
 export const createGeovisorSchema = geovisorBase;
 
-export const updateGeovisorSchema = geovisorBase.partial().refine(
+export const updateGeovisorSchema = parcialSinDefaults(geovisorBase).refine(
   (d) => Object.values(d).some((v) => v !== undefined),
   { message: 'Debe enviar al menos un campo a actualizar' },
 );
