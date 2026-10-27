@@ -29,7 +29,7 @@ import { encryptGeoserverPassword } from '../src/utils/geoserverEncryption.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
 import { urlApuntaARedPrivada } from '../src/utils/ssrfGuard.js';
 import {
-  getAll, getById, create, update, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
+  getAll, getSeleccionables, getById, create, update, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
 } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 
 const FILA = {
@@ -41,6 +41,19 @@ beforeEach(() => {
   vi.mocked(query).mockReset();
   vi.mocked(geoserver.proxyWms).mockReset();
   vi.mocked(geoserver.proxyLeyenda).mockReset();
+});
+
+describe('conexionesGeoserver.service → getSeleccionables()', () => {
+  it('devuelve solo id, nombre, tipo y activo: nunca URL, usuario ni credenciales', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'c1', nombre: 'GeoServer IIAP', tipo: 'propio', activo: true }] });
+
+    const filas = await getSeleccionables();
+
+    const [sql] = query.mock.calls.at(-1);
+    expect(sql).toMatch(/SELECT id, nombre, tipo, activo FROM conexiones_geoserver/);
+    expect(sql).not.toMatch(/url|usuario_lectura|password/i);
+    expect(filas).toEqual([{ id: 'c1', nombre: 'GeoServer IIAP', tipo: 'propio', activo: true }]);
+  });
 });
 
 describe('conexionesGeoserver.service → getAll() / getById()', () => {
