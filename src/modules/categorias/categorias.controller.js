@@ -38,11 +38,11 @@ export async function create(req, res, next) {
   try {
     const parseResult = nombreSchema.safeParse(req.body?.nombre?.trim());
     if (!parseResult.success) {
-      return res.status(400).json({ error: parseResult.error.errors[0].message });
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
     }
     const modulosResult = modulosSchema.safeParse(req.body?.modulos);
     if (!modulosResult.success) {
-      return res.status(400).json({ error: modulosResult.error.errors[0].message });
+      return res.status(400).json({ error: modulosResult.error.issues[0].message });
     }
     const nombre = parseResult.data;
     const result = await categoriasService.upsert(nombre, null, modulosResult.data);
@@ -62,7 +62,7 @@ export async function updateModulos(req, res, next) {
     const nombre = decodeURIComponent(req.params.nombre);
     const modulosResult = modulosSchema.safeParse(req.body?.modulos);
     if (!modulosResult.success) {
-      return res.status(400).json({ error: modulosResult.error.errors[0].message });
+      return res.status(400).json({ error: modulosResult.error.issues[0].message });
     }
     const result = await categoriasService.updateModulos(nombre, modulosResult.data);
     invalidateCache('cache:/api/categorias*').catch(() => {});
@@ -84,7 +84,7 @@ export async function rename(req, res, next) {
     const nombreActual = decodeURIComponent(req.params.nombre);
     const parseResult = nombreSchema.safeParse(req.body?.nuevoNombre?.trim());
     if (!parseResult.success) {
-      return res.status(400).json({ error: parseResult.error.errors[0].message });
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
     }
     const nuevoNombre = parseResult.data;
     const result = await categoriasService.rename(nombreActual, nuevoNombre);
