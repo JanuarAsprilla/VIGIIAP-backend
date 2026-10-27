@@ -11,6 +11,12 @@ export async function index(req, res, next) {
   } catch (err) { next(err); }
 }
 
+export async function seleccionables(req, res, next) {
+  try {
+    res.json(await conexionService.getSeleccionables());
+  } catch (err) { next(err); }
+}
+
 export async function show(req, res, next) {
   try {
     res.json(await conexionService.getById(req.params.id));
