@@ -3,7 +3,7 @@ import * as analiticaService from './analitica.service.js';
 
 const rutaSchema = z.string().min(1).max(300);
 const pageviewSchema = z.object({
-  sessionId: z.string().uuid(),
+  sessionId: z.guid(),
   ruta: rutaSchema,
   titulo: z.string().max(200).nullable().optional(),
   dispositivo: z.enum(['movil', 'tablet', 'escritorio']),
@@ -28,7 +28,7 @@ export async function pageview(req, res, next) {
   try {
     const parseResult = pageviewSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return res.status(400).json({ error: parseResult.error.errors[0].message });
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
     }
     await analiticaService.registrarPageview({
       ...parseResult.data,
