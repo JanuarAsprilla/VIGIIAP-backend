@@ -7,7 +7,7 @@ import {
 import {
   createDocumentoSchema, updateDocumentoSchema, toggleDocumentoSchema,
 } from '../src/modules/documentos/documentos.schema.js';
-import { createGeovisorSchema } from '../src/modules/geovisores/geovisores.schema.js';
+import { createGeovisorSchema, updateGeovisorSchema } from '../src/modules/geovisores/geovisores.schema.js';
 
 const baseRegister = {
   nombre: 'Juan Pérez', email: 'juan@iiap.gob.co',
@@ -190,7 +190,7 @@ describe('toggleDocumentoSchema — coerción booleana', () => {
 
 const baseGeovisor = {
   titulo: 'Geología del Chocó',
-  conexionGeoserverId: '11111111-1111-1111-1111-111111111111',
+  conexionGeoserverId: '11111111-1111-4111-8111-111111111111',
   centroLat: 5.55,
   centroLng: -76.6,
 };
@@ -224,3 +224,34 @@ describe('createGeovisorSchema — presentacion (cómo se muestra la info, no so
     })).toThrow();
   });
 });
+
+// Regresión de zod 4: `.partial()` ya no neutraliza los `.default()`. Sin parcialSinDefaults, una
+// edición que solo cambia un campo rellenaba el resto con sus valores por defecto y pisaba lo guardado.
+describe('esquemas de edición parcial — no inyectan valores por defecto', () => {
+  it('updateGeovisorSchema: enviar solo el título deja el resto sin tocar', () => {
+    const datos = updateGeovisorSchema.parse({ titulo: 'Nuevo título' });
+
+    expect(datos).toEqual({ titulo: 'Nuevo título' });
+    expect(datos).not.toHaveProperty('zoomInicial');
+    expect(datos).not.toHaveProperty('capasSeleccionadas');
+    expect(datos).not.toHaveProperty('presentacion');
+    expect(datos).not.toHaveProperty('visibilidad');
+  });
+
+  it('updateMapaSchema: enviar solo el título no restablece la visibilidad', () => {
+    const datos = updateMapaSchema.parse({ titulo: 'Otro título' });
+
+    expect(datos).toEqual({ titulo: 'Otro título' });
+    expect(datos).not.toHaveProperty('visibilidad');
+  });
+
+  it('un valor enviado explícitamente se conserva', () => {
+    expect(updateGeovisorSchema.parse({ zoomInicial: 12 })).toEqual({ zoomInicial: 12 });
+    expect(updateMapaSchema.parse({ visibilidad: 'acreditados' })).toEqual({ visibilidad: 'acreditados' });
+  });
+
+  it('el esquema de creación sí sigue aplicando sus valores por defecto', () => {
+    expect(createGeovisorSchema.parse(baseGeovisor).zoomInicial).toBe(8);
+  });
+});
+
