@@ -136,12 +136,35 @@ describe('downloadRateLimiter', () => {
 });
 
 describe('adminRateLimiter', () => {
-  it('permite la petición y expone el límite administrativo (200 por 15 min)', async () => {
+  it('permite la petición y expone el límite administrativo (600 por 15 min por administrador)', async () => {
     const app = buildApp(adminRateLimiter);
     const res = await request(app).get('/ping');
 
     expect(res.status).toBe(200);
-    expect(res.headers['ratelimit-limit']).toBe('200');
+    expect(res.headers['ratelimit-limit']).toBe('600');
+  });
+
+  // Regresión: con la key por IP, el equipo del instituto (misma IP pública) compartía un único
+  // cupo de 200 y el panel de administración respondía 429 al abrir el dashboard.
+  it('cuenta por administrador: dos administradores desde la misma IP tienen cupos separados', async () => {
+    const app = express();
+    app.use((req, _res, next) => { req.user = { id: req.get('x-test-user') }; next(); });
+    app.use(adminRateLimiter);
+    app.get('/ping', (_req, res) => res.status(200).json({ ok: true }));
+
+    const primerAdmin = await request(app).get('/ping').set('x-test-user', 'admin-a');
+    await request(app).get('/ping').set('x-test-user', 'admin-a');
+    const otroAdmin = await request(app).get('/ping').set('x-test-user', 'admin-b');
+
+    expect(primerAdmin.headers['ratelimit-remaining']).toBe('599');
+    expect(otroAdmin.headers['ratelimit-remaining']).toBe('599');
+  });
+
+  it('sin usuario en la petición cae a la IP', async () => {
+    const app = buildApp(adminRateLimiter);
+    const res = await request(app).get('/ping');
+
+    expect(res.headers['ratelimit-remaining']).toBeDefined();
   });
 });
 
