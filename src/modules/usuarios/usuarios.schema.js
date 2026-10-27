@@ -13,7 +13,7 @@ export const updatePerfilSchema = z.object({
 });
 
 export const updateRolSchema = z.object({
-  rol:    z.enum(ROLES, { errorMap: () => ({ message: `Rol debe ser uno de: ${ROLES.join(', ')}` }) }),
+  rol:    z.enum(ROLES, { message: `Rol debe ser uno de: ${ROLES.join(', ')}` }),
   activo: z.boolean().optional().default(true),
 });
 

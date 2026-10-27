@@ -7,7 +7,7 @@ export function errorHandler(err, _req, res, _next) {
   if (err instanceof ZodError) {
     return res.status(422).json({
       error: 'Datos de entrada inválidos',
-      fields: err.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+      fields: err.issues.map(e => ({ field: e.path.join('.'), message: e.message })),
     });
   }
 

@@ -4,12 +4,12 @@ const TIPOS = ['uso-suelo', 'linderos', 'estudio-ambiental', 'validacion', 'apro
 const ESTADOS = ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'resuelta'];
 
 export const createSolicitudSchema = z.object({
-  tipo:        z.enum(TIPOS, { errorMap: () => ({ message: `Tipo debe ser uno de: ${TIPOS.join(', ')}` }) }),
+  tipo:        z.enum(TIPOS, { message: `Tipo debe ser uno de: ${TIPOS.join(', ')}` }),
   descripcion: z.string().trim().min(10, 'Descripción mínimo 10 caracteres').max(1000),
 });
 
 export const updateEstadoSchema = z.object({
-  estado:     z.enum(ESTADOS, { errorMap: () => ({ message: `Estado debe ser uno de: ${ESTADOS.join(', ')}` }) }),
+  estado:     z.enum(ESTADOS, { message: `Estado debe ser uno de: ${ESTADOS.join(', ')}` }),
   nota:       z.string().trim().min(5).max(2000).optional(),
 });
 
@@ -30,7 +30,7 @@ export const paginationQuerySchema = z.object({
 export const listSolicitudesQuerySchema = z.object({
   page:   z.coerce.number().int().positive().optional(),
   limit:  z.coerce.number().int().positive().optional(),
-  estado: z.enum(ESTADOS, { errorMap: () => ({ message: `Estado debe ser uno de: ${ESTADOS.join(', ')}` }) }).optional(),
-  tipo:   z.enum(TIPOS, { errorMap: () => ({ message: `Tipo debe ser uno de: ${TIPOS.join(', ')}` }) }).optional(),
+  estado: z.enum(ESTADOS, { message: `Estado debe ser uno de: ${ESTADOS.join(', ')}` }).optional(),
+  tipo:   z.enum(TIPOS, { message: `Tipo debe ser uno de: ${TIPOS.join(', ')}` }).optional(),
   q:      z.string().trim().max(200).optional(),
 });
