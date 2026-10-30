@@ -51,6 +51,33 @@ export async function listar(isAdminView = false, user = null) {
   return rows;
 }
 
+/** Roles que usan una herramienta aunque esté apagada: la prueban antes de encenderla. */
+const ROLES_PRUEBA = ['admin_sig', 'super_admin'];
+
+/**
+ * ¿Puede `user` usar la herramienta `clave`? Es el interruptor de las APIs de cada herramienta:
+ * mismas reglas de visibilidad que el catálogo (listar), y las borradas nunca están disponibles.
+ */
+export async function herramientaDisponible(clave, user = null) {
+  if (ROLES_PRUEBA.includes(user?.rol)) {
+    const { rows } = await query('SELECT 1 FROM herramientas WHERE clave = $1 AND deleted_at IS NULL', [clave]);
+    return rows.length > 0;
+  }
+
+  const permitida = visibilidadPermitida(user);
+  const params = [clave];
+  let visCond = '';
+  if (permitida) {
+    params.push(permitida);
+    visCond = 'AND visibilidad = ANY($2)';
+  }
+  const { rows } = await query(
+    `SELECT 1 FROM herramientas WHERE clave = $1 AND deleted_at IS NULL AND activa = true ${visCond}`,
+    params,
+  );
+  return rows.length > 0;
+}
+
 export async function crear({ clave, titulo, descripcion = null, tag, visibilidad = 'publico', orden }) {
   const ordenFinal = orden ?? await siguienteOrden();
   const { rows } = await query(
