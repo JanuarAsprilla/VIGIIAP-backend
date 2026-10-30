@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import * as herramientasService from './herramientas.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
-import { invalidateCache } from '../../middlewares/cache.js';
+import { invalidarRecurso } from '../../middlewares/cache.js';
 
 const claveSchema = z.string().regex(/^[a-z0-9-]{2,50}$/, 'Solo minúsculas, números y guiones (2-50 caracteres)');
 const tituloSchema = z.string().min(2, 'Mínimo 2 caracteres').max(150, 'Máximo 150 caracteres');
@@ -33,8 +33,7 @@ const reordenarSchema = z.array(
 ).min(1, 'Se requiere al menos una herramienta');
 
 function invalidarCacheHerramientas() {
-  invalidateCache('cache:/api/herramientas*').catch(() => {});
-  invalidateCache('cache:/api/v1/herramientas*').catch(() => {});
+  invalidarRecurso('herramientas').catch(() => {});
 }
 
 export async function index(req, res, next) {
