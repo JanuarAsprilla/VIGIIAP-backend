@@ -38,15 +38,16 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
-// invalidateCache rechaza a propósito — ejercita el .catch(() => {}) silencioso
+// invalidarRecurso rechaza a propósito — ejercita el .catch(() => {}) silencioso
 // que envuelve cada llamada en el controller (no debe interrumpir la respuesta).
 vi.mock('../src/middlewares/cache.js', () => ({
-  invalidateCache: vi.fn().mockRejectedValue(new Error('redis no disponible')),
+  invalidarRecurso: vi.fn().mockRejectedValue(new Error('redis no disponible')),
   cacheMiddleware: () => (_req, _res, next) => next(),
   getRedisClient:  vi.fn(() => null),
 }));
 
 import * as catService from '../src/modules/categorias/categorias.service.js';
+import { invalidarRecurso } from '../src/middlewares/cache.js';
 import { index, create, rename, destroy, upsertThumbnail, updateModulos } from '../src/modules/categorias/categorias.controller.js';
 
 // ── Helper: mock Express req/res/next ──────────────────────────────────────
@@ -215,6 +216,14 @@ describe('categorias.controller → rename()', () => {
     await rename(req, res, mockNext);
     expect(catService.rename).toHaveBeenCalledWith('Biodiversidad Marina', 'Fauna');
     expect(res.json).toHaveBeenCalledWith({ nombre: 'Fauna' });
+  });
+
+  it('vacía el cache de categorías y de los recursos que muestran la categoría', async () => {
+    catService.rename.mockResolvedValue({ nombre: 'Fauna' });
+    const req = { params: { nombre: 'Flora' }, body: { nuevoNombre: 'Fauna' }, user: { id: 'u1', email: 'a@b.com' }, ip: '::1' };
+    await rename(req, mockRes(), mockNext);
+    expect(invalidarRecurso.mock.calls.map(([recurso]) => recurso).sort())
+      .toEqual(['categorias', 'documentos', 'geovisores', 'mapas']);
   });
 
   it('llama next(err) cuando el servicio lanza (ej. 409 por nombre duplicado)', async () => {
