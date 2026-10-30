@@ -407,7 +407,8 @@ export async function getAuditResumen(viewerRol) {
        COUNT(DISTINCT ip) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours')     AS ips_distintas_24h,
        COUNT(DISTINCT usuario_id) FILTER (WHERE creado_en >= NOW() - INTERVAL '24 hours') AS usuarios_activos_24h
      FROM audit_log
-     WHERE ${visibilidad}`,
+     WHERE creado_en >= LEAST(date_trunc('day', NOW()), NOW() - INTERVAL '24 hours')
+       AND ${visibilidad}`,
     [ACCIONES_CRITICAS]
   );
   const fila = rows[0];

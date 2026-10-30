@@ -743,6 +743,15 @@ describe('admin.service → getAuditResumen()', () => {
     expect(query.mock.calls[0][0]).toMatch(/usuario_id IS NULL OR usuario_id NOT IN/);
   });
 
+  it('acota la consulta por tiempo antes de agregar, para no recorrer todo el historial', async () => {
+    query.mockResolvedValueOnce({ rows: [fila] });
+    await getAuditResumen('super_admin');
+
+    expect(query.mock.calls[0][0]).toMatch(
+      /WHERE creado_en >= LEAST\(date_trunc\('day', NOW\(\)\), NOW\(\) - INTERVAL '24 hours'\)/,
+    );
+  });
+
   it('para un super_admin no aplica ningún filtro de visibilidad', async () => {
     query.mockResolvedValueOnce({ rows: [fila] });
     await getAuditResumen('super_admin');
