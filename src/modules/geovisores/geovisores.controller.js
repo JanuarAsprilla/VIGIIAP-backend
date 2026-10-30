@@ -3,6 +3,12 @@ import * as geovisorService from './geovisores.service.js';
 import { esGeometriaValida } from '../../utils/geometry.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { diffCambios } from '../../utils/cambios.js';
+import { invalidarRecurso } from '../../middlewares/cache.js';
+
+/** El listado y el detalle públicos se cachean: cualquier cambio los vacía sin esperar al TTL. */
+function invalidarCacheGeovisores() {
+  invalidarRecurso('geovisores').catch(() => {});
+}
 
 export async function index(req, res, next) {
   try {
@@ -103,6 +109,7 @@ export async function store(req, res, next) {
       usuarioEmail: req.user.email,
       ip: req.ip,
     });
+    invalidarCacheGeovisores();
     res.status(201).json(geovisor);
   } catch (err) { next(err); }
 }
@@ -124,6 +131,7 @@ export async function update(req, res, next) {
       usuarioEmail: req.user.email,
       ip: req.ip,
     });
+    invalidarCacheGeovisores();
     res.json(geovisor);
   } catch (err) { next(err); }
 }
@@ -142,6 +150,7 @@ export async function uploadThumbnail(req, res, next) {
       usuarioEmail: req.user.email,
       ip: req.ip,
     });
+    invalidarCacheGeovisores();
     res.json(geovisor);
   } catch (err) { next(err); }
 }
@@ -149,7 +158,9 @@ export async function uploadThumbnail(req, res, next) {
 export async function patchActivo(req, res, next) {
   try {
     const { activo } = toggleGeovisorSchema.parse(req.body);
-    res.json(await geovisorService.toggleActivo(req.params.id, activo));
+    const geovisor = await geovisorService.toggleActivo(req.params.id, activo);
+    invalidarCacheGeovisores();
+    res.json(geovisor);
   } catch (err) { next(err); }
 }
 
@@ -172,6 +183,7 @@ export async function destroy(req, res, next) {
       usuarioEmail: req.user.email,
       ip: req.ip,
     });
+    invalidarCacheGeovisores();
     res.status(204).send();
   } catch (err) { next(err); }
 }

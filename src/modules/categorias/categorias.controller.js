@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import * as categoriasService from './categorias.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
-import { invalidateCache } from '../../middlewares/cache.js';
+import { invalidarRecurso } from '../../middlewares/cache.js';
 
 export async function index(req, res, next) {
   try {
@@ -14,8 +14,7 @@ export async function upsertThumbnail(req, res, next) {
     const nombre = decodeURIComponent(req.params.nombre);
     const thumbnailUrl = req.body.thumbnail_url ?? null;
     const result = await categoriasService.updateThumbnail(nombre, thumbnailUrl);
-    invalidateCache('cache:/api/categorias*').catch(() => {});
-    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
+    invalidarRecurso('categorias').catch(() => {});
     registrarAuditoria({
       accion: 'update_categoria_thumbnail', modulo: 'categorias', entidadId: nombre,
       descripcion: `Thumbnail actualizado para categoría: ${nombre}`,
@@ -46,8 +45,7 @@ export async function create(req, res, next) {
     }
     const nombre = parseResult.data;
     const result = await categoriasService.upsert(nombre, null, modulosResult.data);
-    invalidateCache('cache:/api/categorias*').catch(() => {});
-    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
+    invalidarRecurso('categorias').catch(() => {});
     registrarAuditoria({
       accion: 'create_categoria', modulo: 'categorias', entidadId: nombre.trim(),
       descripcion: `Categoría creada: ${nombre.trim()} (${modulosResult.data.join(', ')})`,
@@ -65,11 +63,10 @@ export async function updateModulos(req, res, next) {
       return res.status(400).json({ error: modulosResult.error.issues[0].message });
     }
     const result = await categoriasService.updateModulos(nombre, modulosResult.data);
-    invalidateCache('cache:/api/categorias*').catch(() => {});
-    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
-    invalidateCache('cache:/api/mapas*').catch(() => {});
-    invalidateCache('cache:/api/documentos*').catch(() => {});
-    invalidateCache('cache:/api/geovisores*').catch(() => {});
+    invalidarRecurso('categorias').catch(() => {});
+    invalidarRecurso('mapas').catch(() => {});
+    invalidarRecurso('documentos').catch(() => {});
+    invalidarRecurso('geovisores').catch(() => {});
     registrarAuditoria({
       accion: 'update_categoria_modulos', modulo: 'categorias', entidadId: nombre,
       descripcion: `Módulos de "${nombre}" actualizados: ${modulosResult.data.join(', ')}`,
@@ -88,11 +85,10 @@ export async function rename(req, res, next) {
     }
     const nuevoNombre = parseResult.data;
     const result = await categoriasService.rename(nombreActual, nuevoNombre);
-    invalidateCache('cache:/api/categorias*').catch(() => {});
-    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
-    invalidateCache('cache:/api/mapas*').catch(() => {});
-    invalidateCache('cache:/api/documentos*').catch(() => {});
-    invalidateCache('cache:/api/geovisores*').catch(() => {});
+    invalidarRecurso('categorias').catch(() => {});
+    invalidarRecurso('mapas').catch(() => {});
+    invalidarRecurso('documentos').catch(() => {});
+    invalidarRecurso('geovisores').catch(() => {});
     registrarAuditoria({
       accion: 'rename_categoria', modulo: 'categorias', entidadId: nuevoNombre,
       descripcion: `Categoría renombrada: ${nombreActual} → ${nuevoNombre}`,
@@ -106,8 +102,7 @@ export async function destroy(req, res, next) {
   try {
     const nombre = decodeURIComponent(req.params.nombre);
     await categoriasService.remove(nombre);
-    invalidateCache('cache:/api/categorias*').catch(() => {});
-    invalidateCache('cache:/api/v1/categorias*').catch(() => {});
+    invalidarRecurso('categorias').catch(() => {});
     registrarAuditoria({
       accion: 'delete_categoria', modulo: 'categorias', entidadId: nombre,
       descripcion: `Categoría eliminada (soft): ${nombre}`,
