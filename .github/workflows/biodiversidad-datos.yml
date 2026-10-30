@@ -1,8 +1,11 @@
 name: Biodiversidad · datos
 
-# Ejecución MANUAL. Baja el archivo de datos de una release de este repositorio, verifica su huella,
-# lo sube al servidor y lo carga con scripts/biodiversidad/cargar.js dentro del contenedor del
-# backend (una transacción, rol aislado). Usa los mismos secretos que el despliegue.
+# Ejecución MANUAL. Ejecuta scripts/biodiversidad/cargar.js dentro del contenedor del backend
+# (una transacción, rol aislado) con los mismos secretos que el despliegue.
+#
+# El archivo de datos NO viaja por GitHub: este repositorio es público y el archivo contiene las
+# coordenadas exactas de especies amenazadas. Se sube al servidor por un canal privado (scp) a
+# /root/vigiiap/cargas/carga.ndjson.gz antes de ejecutar `cargar` o `cargar-y-activar`.
 #   estado            muestra cortes cargados, cruce de conservación y estado de la herramienta
 #   cargar            carga los datos sin publicarlos (las coordenadas siguen ocultas)
 #   cargar-y-activar  carga y publica los cortes y el cruce de conservación
@@ -17,10 +20,6 @@ on:
         required: true
         default: estado
         options: [estado, cargar, cargar-y-activar, encender, apagar]
-      release:
-        description: Tag de la release con los datos (solo para cargar y cargar-y-activar)
-        required: false
-        default: datos-biodiversidad-2026-10
 
 permissions:
   contents: read
@@ -35,40 +34,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Descargar y verificar los datos
-        if: startsWith(inputs.accion, 'cargar')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE: ${{ inputs.release }}
-        run: |
-          set -euo pipefail
-          mkdir datos
-          gh release download "$RELEASE" --repo "$GITHUB_REPOSITORY" --pattern 'biodiversidad-datos-*' --dir datos
-          (cd datos && sha256sum -c ./*.sha256)
-          test "$(ls datos/*.ndjson.gz | wc -l)" -eq 1
-          mv datos/*.ndjson.gz datos/carga.ndjson.gz
-          ls -la datos
-
-      - name: Preparar la carpeta de cargas en el servidor
-        if: startsWith(inputs.accion, 'cargar')
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: mkdir -p /root/vigiiap/cargas
-
-      - name: Subir los datos al servidor
-        if: startsWith(inputs.accion, 'cargar')
-        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: datos/carga.ndjson.gz
-          target: /root/vigiiap/cargas
-          strip_components: 1
-
       - name: Ejecutar en el contenedor del backend
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
@@ -82,8 +47,8 @@ jobs:
           script: |
             set -eu
             CLI="docker exec vigiiap_backend node scripts/biodiversidad/cargar.js"
+            ARCHIVO=/root/vigiiap/cargas/carga.ndjson.gz
             limpiar() {
-              rm -f /root/vigiiap/cargas/carga.ndjson.gz
               docker exec -u root vigiiap_backend rm -f /tmp/carga.ndjson.gz || true
             }
             trap limpiar EXIT
@@ -92,13 +57,19 @@ jobs:
               encender) $CLI encender ;;
               apagar)  $CLI apagar ;;
               cargar|cargar-y-activar)
-                docker cp /root/vigiiap/cargas/carga.ndjson.gz vigiiap_backend:/tmp/carga.ndjson.gz
+                if [ ! -f "$ARCHIVO" ]; then
+                  echo "Falta $ARCHIVO: súbalo primero por scp (ver el encabezado de este workflow)."
+                  exit 1
+                fi
+                docker cp "$ARCHIVO" vigiiap_backend:/tmp/carga.ndjson.gz
                 docker exec -u root vigiiap_backend chmod 0644 /tmp/carga.ndjson.gz
                 if [ "$ACCION" = "cargar-y-activar" ]; then
                   $CLI cargar /tmp/carga.ndjson.gz --activar
                 else
                   $CLI cargar /tmp/carga.ndjson.gz
                 fi
+                # El archivo con coordenadas exactas no se deja en el servidor tras cargarlo.
+                rm -f "$ARCHIVO"
                 $CLI estado
                 ;;
               *) echo "Acción desconocida: $ACCION"; exit 1 ;;
