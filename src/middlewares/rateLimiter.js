@@ -147,6 +147,16 @@ export const downloadRateLimiter = rateLimit({
   message: { error: 'Demasiadas descargas. Intenta de nuevo en unos minutos.' },
 });
 
+/** API de biodiversidad (pública, consultas con uniones): máximo 120 en 5 minutos por IP. */
+export const biodiversidadRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  keyGenerator: normalizeIp,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas. Intenta de nuevo en unos minutos.' },
+});
+
 /**
  * Operaciones administrativas: máximo 600 por 15 minutos POR ADMINISTRADOR. Antes era por IP (200):
  * todo el equipo del instituto sale por la misma IP pública y una sola carga del panel dispara ~10
