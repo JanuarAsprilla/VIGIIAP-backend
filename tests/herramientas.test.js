@@ -22,7 +22,7 @@ vi.mock('../src/utils/auditLog.js', () => ({
 }));
 
 vi.mock('../src/middlewares/cache.js', () => ({
-  invalidateCache: vi.fn().mockRejectedValue(new Error('redis no disponible')),
+  invalidarRecurso: vi.fn().mockRejectedValue(new Error('redis no disponible')),
   cacheMiddleware: () => (_req, _res, next) => next(),
   getRedisClient:  vi.fn(() => null),
 }));
