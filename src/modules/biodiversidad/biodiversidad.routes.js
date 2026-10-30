@@ -24,8 +24,11 @@ const router = Router();
 
 router.use(biodiversidadRateLimiter, optionalAuthenticate, requiereHerramienta);
 
+// Solo /estado usa cache: no tiene parámetros. La clave de cacheMiddleware sólo distingue una lista
+// blanca de parámetros (page, limit, q…) que no incluye grupo, departamento ni pagina; cachear
+// /municipios o /registros serviría datos de un filtro para otro. Ver tests/biodiversidad.cache.test.js.
 router.get('/estado', cacheMiddleware(300), controller.estado);
-router.get('/municipios', cacheMiddleware(300), controller.municipios);
-router.get('/registros', cacheMiddleware(60), controller.registros);
+router.get('/municipios', controller.municipios);
+router.get('/registros', controller.registros);
 
 export default router;
