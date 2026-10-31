@@ -15,13 +15,34 @@ Lo consume la aplicación web [VIGIIAP](https://github.com/JanuarAsprilla/VIGIIA
 
 ---
 
+## Contenido
+
+- [Capacidades](#capacidades)
+- [Tecnologías](#tecnologías)
+- [Arquitectura](#arquitectura)
+- [Primeros pasos](#primeros-pasos)
+- [Documentación de la API](#documentación-de-la-api)
+- [Roles y permisos](#roles-y-permisos)
+- [Procesos programados](#procesos-programados)
+- [Modo mantenimiento](#modo-mantenimiento)
+- [Analítica y privacidad](#analítica-y-privacidad)
+- [Rendimiento y pruebas de carga](#rendimiento-y-pruebas-de-carga)
+- [Pruebas](#pruebas)
+- [Operación](#operación)
+- [Solución de problemas](#solución-de-problemas)
+- [Convenciones](#convenciones)
+- [Contribuir, seguridad y licencia](#contribuir)
+
+---
+
 ## Capacidades
 
 - **Mapas y documentos:** catálogo con metadatos técnicos, categorías y descarga controlada.
 - **Geovisores:** conexión a servidores GeoServer, descubrimiento automático de capas y detección de capas nuevas.
 - **Solicitudes de acceso** a información geoespacial, con flujo de aprobación.
 - **Usuarios y permisos:** roles institucionales y permisos por módulo.
-- **Trazabilidad:** registro de actividad y reportes para la administración.
+- **Trazabilidad:** registro de actividad con verificación de integridad y reportes para la administración.
+- **Analítica de uso** anónima: visitas, orígenes, ubicación aproximada, acciones de los visitantes y tiempo real.
 - **Notificaciones** dentro de la plataforma y por correo.
 - **Seguridad por diseño:** validación de entradas, protección de archivos subidos, límites de tráfico y autenticación robusta.
 
@@ -31,6 +52,7 @@ Lo consume la aplicación web [VIGIIAP](https://github.com/JanuarAsprilla/VIGIIA
 
 - **Node.js 20+** con ES Modules y **Express**
 - **PostgreSQL** con **PostGIS**
+- **Redis** (opcional) para la caché de contenido público
 - Almacenamiento de archivos compatible con **S3**
 - **Zod** para validación de datos
 - **Vitest** para pruebas (unitarias e integración)
@@ -51,11 +73,13 @@ El controlador valida la entrada y delega; la lógica de negocio vive en el serv
 ```
 src/
 ├── config/        # Base de datos, almacenamiento y configuración
-├── middlewares/   # Autenticación, permisos, validación, límites de tráfico
+├── middlewares/   # Autenticación, permisos, validación, caché, límites de tráfico
 ├── modules/       # Un directorio por dominio (mapas, documentos, geovisores, …)
 └── utils/         # Utilidades compartidas
 db/
 └── migrations/    # Migraciones de base de datos, consecutivas
+docs/              # Documentación técnica (rendimiento, guías)
+loadtest/          # Herramienta de pruebas de carga
 tests/             # Pruebas unitarias e integración
 ```
 
@@ -103,6 +127,81 @@ Nunca subas tu archivo `.env` ni credenciales al repositorio.
 
 ---
 
+## Documentación de la API
+
+En desarrollo (`NODE_ENV` distinto de `production`) la especificación OpenAPI se sirve en:
+
+- `/api/docs` — interfaz interactiva
+- `/api/docs.json` — especificación en JSON
+
+En producción estas rutas están **deshabilitadas** a propósito.
+
+---
+
+## Roles y permisos
+
+| Rol | Alcance |
+|---|---|
+| `super_admin` | Administración total: configuración de la plataforma, usuarios y permisos. |
+| `admin_sig` | Administrador de contenidos. Cada módulo (ver / editar) se le concede de forma individual. |
+| `investigador`, `tecnico`, `institucional` | Usuarios registrados; acceden a la información según su visibilidad. |
+| `publico` | Visitante o usuario sin privilegios. |
+
+El acceso de un `admin_sig` a cada módulo del panel (por ejemplo, geovisores o conexiones a servidores de mapas) lo concede un `super_admin`. Las rutas lo verifican con el middleware `requireModulo` y cada acceso denegado queda registrado en la trazabilidad.
+
+---
+
+## Procesos programados
+
+Se ejecutan dentro del propio servicio, con temporizadores que no impiden su cierre ordenado:
+
+| Proceso | Frecuencia | Qué hace |
+|---|---|---|
+| Informe semanal | Revisión cada hora | Envía por correo el resumen semanal a la administración, una vez por semana. |
+| Retención de analítica | Cada 6 h | Elimina la IP de las sesiones antiguas (90 días por defecto) y los datos muy antiguos (730 días por defecto). |
+| Retención de auditoría | Cada 24 h | Purga el registro de actividad según el plazo configurado. |
+| Autoajuste de límites | Cada hora | Ajusta el límite de tráfico según el uso observado. |
+
+Los plazos de retención se configuran con variables de entorno (ver `.env.example`).
+
+---
+
+## Modo mantenimiento
+
+Un `super_admin` puede activarlo desde el panel. Mientras está activo:
+
+- Las rutas responden `503` con la cabecera `Retry-After`, salvo las de inicio de sesión y recuperación de acceso.
+- Los administradores siguen entrando con normalidad.
+- `GET /api/v1/estado` informa públicamente si la plataforma está en mantenimiento, sin requerir sesión ni caché.
+
+---
+
+## Analítica y privacidad
+
+La analítica de uso es **propia y anónima**: no se comparte con terceros ni se liga a una cuenta.
+
+- Se guardan páginas vistas, dispositivo, navegador, origen de la visita, ubicación aproximada de la sesión y acciones concretas (descargar un mapa, abrir un geovisor, usar una herramienta).
+- La dirección IP se conserva solo el tiempo configurado y luego se elimina automáticamente.
+- Los bots se identifican y se excluyen de las cifras; las visitas al panel de administración se marcan aparte y tampoco cuentan en los informes, y desde el panel no se registran acciones.
+- Los datos solo los consultan administradores con acceso al módulo de actividad.
+
+---
+
+## Rendimiento y pruebas de carga
+
+- Los listados y detalles públicos se cachean en Redis (si está configurado) y se invalidan al editar el contenido. Si Redis no está disponible, el servicio funciona igual desde la base de datos.
+- Las lecturas del panel de analítica usan una caché local de corta duración (`ANALITICA_CACHE_TTL_MS`, 30 s por defecto).
+- La estrategia completa —índices, caché, procesos asíncronos y hoja de ruta— está en [`docs/ESTRATEGIA_RENDIMIENTO.md`](docs/ESTRATEGIA_RENDIMIENTO.md).
+- Para medir antes y después de un cambio hay una herramienta sin dependencias:
+
+```bash
+node loadtest/carga.mjs --url http://localhost:4000 --duracion 30 --concurrencia 20
+```
+
+Úsala siempre contra un entorno propio; detalles en [`loadtest/README.md`](loadtest/README.md).
+
+---
+
 ## Pruebas
 
 ```bash
@@ -117,13 +216,34 @@ real, auditoría de dependencias y verificación de la imagen Docker.
 
 ---
 
+## Operación
+
+- **Despliegue:** la imagen Docker se construye y publica automáticamente al fusionar en `main`; las migraciones se aplican al iniciar.
+- **Migraciones:** son consecutivas, idempotentes y nunca se editan una vez fusionadas. Se aplican en orden alfabético por nombre.
+- **Cierre ordenado:** ante `SIGTERM`/`SIGINT` el servicio termina las peticiones en vuelo y cierra el pool de conexiones.
+- **Registro:** los eventos relevantes quedan en la trazabilidad (administración) y los errores en el registro de errores del panel.
+- **Varias instancias:** hoy el servicio está pensado para una instancia. Antes de escalar a varias hay que resolver los planificadores y la revocación de tokens, descritos en el documento de rendimiento.
+
+---
+
+## Solución de problemas
+
+| Síntoma | Qué revisar |
+|---|---|
+| `429` en el panel de administración | El límite de tráfico del administrador es por usuario (`ADMIN_RATE_LIMIT_MAX`); en pruebas de carga sube `RATE_LIMIT_MAX`. |
+| Un cambio de contenido no se ve en el sitio público | La caché pública se invalida al editar; si Redis estuvo caído puede tardar hasta que venza el TTL. |
+| Todo responde `503` con un mensaje de mantenimiento | El modo mantenimiento está activo; un `super_admin` puede desactivarlo desde el panel. |
+| Falla una migración al arrancar | Revisa que PostgreSQL tenga la extensión PostGIS; el error indica el archivo de migración. |
+| `/api/docs` devuelve 404 | Es lo esperado en producción; la documentación solo se sirve en desarrollo. |
+
+---
+
 ## Convenciones
 
 - Patrón por módulo: rutas → controlador → servicio → base de datos.
 - Validación de entradas con Zod en el borde del sistema.
 - Acceso a datos siempre mediante el helper de consultas parametrizadas.
 - Commits siguiendo [Conventional Commits](https://www.conventionalcommits.org).
-- Migraciones consecutivas, idempotentes y nunca editadas una vez fusionadas.
 
 ---
 
