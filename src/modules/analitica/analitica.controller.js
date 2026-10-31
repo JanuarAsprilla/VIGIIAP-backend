@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as analiticaService from './analitica.service.js';
+import { EVENTOS_PERMITIDOS } from './eventos.js';
 
 const rutaSchema = z.string().min(1).max(300);
 const pageviewSchema = z.object({
@@ -36,6 +37,36 @@ export async function pageview(req, res, next) {
       ip: req.ip,
     });
     res.status(204).end();
+  } catch (err) { next(err); }
+}
+
+const eventoSchema = z.object({
+  sessionId: z.guid(),
+  nombre: z.enum(EVENTOS_PERMITIDOS),
+  recurso: z.string().max(200).nullable().optional(),
+  ruta: rutaSchema.nullable().optional(),
+});
+
+export async function evento(req, res, next) {
+  try {
+    const parseResult = eventoSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: parseResult.error.issues[0].message });
+    }
+    await analiticaService.registrarEvento(parseResult.data);
+    res.status(204).end();
+  } catch (err) { next(err); }
+}
+
+export async function eventosTop(req, res, next) {
+  try {
+    res.json(await analiticaService.getEventosTop(rangoFechas(req)));
+  } catch (err) { next(err); }
+}
+
+export async function tiempoReal(_req, res, next) {
+  try {
+    res.json(await analiticaService.getTiempoReal());
   } catch (err) { next(err); }
 }
 
