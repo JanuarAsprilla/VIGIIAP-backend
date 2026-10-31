@@ -84,8 +84,8 @@ describe('municipios()', () => {
     const r = await municipios('anfibios');
     expect(r).toMatchObject({ grupo: 'anfibios', metodo: 'individual' });
     expect(r.municipios).toEqual([
-      { codigo_municipal: '05045', municipio: 'Apartadó', departamento: 'Antioquia', registros: 1, sin_especie: 0 },
-      { codigo_municipal: '27001', municipio: 'Quibdó', departamento: 'Chocó', registros: 2, sin_especie: 0 },
+      { codigo_municipal: '05045', municipio: 'Apartadó', departamento: 'Antioquia', registros: 1, sin_especie: 0, especies: 1 },
+      { codigo_municipal: '27001', municipio: 'Quibdó', departamento: 'Chocó', registros: 2, sin_especie: 0, especies: 2 },
     ]);
   });
 
@@ -116,8 +116,9 @@ describe('registros() — coordenadas y privacidad', () => {
     await sembrar();
     const r = await registros({ grupo: 'anfibios', pagina: 1, tamano: 25 });
     expect(Object.keys(r.registros[0]).sort()).toEqual([
-      'anio', 'codigo_municipal', 'conjunto', 'coordenadas_ocultas', 'departamento', 'doi_conjunto', 'especie',
-      'especie_clave', 'gbif_id', 'incertidumbre_m', 'latitud', 'licencia', 'longitud', 'municipio', 'tipo_evidencia',
+      'amenaza', 'anio', 'codigo_municipal', 'conjunto', 'coordenadas_ocultas', 'departamento', 'doi_conjunto', 'endemica_choco',
+      'endemica_colombia', 'especie', 'especie_clave', 'fecha_evento', 'foto', 'fotos_total', 'gbif_id', 'identificado_por',
+      'incertidumbre_m', 'introducida', 'invasora', 'latitud', 'licencia', 'longitud', 'municipio', 'registrado_por', 'tipo_evidencia',
     ]);
   });
 });

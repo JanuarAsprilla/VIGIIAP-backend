@@ -6,6 +6,10 @@ vi.mock('../src/modules/biodiversidad/biodiversidad.service.js', () => ({
   estado: vi.fn(),
   municipios: vi.fn(),
   registros: vi.fn(),
+  registro: vi.fn(),
+  resumen: vi.fn(),
+  especies: vi.fn(),
+  series: vi.fn(),
 }));
 vi.mock('../src/modules/herramientas/herramientas.service.js', () => ({
   herramientaDisponible: vi.fn(),
@@ -49,6 +53,10 @@ describe('interruptor de la herramienta', () => {
     '/api/biodiversidad/estado',
     '/api/biodiversidad/municipios?grupo=anfibios',
     '/api/biodiversidad/registros?grupo=anfibios',
+    '/api/biodiversidad/registros/123?grupo=anfibios',
+    '/api/biodiversidad/resumen?grupo=anfibios',
+    '/api/biodiversidad/especies?grupo=anfibios',
+    '/api/biodiversidad/series?grupo=anfibios',
   ])('responde 404 en %s cuando la herramienta no está disponible', async (ruta) => {
     herramientaDisponible.mockResolvedValue(false);
     const res = await request(app).get(ruta);
@@ -56,7 +64,7 @@ describe('interruptor de la herramienta', () => {
     expect(res.body).toEqual({ error: 'Recurso no encontrado' });
     expect(servicio.estado).not.toHaveBeenCalled();
     expect(servicio.municipios).not.toHaveBeenCalled();
-    expect(servicio.registros).not.toHaveBeenCalled();
+    for (const f of ['registros', 'registro', 'resumen', 'especies', 'series']) expect(servicio[f]).not.toHaveBeenCalled();
   });
 
   it('consulta el interruptor con la clave de la herramienta', async () => {
@@ -140,5 +148,93 @@ describe('GET /registros', () => {
     const res = await request(app).get('/api/biodiversidad/registros?grupo=anfibios');
     expect(res.status).toBe(503);
     expect(JSON.stringify(res.body)).not.toMatch(/statement|timeout/i);
+  });
+});
+
+describe('GET /registros — filtros nuevos', () => {
+  it('pasa los filtros nuevos ya convertidos', async () => {
+    servicio.registros.mockResolvedValue({ registros: [], total: 0 });
+    await request(app).get('/api/biodiversidad/registros?grupo=hongos&buscar=amanita&con_foto=true&conservacion=endemica&amenaza=VU&especie_clave=77');
+    expect(servicio.registros).toHaveBeenCalledWith({
+      grupo: 'hongos', buscar: 'amanita', con_foto: true, conservacion: 'endemica', amenaza: 'VU', especie_clave: '77', pagina: 1, tamano: 25,
+    });
+  });
+
+  it('rechaza valores inválidos sin tocar el servicio', async () => {
+    for (const q of ['con_foto=false', 'amenaza=LC', 'buscar=a', 'especie_clave=1%27%20OR%201%3D1', 'buscar=ra&buscar=na']) {
+      const res = await request(app).get(`/api/biodiversidad/registros?grupo=hongos&${q}`);
+      expect(res.status, q).toBe(422);
+    }
+    expect(servicio.registros).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /registros/:gbif_id', () => {
+  it('devuelve el detalle', async () => {
+    servicio.registro.mockResolvedValue({ gbif_id: '123', fotos: [] });
+    const res = await request(app).get('/api/biodiversidad/registros/123?grupo=anfibios');
+    expect(res.status).toBe(200);
+    expect(servicio.registro).toHaveBeenCalledWith('123', 'anfibios');
+  });
+
+  it('404 si no existe el registro y 404 si el grupo no tiene datos', async () => {
+    servicio.registro.mockResolvedValue(null);
+    const res = await request(app).get('/api/biodiversidad/registros/123?grupo=anfibios');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/no encontrado/i);
+  });
+
+  it('valida el identificador y el grupo (422)', async () => {
+    for (const ruta of ['/registros/abc?grupo=anfibios', '/registros/12%20OR%201?grupo=anfibios', '/registros/123', '/registros/123?grupo=dinos', '/registros/123?grupo=anfibios&x=1']) {
+      expect((await request(app).get(`/api/biodiversidad${ruta}`)).status, ruta).toBe(422);
+    }
+    expect(servicio.registro).not.toHaveBeenCalled();
+  });
+
+  it('un grupo de inventario agregado responde 422 con mensaje claro', async () => {
+    servicio.registro.mockRejectedValue(new ConsultaInvalida('Este grupo solo tiene inventario agregado'));
+    const res = await request(app).get('/api/biodiversidad/registros/123?grupo=aves');
+    expect(res.status).toBe(422);
+  });
+});
+
+describe.each([
+  ['resumen', 'resumen', '/resumen?grupo=aves&departamento=Choc%C3%B3', { grupo: 'aves', departamento: 'Chocó' }],
+  ['series', 'series', '/series?grupo=plantas&codigo_municipal=27001', { grupo: 'plantas', codigo_municipal: '27001' }],
+  ['especies', 'especies', '/especies?grupo=aves&buscar=tangara&orden=nombre', { grupo: 'aves', buscar: 'tangara', orden: 'nombre', pagina: 1, tamano: 25 }],
+])('GET /%s', (_nombre, funcion, ruta, esperado) => {
+  it('pasa los filtros validados al servicio', async () => {
+    servicio[funcion].mockResolvedValue({ ok: true });
+    const res = await request(app).get(`/api/biodiversidad${ruta}`);
+    expect(res.status).toBe(200);
+    expect(servicio[funcion]).toHaveBeenCalledWith(esperado);
+  });
+
+  it('404 si el grupo no tiene datos cargados', async () => {
+    servicio[funcion].mockResolvedValue(null);
+    expect((await request(app).get(`/api/biodiversidad${ruta}`)).status).toBe(404);
+  });
+
+  it('422 ante parámetros desconocidos o repetidos, sin tocar el servicio', async () => {
+    const base = ruta.split('?')[0];
+    expect((await request(app).get(`/api/biodiversidad${base}?grupo=aves&secreto=1`)).status).toBe(422);
+    expect((await request(app).get(`/api/biodiversidad${base}?grupo=aves&grupo=hongos`)).status).toBe(422);
+    expect((await request(app).get(`/api/biodiversidad${base}`)).status).toBe(422);
+    expect(servicio[funcion]).not.toHaveBeenCalled();
+  });
+
+  it('503 sin detalle de la BD si la consulta supera el tiempo límite', async () => {
+    servicio[funcion].mockRejectedValue(Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' }));
+    const res = await request(app).get(`/api/biodiversidad${ruta}`);
+    expect(res.status).toBe(503);
+    expect(JSON.stringify(res.body)).not.toMatch(/statement|timeout/i);
+  });
+});
+
+describe('GET /municipios — especies', () => {
+  it('devuelve lo que entrega el servicio (con el nuevo campo especies)', async () => {
+    servicio.municipios.mockResolvedValue({ grupo: 'aves', municipios: [{ codigo_municipal: '27001', registros: 5, sin_especie: 0, especies: 3 }] });
+    const res = await request(app).get('/api/biodiversidad/municipios?grupo=aves');
+    expect(res.body.municipios[0].especies).toBe(3);
   });
 });

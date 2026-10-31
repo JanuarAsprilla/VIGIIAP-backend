@@ -1,8 +1,12 @@
 import * as servicio from './biodiversidad.service.js';
-import { municipiosQuerySchema, registrosQuerySchema } from './biodiversidad.schema.js';
+import {
+  municipiosQuerySchema, registrosQuerySchema, resumenQuerySchema, especiesQuerySchema, seriesQuerySchema,
+  detalleQuerySchema, registroParamsSchema,
+} from './biodiversidad.schema.js';
 import { ConsultaInvalida } from './biodiversidad.errores.js';
 
 const SIN_DATOS = { error: 'No hay datos cargados para ese grupo' };
+const SIN_REGISTRO = { error: 'Registro no encontrado' };
 
 function responderError(err, res, next) {
   if (err instanceof ConsultaInvalida) return res.status(err.status).json({ error: err.message });
@@ -13,26 +17,30 @@ function responderError(err, res, next) {
   return next(err);
 }
 
+/** Valida la consulta, ejecuta la función del servicio y responde 404 si el grupo no tiene datos. */
+function consulta(esquema, ejecutar, sinResultado = SIN_DATOS) {
+  return async (req, res, next) => {
+    try {
+      const resultado = await ejecutar(esquema.parse(req.query), req);
+      if (!resultado) return res.status(404).json(sinResultado);
+      return res.json(resultado);
+    } catch (err) { return responderError(err, res, next); }
+  };
+}
+
 export async function estado(_req, res, next) {
   try {
     res.json(await servicio.estado());
   } catch (err) { responderError(err, res, next); }
 }
 
-export async function municipios(req, res, next) {
-  try {
-    const { grupo } = municipiosQuerySchema.parse(req.query);
-    const resultado = await servicio.municipios(grupo);
-    if (!resultado) return res.status(404).json(SIN_DATOS);
-    res.json(resultado);
-  } catch (err) { responderError(err, res, next); }
-}
-
-export async function registros(req, res, next) {
-  try {
-    const filtros = registrosQuerySchema.parse(req.query);
-    const resultado = await servicio.registros(filtros);
-    if (!resultado) return res.status(404).json(SIN_DATOS);
-    res.json(resultado);
-  } catch (err) { responderError(err, res, next); }
-}
+export const municipios = consulta(municipiosQuerySchema, ({ grupo }) => servicio.municipios(grupo));
+export const registros = consulta(registrosQuerySchema, (filtros) => servicio.registros(filtros));
+export const resumen = consulta(resumenQuerySchema, (filtros) => servicio.resumen(filtros));
+export const especies = consulta(especiesQuerySchema, (filtros) => servicio.especies(filtros));
+export const series = consulta(seriesQuerySchema, (filtros) => servicio.series(filtros));
+export const registro = consulta(
+  detalleQuerySchema,
+  ({ grupo }, req) => servicio.registro(registroParamsSchema.parse(req.params).gbif_id, grupo),
+  SIN_REGISTRO,
+);
