@@ -33,6 +33,8 @@ router.get('/resumen', controller.resumen);
 router.get('/especies', controller.especies);
 router.get('/series', controller.series);
 router.get('/registros', controller.registros);
+router.get('/puntos', controller.puntos);
+router.get('/opciones', controller.opciones);
 router.get('/registros/:gbif_id', controller.registro);
 
 export default router;

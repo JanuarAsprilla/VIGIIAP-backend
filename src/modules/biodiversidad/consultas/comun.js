@@ -1,10 +1,8 @@
 import { getClient } from '../../../config/database.js';
 import { ConsultaInvalida } from '../biodiversidad.errores.js';
-import { plegarSql, patronBusqueda } from './texto.js';
 
 const LIMITE_CONSULTA_MS = 5000;
 export const LOTE_ACTIVO = `activo AND estado = 'completo'`;
-const ORDEN_AMENAZA = { CR: 1, EN: 2, VU: 3 };
 
 /** Ejecuta `fn` en una transacción de solo lectura con tope de tiempo: una consulta pesada no acapara la BD. */
 export async function conLimite(fn) {
@@ -12,6 +10,8 @@ export async function conLimite(fn) {
   try {
     await client.query('BEGIN READ ONLY');
     await client.query(`SET LOCAL statement_timeout = ${LIMITE_CONSULTA_MS}`);
+    // La compilación JIT de PostgreSQL añadía ~1,5 s a las consultas sobre vw_registro_publico (40 ms sin ella).
+    await client.query('SET LOCAL jit = off');
     const resultado = await fn(client);
     await client.query('COMMIT');
     return resultado;
@@ -69,19 +69,6 @@ export function condicionesTerritorio(ctx, { codigo_municipal, departamento }, c
   const donde = [];
   if (codigo_municipal != null) donde.push(`${columnaCodigo} = ${ctx.p(codigo_municipal)}`);
   if (departamento != null) donde.push(`m.departamento = ${ctx.p(departamento)}`);
-  return donde;
-}
-
-/** Filtros por especie (nombre, conservación, categoría de amenaza): usan los alias t y ec de `fuente`. */
-export function condicionesEspecie(ctx, { buscar, conservacion, amenaza, especie_clave }) {
-  const donde = [];
-  if (buscar != null) donde.push(`${plegarSql('t.especie')} LIKE ${ctx.p(patronBusqueda(buscar))} ESCAPE '\\'`);
-  if (conservacion === 'amenazada') donde.push('ec.amenaza_orden IS NOT NULL');
-  if (conservacion === 'endemica') donde.push('(ec.endemica_colombia OR ec.endemica_choco)');
-  if (conservacion === 'introducida') donde.push('ec.introducida');
-  if (conservacion === 'invasora') donde.push('ec.invasora');
-  if (amenaza != null) donde.push(`ec.amenaza_orden = ${ctx.p(ORDEN_AMENAZA[amenaza])}`);
-  if (especie_clave != null) donde.push(`t.especie_clave = ${ctx.p(especie_clave)}`);
   return donde;
 }
 

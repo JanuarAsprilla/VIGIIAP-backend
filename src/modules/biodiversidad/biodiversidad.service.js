@@ -5,3 +5,5 @@ export { registros, registro } from './consultas/registros.js';
 export { especies } from './consultas/especies.js';
 export { resumen } from './consultas/resumen.js';
 export { series } from './consultas/series.js';
+export { puntos } from './consultas/puntos.js';
+export { opciones } from './consultas/opciones.js';

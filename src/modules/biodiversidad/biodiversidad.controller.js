@@ -1,7 +1,7 @@
 import * as servicio from './biodiversidad.service.js';
 import {
   municipiosQuerySchema, registrosQuerySchema, resumenQuerySchema, especiesQuerySchema, seriesQuerySchema,
-  detalleQuerySchema, registroParamsSchema,
+  detalleQuerySchema, registroParamsSchema, puntosQuerySchema, opcionesQuerySchema,
 } from './biodiversidad.schema.js';
 import { ConsultaInvalida } from './biodiversidad.errores.js';
 
@@ -34,11 +34,13 @@ export async function estado(_req, res, next) {
   } catch (err) { responderError(err, res, next); }
 }
 
-export const municipios = consulta(municipiosQuerySchema, ({ grupo }) => servicio.municipios(grupo));
+export const municipios = consulta(municipiosQuerySchema, (filtros) => servicio.municipios(filtros));
 export const registros = consulta(registrosQuerySchema, (filtros) => servicio.registros(filtros));
 export const resumen = consulta(resumenQuerySchema, (filtros) => servicio.resumen(filtros));
 export const especies = consulta(especiesQuerySchema, (filtros) => servicio.especies(filtros));
 export const series = consulta(seriesQuerySchema, (filtros) => servicio.series(filtros));
+export const puntos = consulta(puntosQuerySchema, (filtros) => servicio.puntos(filtros));
+export const opciones = consulta(opcionesQuerySchema, (filtros) => servicio.opciones(filtros));
 export const registro = consulta(
   detalleQuerySchema,
   ({ grupo }, req) => servicio.registro(registroParamsSchema.parse(req.params).gbif_id, grupo),
