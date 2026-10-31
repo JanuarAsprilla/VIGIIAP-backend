@@ -1,7 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- VIGIIAP — Biodiversidad: detalle de registros y conservación por especie (API v2)
 -- ─────────────────────────────────────────────────────────────────────────────
--- Solo agrega: la tabla `registro_detalle` (observador, identificador y fotos de cada registro),
+-- Solo agrega: la tabla `registro_detalle` (observador, identificador, fotos y códigos de calidad de GBIF de cada registro),
 -- columnas AL FINAL de `vw_registro_publico` y la vista `vw_especie_conservacion`. No altera ni
 -- borra datos. Reversión: db/rollback/064_biodiversidad_detalle.down.sql.
 --
@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS biodiversidad.registro_detalle (
   registrado_por   TEXT,
   identificado_por TEXT,
   fotos            JSONB NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(fotos) = 'array'),
+  -- Códigos de calidad de GBIF (p. ej. COORDINATE_ROUNDED), solo cadenas en MAYÚSCULAS.
+  marcas_gbif      JSONB NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(marcas_gbif) = 'array'),
   PRIMARY KEY (lote_id, gbif_id),
   FOREIGN KEY (lote_id, gbif_id) REFERENCES biodiversidad.registro(lote_id, gbif_id)
 );
@@ -33,7 +35,7 @@ CREATE OR REPLACE VIEW biodiversidad.vw_registro_publico AS
          x.oculta AS coordenadas_ocultas,
          d.registrado_por, d.identificado_por, COALESCE(d.fotos, '[]'::jsonb) AS fotos,
          r.marcas_revision, r.institution_code, r.collection_code, r.catalog_number,
-         r.occurrence_id, r.nombre_original
+         r.occurrence_id, r.nombre_original, COALESCE(d.marcas_gbif, '[]'::jsonb) AS marcas_gbif
     FROM biodiversidad.registro r
     JOIN biodiversidad.lote l ON l.id = r.lote_id AND l.activo AND l.estado = 'completo'
     LEFT JOIN biodiversidad.taxon_version t ON t.huella = r.taxon_huella

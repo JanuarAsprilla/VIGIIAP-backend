@@ -40,7 +40,7 @@ const DE_LOTE = {
     'incertidumbre_m', 'tipo_evidencia', 'licencia', 'institution_code', 'collection_code', 'catalog_number',
     'nombre_original', 'last_interpreted', 'modified', 'marcas_revision', 'vista_1000m',
   ],
-  registro_detalle: ['lote_id', 'gbif_id', 'registrado_por', 'identificado_por', 'fotos'],
+  registro_detalle: ['lote_id', 'gbif_id', 'registrado_por', 'identificado_por', 'fotos', 'marcas_gbif'],
   asignacion: ['lote_id', 'gbif_id', 'territorio_huella', 'codigo'],
   resumen_territorial: ['lote_id', 'territorio_huella', 'codigo', 'registros', 'sin_especie'],
   inventario_especie: ['lote_id', 'codigo', 'taxon_huella', 'registros'],
@@ -155,7 +155,9 @@ async function procesar(client, ruta) {
       const complemento = COMPLEMENTOS.has(t);
       if (lote.omitido && !complemento) continue;
       const { lote: _ref, ...resto } = d;
-      await encolar(t, DE_LOTE[t], { ...resto, lote_id: lote.id }, complemento);
+      // Un archivo de un formato anterior puede no traer fotos o marcas: se cargan vacías, no nulas.
+      const porDefecto = t === 'registro_detalle' ? { fotos: resto.fotos ?? [], marcas_gbif: resto.marcas_gbif ?? [] } : {};
+      await encolar(t, DE_LOTE[t], { ...resto, ...porDefecto, lote_id: lote.id }, complemento);
     } else if (t === 'conservacion_importacion') {
       await vaciar();
       const { rows } = await client.query(

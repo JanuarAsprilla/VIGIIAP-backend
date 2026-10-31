@@ -20,7 +20,7 @@ const COLUMNAS_ORIGINALES = [
 ];
 const COLUMNAS_NUEVAS = [
   'registrado_por', 'identificado_por', 'fotos', 'marcas_revision', 'institution_code', 'collection_code',
-  'catalog_number', 'occurrence_id', 'nombre_original',
+  'catalog_number', 'occurrence_id', 'nombre_original', 'marcas_gbif',
 ];
 
 async function enTransaccion(fn) {
@@ -52,8 +52,8 @@ async function sembrar(client, { cruceActivo = true } = {}) {
             ($1, 'g2', 'ds1', 'tx2', 2021, 5.70, -76.60, 10, true, 'occ-2', ''),
             ($1, 'g3', 'ds1', 'tx2', 2022, 5.71, -76.61, 10, true, NULL, NULL)`, [lote.id]);
   await client.query(
-    `INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, registrado_por, identificado_por, fotos)
-     VALUES ($1, 'g1', 'Ana', 'Beto', '[{"imagen":"x"}]'), ($1, 'g2', NULL, NULL, '[]')`, [lote.id]);
+    `INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, registrado_por, identificado_por, fotos, marcas_gbif)
+     VALUES ($1, 'g1', 'Ana', 'Beto', '[{"imagen":"x"}]', '["COORDINATE_ROUNDED"]'), ($1, 'g2', NULL, NULL, '[]', DEFAULT)`, [lote.id]);
   if (cruceActivo) {
     const { rows: [imp] } = await client.query(
       `INSERT INTO biodiversidad.conservacion_importacion (huella, activo) VALUES ('c1', true) RETURNING id`);
@@ -125,6 +125,12 @@ describe('registro_detalle — seguridad', () => {
         `INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, fotos) VALUES ($1, 'g3', '{"a":1}')`, [loteId],
       )).rejects.toThrow(/check constraint/);
     });
+    await enTransaccion(async (client) => {
+      const loteId = await sembrar(client);
+      await expect(client.query(
+        `INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, marcas_gbif) VALUES ($1, 'g3', '"X"')`, [loteId],
+      )).rejects.toThrow(/check constraint/);
+    });
   });
 });
 
@@ -147,6 +153,8 @@ describe('vw_registro_publico ampliada', () => {
         registrado_por: 'Ana', identificado_por: 'Beto', occurrence_id: 'occ-1', marcas_revision: 'a;b',
       });
       expect(rows[0].fotos).toEqual([{ imagen: 'x' }]);
+      expect(rows[0].marcas_gbif).toEqual(['COORDINATE_ROUNDED']);
+      expect(rows[1].marcas_gbif).toEqual([]);
       expect(rows[1]).toMatchObject({ gbif_id: 'g2', latitud: 5.7, coordenadas_ocultas: false, registrado_por: null });
     });
   });
@@ -155,7 +163,7 @@ describe('vw_registro_publico ampliada', () => {
     await enTransaccion(async (client) => {
       await sembrar(client);
       const g3 = (await leer(client)).rows.find((r) => r.gbif_id === 'g3');
-      expect(g3).toMatchObject({ registrado_por: null, identificado_por: null, fotos: [], coordenadas_ocultas: false });
+      expect(g3).toMatchObject({ registrado_por: null, identificado_por: null, fotos: [], marcas_gbif: [], coordenadas_ocultas: false });
     });
   });
 

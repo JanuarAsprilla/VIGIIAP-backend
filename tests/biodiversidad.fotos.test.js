@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fotosPublicas, fotoValida } from '../src/modules/biodiversidad/consultas/fotos.js';
+import { codigosGbif } from '../src/modules/biodiversidad/consultas/marcas.js';
 import { patronBusqueda } from '../src/modules/biodiversidad/consultas/texto.js';
 
 const IMAGEN = `https://api.gbif.org/v1/image/cache/500x/occurrence/5036794008/media/${'a1'.repeat(16)}`;
@@ -69,5 +70,16 @@ describe('patronBusqueda()', () => {
 
   it('no altera comillas ni punto y coma: el valor siempre viaja como parámetro', () => {
     expect(patronBusqueda("x'; DROP TABLE y;--")).toBe("%x'; drop table y;--%");
+  });
+});
+
+describe('codigosGbif()', () => {
+  it('conserva solo códigos con forma válida, sin repetidos', () => {
+    expect(codigosGbif(['COORDINATE_ROUNDED', 'COORDINATE_ROUNDED', 'x', 'Ab_C', 'AB', 7, null, {}, 'A;B', 'OK_1', 'A'.repeat(82)]))
+      .toEqual(['COORDINATE_ROUNDED', 'OK_1']);
+  });
+
+  it('tolera entradas que no son arreglo', () => {
+    for (const x of [null, undefined, 'TEXTO', {}, 3]) expect(codigosGbif(x)).toEqual([]);
   });
 });

@@ -15,7 +15,7 @@ const CLASIF = 'bb';
 const TERR = 't1';
 
 const DETALLES = [
-  ['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', fotos: [{ imagen: 'https://api.gbif.org/v1/image/cache/500x/occurrence/1/media/' + 'a'.repeat(32), autor: 'Ana', editor: 'iNaturalist', licencia: 'CC-BY', referencia: 'https://www.inaturalist.org/photos/1' }] }],
+  ['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', marcas_gbif: ['COORDINATE_ROUNDED', 'TAXON_ID_NOT_FOUND'], fotos: [{ imagen: 'https://api.gbif.org/v1/image/cache/500x/occurrence/1/media/' + 'a'.repeat(32), autor: 'Ana', editor: 'iNaturalist', licencia: 'CC-BY', referencia: 'https://www.inaturalist.org/photos/1' }] }],
   ['registro_detalle', { lote: 1, gbif_id: 'g2', registrado_por: null, identificado_por: null, fotos: [] }],
 ];
 
@@ -163,11 +163,18 @@ describe('cargarDatos() — detalle de registros (formato v2)', () => {
     const r = await cargarDatos(archivo(cuerpo({ detalle: true })));
     expect(r.tablas.registro_detalle).toEqual({ leidas: 2, insertadas: 2 });
     const { rows } = await query(
-      'SELECT gbif_id, registrado_por, identificado_por, jsonb_array_length(fotos)::int AS n FROM biodiversidad.registro_detalle ORDER BY gbif_id');
+      'SELECT gbif_id, registrado_por, identificado_por, jsonb_array_length(fotos)::int AS n, marcas_gbif FROM biodiversidad.registro_detalle ORDER BY gbif_id');
     expect(rows).toEqual([
-      { gbif_id: 'g1', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', n: 1 },
-      { gbif_id: 'g2', registrado_por: null, identificado_por: null, n: 0 },
+      { gbif_id: 'g1', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', n: 1, marcas_gbif: ['COORDINATE_ROUNDED', 'TAXON_ID_NOT_FOUND'] },
+      { gbif_id: 'g2', registrado_por: null, identificado_por: null, n: 0, marcas_gbif: [] },
     ]);
+  });
+
+  it('un archivo 10b antiguo (detalle sin marcas_gbif ni fotos) sigue cargando con arreglos vacíos', async () => {
+    const antiguo = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Ana', identificado_por: null }]];
+    await cargarDatos(archivo(cuerpo({ detalle: true, detalles: antiguo })));
+    const { rows } = await query('SELECT fotos, marcas_gbif FROM biodiversidad.registro_detalle');
+    expect(rows).toEqual([{ fotos: [], marcas_gbif: [] }]);
   });
 
   it('un archivo antiguo (sin detalle) sigue cargando y no deja filas de detalle', async () => {

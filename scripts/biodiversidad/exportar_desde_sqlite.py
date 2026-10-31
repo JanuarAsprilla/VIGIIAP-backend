@@ -24,6 +24,7 @@ FORMATO = 1
 FOTO_IMAGEN = re.compile(r'^https://api\.gbif\.org/v1/image/cache/[0-9]+x/occurrence/[0-9]+/media/[a-f0-9]{32}$')
 FOTO_CAMPOS = ('imagen', 'autor', 'editor', 'licencia', 'referencia')
 FOTOS_DESCARTADAS = {'n': 0}
+MARCA_GBIF = re.compile(r'^[A-Z][A-Z0-9_]{2,80}$')
 # Se revisan los VALORES de texto (no el JSON serializado): una unidad de disco solo cuenta si
 # arranca el texto o sigue a un espacio (p. ej. «C:\Users\…»), no el «Métodos:\n» de una metodología.
 FUGA = re.compile(r'(?:^|\s)[A-Za-z]:\\|\\Users\\|ebedi|\.codex|(?:^|\s)/(?:Users|home)/[^/\s]+/', re.IGNORECASE)
@@ -69,6 +70,15 @@ def fotos_publicas(texto):
         else:
             FOTOS_DESCARTADAS['n'] += 1
     return publicas
+
+
+def marcas_gbif(texto):
+    """Códigos de calidad de GBIF: solo cadenas con forma de código, sin repetidos."""
+    codigos = []
+    for c in json_o_vacio(texto, []):
+        if isinstance(c, str) and MARCA_GBIF.match(c) and c not in codigos:
+            codigos.append(c)
+    return codigos
 
 
 def marcadores(n):
@@ -159,7 +169,7 @@ def tablas(con):
     detalle = (
         'registro_detalle', f'SELECT * FROM detalle_registro WHERE lote_id IN ({L}) ORDER BY lote_id, gbif_id', lotes,
         lambda r: {'lote': r['lote_id'], 'gbif_id': r['gbif_id'], 'registrado_por': r['registrado_por'] or None,
-                   'identificado_por': r['identificado_por'] or None, 'fotos': fotos_publicas(r['fotos_json'])},
+                   'identificado_por': r['identificado_por'] or None, 'fotos': fotos_publicas(r['fotos_json']), 'marcas_gbif': marcas_gbif(r['revision_json'])},
     )
     posicion = next(i for i, d in enumerate(definiciones) if d[0] == 'registro') + 1
     return definiciones[:posicion] + [detalle] + definiciones[posicion:]

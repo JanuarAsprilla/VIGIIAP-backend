@@ -72,15 +72,15 @@ async function sembrar({ cruceActivo = true } = {}) {
     for (const c of codigos) await query(`INSERT INTO biodiversidad.asignacion VALUES ($1, $2, 't1', $3)`, [ind, gbif, c]);
   }
   const detalle = [
-    ['g1', 'Ana Pérez', 'Beto Ruiz', [foto(1, 'a'), FOTO_S3, foto(11, 'b')]],
-    ['g2', 'Carla', null, [foto(2, 'c'), foto(22, 'd', 'Luis')]],
-    ['g4', null, 'Diego', [foto(4, 'e')]],
-    ['g6', 'Eva', 'Eva', [FOTO_S3]],
+    ['g1', 'Ana Pérez', 'Beto Ruiz', [foto(1, 'a'), FOTO_S3, foto(11, 'b')], ['COORDINATE_ROUNDED']],
+    ['g2', 'Carla', null, [foto(2, 'c'), foto(22, 'd', 'Luis')], ['TAXON_ID_NOT_FOUND', 'COLLECTION_MATCH_FUZZY', 'minuscula', 7, 'X; DROP', '<script>']],
+    ['g4', null, 'Diego', [foto(4, 'e')], []],
+    ['g6', 'Eva', 'Eva', [FOTO_S3], []],
   ];
-  for (const [gbif, obs, ident, fotos] of detalle) {
+  for (const [gbif, obs, ident, fotos, marcas] of detalle) {
     await query(
-      `INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, registrado_por, identificado_por, fotos) VALUES ($1, $2, $3, $4, $5::jsonb)`,
-      [ind, gbif, obs, ident, JSON.stringify(fotos)]);
+      `INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, registrado_por, identificado_por, fotos, marcas_gbif) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)`,
+      [ind, gbif, obs, ident, JSON.stringify(fotos), JSON.stringify(marcas)]);
   }
   await query(
     `INSERT INTO biodiversidad.resumen_territorial VALUES ($1, 't1', '27001', 4, 0), ($1, 't1', '05045', 2, 0), ($2, 't1', '27001', 500, 3), ($2, 't1', '05045', 200, 0)`,
@@ -284,10 +284,10 @@ describe('registros() — campos y filtros nuevos', () => {
     expect(ids(await registros(base({ con_foto: true })))).toEqual(['g1', 'g2', 'g4']);
   });
 
-  it('no entrega la lista completa de fotos en el listado (solo la principal)', async () => {
+  it('no entrega la lista completa de fotos ni las marcas de GBIF en el listado', async () => {
     await sembrar();
     const r = await registros(base());
-    expect(r.registros.every((x) => !('fotos' in x))).toBe(true);
+    expect(r.registros.every((x) => !('fotos' in x) && !('marcas_gbif' in x))).toBe(true);
   });
 
   it('el campo es exactamente el contrato', async () => {
@@ -361,6 +361,7 @@ describe('registro() — detalle', () => {
       fotos_total: 2, foto: foto(2, 'c'),
       fotos: [foto(2, 'c'), foto(22, 'd', 'Luis')],
       marcas_revision: ['incertidumbre_no_informada', 'sin_clave_especie'],
+      marcas_gbif: ['TAXON_ID_NOT_FOUND', 'COLLECTION_MATCH_FUZZY'],
       institution_code: 'INST', collection_code: 'COL', catalog_number: 'CAT-1', occurrence_id: 'occ-g2', nombre_original: 'Nombre original',
       taxonomia: { reino: 'Animalia', clase: 'Amphibia', orden: 'Anura', familia: 'Bufonidae', genero: 'Rhinella' },
       latitud: 5.7, longitud: -76.6, coordenadas_ocultas: false,
@@ -388,6 +389,14 @@ describe('registro() — detalle', () => {
     expect(r.fotos_total).toBe(2);
     expect(JSON.stringify(r)).not.toMatch(/amazonaws|original\.jpeg/);
     expect((await registro('g6', 'anfibios')).fotos).toEqual([]);
+  });
+
+  it('marcas_gbif: solo códigos con forma válida; vacío si no hay detalle o no hay marcas', async () => {
+    await sembrar();
+    expect((await registro('g1', 'anfibios')).marcas_gbif).toEqual(['COORDINATE_ROUNDED']);
+    expect((await registro('g2', 'anfibios')).marcas_gbif).toEqual(['TAXON_ID_NOT_FOUND', 'COLLECTION_MATCH_FUZZY']);
+    expect((await registro('g4', 'anfibios')).marcas_gbif).toEqual([]);
+    expect((await registro('g3', 'anfibios')).marcas_gbif).toEqual([]);
   });
 
   it('sin fila de detalle: fotos vacías y autores nulos', async () => {
