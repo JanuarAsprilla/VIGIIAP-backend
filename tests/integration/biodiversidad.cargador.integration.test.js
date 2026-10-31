@@ -14,7 +14,12 @@ import { cargarDatos, cambiarHerramienta, estadoCarga } from '../../scripts/biod
 const CLASIF = 'bb';
 const TERR = 't1';
 
-function lineas({ huella = 'h1', amenazada = true, conteoRegistro = 3 } = {}) {
+const DETALLES = [
+  ['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', marcas_gbif: ['COORDINATE_ROUNDED', 'TAXON_ID_NOT_FOUND'], fotos: [{ imagen: 'https://api.gbif.org/v1/image/cache/500x/occurrence/1/media/' + 'a'.repeat(32), autor: 'Ana', editor: 'iNaturalist', licencia: 'CC-BY', referencia: 'https://www.inaturalist.org/photos/1' }] }],
+  ['registro_detalle', { lote: 1, gbif_id: 'g2', registrado_por: null, identificado_por: null, fotos: [] }],
+];
+
+function lineas({ huella = 'h1', amenazada = true, conteoRegistro = 3, detalle = false, soloDetalle = false, detalles = DETALLES } = {}) {
   const d = [
     ['clasificacion', { clave: CLASIF, nombre: 'GBIF Backbone' }],
     ['territorio_version', { huella: TERR, origen: 'region/municipios.geojson' }],
@@ -42,6 +47,10 @@ function lineas({ huella = 'h1', amenazada = true, conteoRegistro = 3 } = {}) {
     ['conservacion_afirmacion', { ref: 70, importacion: 7, fuente: 'amenaza_colombia', id_original: 'a1', nombre: 'Especie amenazada', reino: 'Animalia', rango: 'SPECIES', tema: 'amenaza_nacional', valor: amenazada ? 'CR' : 'LC', campo: 'categoria', original: { x: 1 }, motivo_revision: null }],
     ['conservacion_vinculo', { afirmacion: 70, clasificacion_clave: CLASIF, especie_clave: '1', metodo: 'nombre_exacto' }],
   ];
+  if (detalle || soloDetalle) {
+    const i = d.findIndex(([t]) => t === 'asignacion');
+    d.splice(i, 0, ...detalles);
+  }
   const conteos = {};
   for (const [t] of d) conteos[t] = (conteos[t] ?? 0) + 1;
   conteos.registro = conteoRegistro;
@@ -146,6 +155,130 @@ describe('cargarDatos()', () => {
     expect(rows).toEqual([{ huella_fuente: 'h1', activo: false }, { huella_fuente: 'h2', activo: true }]);
     const { rows: cruces } = await query('SELECT huella, activo FROM biodiversidad.conservacion_importacion ORDER BY id');
     expect(cruces).toEqual([{ huella: 'c-h1', activo: false }, { huella: 'c-h2', activo: true }]);
+  });
+});
+
+describe('cargarDatos() — detalle de registros (formato v2)', () => {
+  it('carga registro_detalle junto con el resto y lo cuenta', async () => {
+    const r = await cargarDatos(archivo(cuerpo({ detalle: true })));
+    expect(r.tablas.registro_detalle).toEqual({ leidas: 2, insertadas: 2 });
+    const { rows } = await query(
+      'SELECT gbif_id, registrado_por, identificado_por, jsonb_array_length(fotos)::int AS n, marcas_gbif FROM biodiversidad.registro_detalle ORDER BY gbif_id');
+    expect(rows).toEqual([
+      { gbif_id: 'g1', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', n: 1, marcas_gbif: ['COORDINATE_ROUNDED', 'TAXON_ID_NOT_FOUND'] },
+      { gbif_id: 'g2', registrado_por: null, identificado_por: null, n: 0, marcas_gbif: [] },
+    ]);
+  });
+
+  it('descarta al cargar los marcas_gbif que no son códigos válidos', async () => {
+    const sucio = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: null, identificado_por: null, fotos: [], marcas_gbif: ['OK_1', 'ok', '<script>', 7, null, 'OK_1'] }],
+      ['registro_detalle', { lote: 1, gbif_id: 'g2', registrado_por: null, identificado_por: null, fotos: [], marcas_gbif: { x: 1 } }]];
+    await cargarDatos(archivo(cuerpo({ detalle: true, detalles: sucio })));
+    const { rows } = await query('SELECT gbif_id, marcas_gbif FROM biodiversidad.registro_detalle ORDER BY gbif_id');
+    expect(rows).toEqual([{ gbif_id: 'g1', marcas_gbif: ['OK_1'] }, { gbif_id: 'g2', marcas_gbif: [] }]);
+  });
+
+  it('un archivo 10b antiguo (detalle sin marcas_gbif ni fotos) sigue cargando con arreglos vacíos', async () => {
+    const antiguo = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Ana', identificado_por: null }]];
+    await cargarDatos(archivo(cuerpo({ detalle: true, detalles: antiguo })));
+    const { rows } = await query('SELECT fotos, marcas_gbif FROM biodiversidad.registro_detalle');
+    expect(rows).toEqual([{ fotos: [], marcas_gbif: [] }]);
+  });
+
+  it('un archivo antiguo (sin detalle) sigue cargando y no deja filas de detalle', async () => {
+    const r = await cargarDatos(archivo(cuerpo()));
+    expect(r.tablas.registro_detalle).toBeUndefined();
+    expect(await contar('registro_detalle')).toBe(0);
+  });
+
+  it('inserta los detalles sobre cortes ya cargados (lotes omitidos) sin duplicar nada', async () => {
+    await cargarDatos(archivo(cuerpo()), { activar: true });
+    const r = await cargarDatos(archivo(cuerpo({ detalle: true })));
+    expect(r.omitidos).toEqual({ lotes: 2, cruces: 1 });
+    expect(r.tablas.registro_detalle).toEqual({ leidas: 2, insertadas: 2 });
+    expect(r.tablas.registro.insertadas).toBe(0);
+    expect(await contar('registro')).toBe(3);
+    expect(await contar('lote')).toBe(2);
+    expect(await contar('registro_detalle')).toBe(2);
+  });
+
+  it('es idempotente: repetir el archivo con detalle no inserta nada más', async () => {
+    await cargarDatos(archivo(cuerpo({ detalle: true })));
+    const r2 = await cargarDatos(archivo(cuerpo({ detalle: true })));
+    expect(r2.tablas.registro_detalle).toEqual({ leidas: 2, insertadas: 0 });
+    expect(await contar('registro_detalle')).toBe(2);
+  });
+
+  it('no pisa un detalle ya cargado (ON CONFLICT DO NOTHING)', async () => {
+    await cargarDatos(archivo(cuerpo({ detalle: true })));
+    const otros = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Otra persona', identificado_por: null, fotos: [] }]];
+    await cargarDatos(archivo(cuerpo({ detalle: true, detalles: otros })));
+    const { rows } = await query(`SELECT registrado_por FROM biodiversidad.registro_detalle WHERE gbif_id = 'g1'`);
+    expect(rows).toEqual([{ registrado_por: 'Ana Pérez' }]);
+  });
+
+  it('es atómico: un detalle de un registro inexistente revierte toda la carga', async () => {
+    await cargarDatos(archivo(cuerpo()));
+    const malo = [['registro_detalle', { lote: 1, gbif_id: 'no-existe', registrado_por: 'X', identificado_por: null, fotos: [] }]];
+    await expect(cargarDatos(archivo(cuerpo({ detalle: true, detalles: [...DETALLES, ...malo] })))).rejects.toThrow(/foreign key|registro_detalle/);
+    expect(await contar('registro_detalle')).toBe(0);
+  });
+
+  it('rechaza un detalle que apunta a un lote desconocido', async () => {
+    const malo = [['registro_detalle', { lote: 99, gbif_id: 'g1', registrado_por: null, identificado_por: null, fotos: [] }]];
+    await expect(cargarDatos(archivo(cuerpo({ detalle: true, detalles: malo })))).rejects.toThrow(/lote desconocido/);
+  });
+
+  it('solo escribe las columnas fijas: ignora campos extra del archivo (p. ej. original)', async () => {
+    const extra = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'A', identificado_por: null, fotos: [], lote_id: 12345, original: 'https://s3/x' }]];
+    await cargarDatos(archivo(cuerpo({ detalle: true, detalles: extra })));
+    const { rows } = await query('SELECT lote_id FROM biodiversidad.registro_detalle');
+    const { rows: [lote] } = await query(`SELECT id FROM biodiversidad.lote WHERE grupo = 'anfibios'`);
+    expect(rows).toEqual([{ lote_id: lote.id }]);
+  });
+});
+
+describe('cargarDatos() — ANALYZE posterior a la carga', () => {
+  const ultimoAnalisis = async () => {
+    for (let i = 0; i < 30; i += 1) {
+      await query('SELECT pg_stat_clear_snapshot()');
+      const { rows: [r] } = await query(
+        `SELECT GREATEST(last_analyze, last_autoanalyze) AS cuando FROM pg_stat_user_tables
+          WHERE schemaname = 'biodiversidad' AND relname = 'registro'`);
+      if (r?.cuando) return r.cuando;
+      await new Promise((ok) => setTimeout(ok, 200));
+    }
+    return null;
+  };
+
+  it('analiza las tablas cargadas después de confirmar y lo informa', async () => {
+    const { rows: [{ inicio }] } = await query('SELECT clock_timestamp() AS inicio');
+    const r = await cargarDatos(archivo(cuerpo({ detalle: true })));
+    expect(r.analizado).toEqual(expect.arrayContaining(['registro', 'registro_detalle', 'asignacion', 'inventario_especie', 'taxon_version']));
+    expect(r.avisos_analisis).toEqual([]);
+    expect(new Date(await ultimoAnalisis()).getTime()).toBeGreaterThanOrEqual(new Date(inicio).getTime());
+  });
+
+  it('la lista de tablas es fija: nada del archivo decide qué se analiza', async () => {
+    const r = await cargarDatos(archivo(cuerpo()));
+    expect(r.analizado.every((t) => /^[a-z_]+$/.test(t))).toBe(true);
+    expect(r.analizado).not.toContain('usuarios');
+  });
+
+  it('un fallo de ANALYZE no deshace la carga: queda como aviso', async () => {
+    const r = await cargarDatos(archivo(cuerpo()), { ejecutarAnalisis: async () => { throw new Error('fallo simulado'); } });
+    expect(r.analizado).toEqual([]);
+    expect(r.avisos_analisis.join(' ')).toMatch(/fallo simulado/);
+    expect(await contar('registro')).toBe(3);
+  });
+
+  it('se analiza como dueño, no con el rol de ingesta', async () => {
+    const roles = [];
+    await cargarDatos(archivo(cuerpo()), { ejecutarAnalisis: async (sql) => { roles.push(sql); } });
+    expect(roles.length).toBeGreaterThan(0);
+    expect(roles.every((s) => /^ANALYZE biodiversidad\.[a-z_]+$/.test(s))).toBe(true);
+    const { rows: [r] } = await query('SELECT current_user AS u');
+    expect(r.u).not.toBe('biodiversidad_ingesta');
   });
 });
 

@@ -15,6 +15,7 @@ import { createGunzip } from 'zlib';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import pool, { getClient, query } from '../../src/config/database.js';
+import { codigosGbif } from '../../src/modules/biodiversidad/consultas/marcas.js';
 import { invalidateCache } from '../../src/middlewares/cache.js';
 
 const ROL_INGESTA = 'biodiversidad_ingesta';
@@ -40,12 +41,16 @@ const DE_LOTE = {
     'incertidumbre_m', 'tipo_evidencia', 'licencia', 'institution_code', 'collection_code', 'catalog_number',
     'nombre_original', 'last_interpreted', 'modified', 'marcas_revision', 'vista_1000m',
   ],
+  registro_detalle: ['lote_id', 'gbif_id', 'registrado_por', 'identificado_por', 'fotos', 'marcas_gbif'],
   asignacion: ['lote_id', 'gbif_id', 'territorio_huella', 'codigo'],
   resumen_territorial: ['lote_id', 'territorio_huella', 'codigo', 'registros', 'sin_especie'],
   inventario_especie: ['lote_id', 'codigo', 'taxon_huella', 'registros'],
   conteo_fuente: ['lote_id', 'codigo', 'dataset_key', 'registros'],
   faceta_municipal: ['lote_id', 'codigo', 'faceta', 'valor', 'registros'],
 };
+// Tablas que se completan SOBRE un corte ya cargado (lote «omitido»): los cortes publicados antes de
+// que existiera el detalle reciben sus filas nuevas sin repetir el resto; lo ya cargado no se pisa.
+const COMPLEMENTOS = new Set(['registro_detalle']);
 const COLUMNAS_LOTE = [
   'grupo', 'metodo', 'clasificacion_clave', 'territorio_huella', 'desde', 'hasta', 'huella_fuente', 'origen', 'doi',
   'creado_en', 'fecha_fuente', 'registros',
@@ -148,9 +153,12 @@ async function procesar(client, ruta) {
     } else if (t in DE_LOTE) {
       const lote = lotes.get(d.lote);
       if (!lote) throw new Error(`Línea ${numero}: ${t} apunta a un lote desconocido (${d.lote})`);
-      if (lote.omitido) continue;
+      const complemento = COMPLEMENTOS.has(t);
+      if (lote.omitido && !complemento) continue;
       const { lote: _ref, ...resto } = d;
-      await encolar(t, DE_LOTE[t], { ...resto, lote_id: lote.id }, false);
+      // Un archivo de un formato anterior puede no traer fotos o marcas: se cargan vacías, no nulas.
+      const porDefecto = t === 'registro_detalle' ? { fotos: resto.fotos ?? [], marcas_gbif: codigosGbif(resto.marcas_gbif) } : {};
+      await encolar(t, DE_LOTE[t], { ...resto, ...porDefecto, lote_id: lote.id }, complemento);
     } else if (t === 'conservacion_importacion') {
       await vaciar();
       const { rows } = await client.query(
@@ -230,7 +238,32 @@ async function activarCortes(client, lotes, cruces) {
   }
 }
 
-export async function cargarDatos(ruta, { activar = false } = {}) {
+// Lista fija: nada del archivo decide qué se analiza.
+const TABLAS_ANALIZAR = [
+  ...Object.keys(DIMENSIONES), 'lote', ...Object.keys(DE_LOTE),
+  'conservacion_importacion', 'conservacion_fuente', 'conservacion_afirmacion', 'conservacion_vinculo',
+];
+
+/**
+ * ANALYZE de lo cargado, DESPUÉS del COMMIT y como dueño (no dentro de la carga atómica ni con el rol de
+ * ingesta): sin estadísticas la primera consulta pesada puede superar el tope de tiempo. Un fallo se
+ * informa como aviso y nunca deshace una carga ya confirmada.
+ */
+async function analizarTablas(ejecutar) {
+  const analizado = [];
+  const avisos = [];
+  for (const tabla of TABLAS_ANALIZAR) {
+    try {
+      await ejecutar(`ANALYZE biodiversidad.${tabla}`);
+      analizado.push(tabla);
+    } catch (err) {
+      avisos.push(`ANALYZE ${tabla} falló: ${err.message}`);
+    }
+  }
+  return { analizado, avisos_analisis: avisos };
+}
+
+async function cargarAtomico(ruta, activar) {
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -249,6 +282,11 @@ export async function cargarDatos(ruta, { activar = false } = {}) {
   } finally {
     client.release();
   }
+}
+
+export async function cargarDatos(ruta, { activar = false, ejecutarAnalisis = (sql) => query(sql) } = {}) {
+  const resultado = await cargarAtomico(ruta, activar);
+  return { ...resultado, ...(await analizarTablas(ejecutarAnalisis)) };
 }
 
 export async function estadoCarga() {
