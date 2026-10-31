@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.9.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.8.0...v1.9.0) (2026-10-31)
+
+
+### Features
+
+* **actividad:** fase 1 — registro legible, filtros, gravedad y resumen ([#194](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/194)) ([88004ad](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/88004ad70c6f1381f3bdbe04247263e046110ba6))
+* **actividad:** fase 2 — resultado, request id, accesos denegados y cambios ([#196](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/196)) ([56437ef](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/56437ef5323b4260b658237920d9d6ab3d169505))
+* **actividad:** fase 3 — ubicación e IP de las visitas, retención y alertas de seguridad ([#200](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/200)) ([dc124b7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/dc124b7aa21b5206fa5d6ac72b2d9dccefc5f20d))
+* **actividad:** registro de auditoría encadenado, de solo anexado y con retención ([#202](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/202)) ([b2aa5af](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b2aa5afeb71d2263e496c423cc9d75657197cb78))
+* API de lectura de biodiversidad (PR 2 de 4) ([a13f775](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a13f77577288f995179e07c84e35269e8b31f042))
+* API de lectura de biodiversidad detrás de un interruptor ([01a83a0](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/01a83a0fb1b3b2c922fd862d55ba5b1b1e6e62c3))
+* API v2 de biodiversidad (resumen, especies, series, detalle, fotos y conservación) ([#241](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/241)) ([bdd68a9](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/bdd68a91a41c30ec7be21b098efd651f6343e90f))
+* API v2.2 de biodiversidad (filtros transversales, /opciones y /puntos) ([#252](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/252)) ([e2fa15d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e2fa15d153699016b26c52aac26f5801423c3809))
+* cargador de datos de biodiversidad y workflow de carga ([2eb59d1](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2eb59d11d20df191b5e02b9710849c854c6c773f))
+* cargador de datos de biodiversidad y workflow de carga (PR 3) ([5ba6045](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5ba6045725897712b6243ddd905ecde13d62c911))
+* esquema base de biodiversidad (migración 062) ([79affac](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/79affac6f9ef703d234007d4681e316804d5ab76))
+* esquema base de biodiversidad (PR 1 de 4) ([daff850](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/daff850631a2a730a00d786961c2443b40cd2b09))
+* eventos personalizados y tiempo real en la analítica propia ([#239](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/239)) ([1c63535](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/1c635355c8135e9169e51b83bfc18c1195742125))
+* foto representativa y con_foto por especie en /biodiversidad/especies ([#246](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/246)) ([2519ee2](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2519ee2fa46c47173270661eaa0ccb06aa4f95a2))
+* **mantenimiento:** pausa total de la API y endpoint público de estado ([#208](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/208)) ([30ac6a9](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/30ac6a9b3c380c5680cb283ddc2d93ac16e40519))
+
+
+### Bug Fixes
+
+* **cache:** categorías devolvía documentos por colisión de claves; solo cachea 200 y usa SCAN ([#213](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/213)) ([ce00334](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ce00334abd3489fc93d5395de379f51956242a78))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([5c5283d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5c5283db0e67269c05c4ec81839fdba974217dc6))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([8401092](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8401092e3b81e6170e121f7dc56eb821eba15d25))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([5b38440](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5b384408e5bdc7e020b0e98248098ce80f359e4b))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([a8a6fb6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a8a6fb6ad0be85f967ef2a6e93b2a88b6a920a31))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([fd7f387](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/fd7f387f785b82a4d46865619bc4a62ed52bf11c))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([b436a1f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b436a1f6287c4b4375eea92fd18693f18c3370ba))
+* cierra hallazgos de auditoría de seguridad + residual nOAuth (OAuth email verification) ([d1aac10](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d1aac10e2d973abfcc7785e1f5080ab22962ec3a))
+* **ci:** release-please publica desde main aunque develop sea la rama por defecto ([#192](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/192)) ([2220f6d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2220f6de355bc87e47d59ebbd1009cea6fd7a420))
+* **deps:** corrige las vulnerabilidades de npm audit (zod 4, undici, multer, body-parser, nodemailer) ([#224](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/224)) ([ae8e26b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ae8e26b9033ca3c5684120b4b24745a9ca09ba38))
+* el archivo de datos de biodiversidad no viaja por GitHub ([2f74506](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2f74506765c263273440776c5f4c77801d9bd7d4))
+* **geovisores:** elegir conexiones con el módulo Geovisores, sin acceso al módulo Conexiones ([#223](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/223)) ([b12918f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b12918f89b681be11aa443982fc174bc3e9f0adf))
+* **geovisores:** explicar el 400 por campo de fichas inexistente y la causa de los fallos de red ([#205](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/205)) ([d520a65](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d520a65fcddd964dedffb389ca252864b512259a))
+* la invalidación del cache público cubre /api y /api/v1, y los geovisores invalidan ([#231](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/231)) ([be0d37e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/be0d37e72e764450a0d214757a943a744c68cd55))
+* no cachear las rutas de biodiversidad con parámetros ([0df264c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/0df264cfa84a60f4a15c0db46a01fd3ee6295949))
+* **visitante:** conservar el nombre que da al entrar al recargar la página ([#209](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/209)) ([e77ff02](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e77ff02a100e7962da4152dc425a4bf3c35f574a))
+
+
+### Performance Improvements
+
+* analítica de administración contada en SQL con caché local de 30 s ([#244](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/244)) ([3dc83a6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3dc83a6b9268eba8f994dcfa7e39d48f6f4aa0ff))
+* índices medidos, resumen de auditoría acotado por tiempo y limpieza de duplicados ([#230](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/230)) ([aa9ba75](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/aa9ba75cbcae251930d0f4e20ba28167709c7b43))
+
 ## [1.8.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.1...v1.8.0) (2026-10-09)
 
 
