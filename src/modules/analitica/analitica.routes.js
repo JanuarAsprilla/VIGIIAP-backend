@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
-  pageview, resumen, paginasTop, dispositivos, fuentesTrafico, entradaSalida, ubicaciones, sesionesRecientes,
+  pageview, evento, resumen, paginasTop, dispositivos, fuentesTrafico, entradaSalida, ubicaciones, sesionesRecientes,
+  eventosTop, tiempoReal,
 } from './analitica.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
@@ -13,6 +14,10 @@ const router = Router();
 // aplica sobre toda /api/v1 antes de llegar aquí.
 router.post('/pageview', pageview);
 
+// POST /api/analitica/evento — acción concreta del visitante (descargar, abrir un geovisor…).
+// Mismo criterio que pageview: público, anónimo, catálogo cerrado de nombres.
+router.post('/evento', evento);
+
 // Lecturas: gateadas por el módulo 'actividad' ya existente (esta analítica
 // vive como pestaña dentro de la pantalla de Actividad del panel admin, no
 // como un módulo delegable aparte).
@@ -22,6 +27,8 @@ router.get('/dispositivos',     authenticate, authorize('admin_sig'), requireMod
 router.get('/fuentes-trafico',  authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), fuentesTrafico);
 router.get('/entrada-salida',   authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), entradaSalida);
 router.get('/ubicaciones',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), ubicaciones);
+router.get('/eventos-top',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), eventosTop);
+router.get('/tiempo-real',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), tiempoReal);
 router.get('/sesiones-recientes', authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), sesionesRecientes);
 
 export default router;
