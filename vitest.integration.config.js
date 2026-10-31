@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     setupFiles: ['./tests/integration/setup.js'],
     include: ['tests/integration/**/*.test.js'],
+    env: { ANALITICA_CACHE_TTL_MS: '0' },
     environment: 'node',
     globals: false,
     // Timeout alto por operaciones de BD real
