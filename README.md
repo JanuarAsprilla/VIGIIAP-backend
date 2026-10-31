@@ -181,7 +181,7 @@ Un `super_admin` puede activarlo desde el panel. Mientras está activo:
 
 La analítica de uso es **propia y anónima**: no se comparte con terceros ni se liga a una cuenta.
 
-- Se guardan páginas vistas, dispositivo, navegador, origen de la visita, ubicación aproximada de la sesión y acciones concretas (descargar un mapa, abrir un geovisor, usar una herramienta).
+- Se guardan páginas vistas, dispositivo, navegador, origen de la visita, ubicación aproximada de la sesión y acciones concretas (descargar un mapa, abrir un geovisor, usar una herramienta). Con ellas el panel calcula **embudos de conversión** (por ejemplo, portada → Mapas → descarga) y el **flujo de navegación** entre páginas, todo con datos propios y sin servicios de terceros.
 - La dirección IP se conserva solo el tiempo configurado y luego se elimina automáticamente.
 - Los bots se identifican y se excluyen de las cifras; las visitas al panel de administración se marcan aparte y tampoco cuentan en los informes, y desde el panel no se registran acciones.
 - Los datos solo los consultan administradores con acceso al módulo de actividad.

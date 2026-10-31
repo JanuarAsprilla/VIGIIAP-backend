@@ -64,6 +64,18 @@ export async function eventosTop(req, res, next) {
   } catch (err) { next(err); }
 }
 
+export async function embudos(req, res, next) {
+  try {
+    res.json(await analiticaService.getEmbudos(rangoFechas(req)));
+  } catch (err) { next(err); }
+}
+
+export async function flujoNavegacion(req, res, next) {
+  try {
+    res.json(await analiticaService.getFlujoNavegacion(rangoFechas(req)));
+  } catch (err) { next(err); }
+}
+
 export async function tiempoReal(_req, res, next) {
   try {
     res.json(await analiticaService.getTiempoReal());
