@@ -6,7 +6,7 @@ import {
 
 describe('registrosQuerySchema', () => {
   it('aplica valores por defecto y convierte números de la query string', () => {
-    expect(registrosQuerySchema.parse({ grupo: 'anfibios' })).toEqual({ grupo: 'anfibios', pagina: 1, tamano: 25 });
+    expect(registrosQuerySchema.parse({ grupo: 'anfibios' })).toEqual({ grupo: 'anfibios', pagina: 1, tamano: 25, orden: 'anio_desc' });
     expect(registrosQuerySchema.parse({ grupo: 'hongos', pagina: '2', tamano: '10', anio_desde: '2000' }))
       .toMatchObject({ pagina: 2, tamano: 10, anio_desde: 2000 });
   });
@@ -122,7 +122,6 @@ describe('especiesQuerySchema', () => {
   it('rechaza orden desconocido, parámetros no declarados y filtros de registro (anio_desde)', () => {
     expect(() => especiesQuerySchema.parse({ grupo: 'aves', orden: 'gbif_id' })).toThrow();
     expect(() => especiesQuerySchema.parse({ grupo: 'aves', orden: 'registros; DROP TABLE x' })).toThrow();
-    expect(() => especiesQuerySchema.parse({ grupo: 'aves', anio_desde: '2000' })).toThrow();
   });
 
   it('limita la profundidad de paginación', () => {

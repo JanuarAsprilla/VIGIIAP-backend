@@ -1,22 +1,22 @@
 import {
-  conLimite, loteActivo, crearContexto, fuente, condicionesTerritorio, condicionesEspecie, COLUMNAS_CONSERVACION,
+  conLimite, loteActivo, crearContexto, COLUMNAS_CONSERVACION,
 } from './comun.js';
+import { alcance } from './alcance.js';
+import { validarInventario } from './reglas_inventario.js';
 import { sqlTieneFoto, PATRON_IMAGEN, PATRON_REFERENCIA } from './fotos.js';
 import { fotosPorEspecie, SIN_FOTO } from './especies_fotos.js';
-import { ConsultaInvalida } from '../biodiversidad.errores.js';
 
 const ORDENES = {
   registros: 'registros DESC, especie ASC, especie_clave ASC',
   nombre: 'especie ASC, especie_clave ASC',
+  municipios: 'municipios DESC, registros DESC, especie ASC, especie_clave ASC',
 };
 
 function consultaEspecies(lote, filtros, ctx) {
-  const f = fuente(lote, ctx);
   const individual = lote.metodo === 'individual';
-  const donde = [
-    f.condicionLote, 't.especie_clave IS NOT NULL',
-    ...condicionesTerritorio(ctx, filtros, f.codigo), ...condicionesEspecie(ctx, filtros),
-  ].join(' AND ');
+  // con_foto en la lista de especies es «tiene al menos un registro con foto» (HAVING), no un filtro por fila.
+  const f = alcance(ctx, lote, filtros, ['con_foto']);
+  const donde = `${f.where} AND t.especie_clave IS NOT NULL`;
   const registros = individual ? 'count(DISTINCT v.gbif_id)' : 'sum(ie.registros)';
   // con_foto (solo individuales): la especie debe tener al menos un registro del alcance con foto válida.
   const conFoto = filtros.con_foto
@@ -43,9 +43,7 @@ export async function especies(filtros) {
   return conLimite(async (client) => {
     const lote = await loteActivo(client, filtros.grupo);
     if (!lote) return null;
-    if (filtros.con_foto && lote.metodo !== 'individual') {
-      throw new ConsultaInvalida('con_foto no aplica a grupos con inventario agregado: no hay registros individuales con foto.');
-    }
+    if (lote.metodo !== 'individual') validarInventario(filtros);
     const ctx = crearContexto();
     const { seleccion, conteo } = consultaEspecies(lote, filtros, ctx);
     const { rows } = await client.query(

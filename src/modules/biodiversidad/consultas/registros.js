@@ -1,9 +1,9 @@
 import {
-  conLimite, loteActivo, exigirIndividual, crearContexto, fuente, condicionesTerritorio, condicionesEspecie,
-  COLUMNAS_CONSERVACION,
+  conLimite, loteActivo, exigirIndividual, crearContexto, fuente, COLUMNAS_CONSERVACION,
 } from './comun.js';
+import { alcance } from './alcance.js';
 import { codigosGbif } from './marcas.js';
-import { fotosPublicas, sqlTieneFoto, PATRON_IMAGEN, PATRON_REFERENCIA } from './fotos.js';
+import { fotosPublicas } from './fotos.js';
 
 const COLUMNAS_REGISTRO = `
   v.gbif_id, v.especie, v.especie_clave, v.anio, v.fecha_evento, v.tipo_evidencia, v.licencia,
@@ -24,37 +24,38 @@ function conFotos({ fotos, ...resto }) {
 
 const sinFotos = ({ _fotos, ...resto }) => resto;
 
-function condiciones(ctx, lote, filtros) {
-  const f = fuente(lote, ctx);
-  const donde = [f.condicionLote, ...condicionesTerritorio(ctx, filtros, f.codigo), ...condicionesEspecie(ctx, filtros)];
-  if (filtros.anio_desde != null) donde.push(`v.anio >= ${ctx.p(filtros.anio_desde)}`);
-  if (filtros.anio_hasta != null) donde.push(`v.anio <= ${ctx.p(filtros.anio_hasta)}`);
-  if (filtros.con_foto) donde.push(sqlTieneFoto('v.fotos', ctx.p(PATRON_IMAGEN), ctx.p(PATRON_REFERENCIA)));
-  return { desde: f.desde, where: donde.join(' AND ') };
-}
+// Orden estable: el desempate final por gbif_id evita repetir o perder filas al paginar.
+const ORDENES = {
+  anio_desc: 'anio DESC NULLS LAST, gbif_id',
+  anio_asc: 'anio ASC NULLS LAST, gbif_id',
+  especie: 'especie ASC NULLS LAST, anio DESC NULLS LAST, gbif_id',
+};
 
 /**
  * Registros individuales por la vista pública: las coordenadas de especies amenazadas (y todas,
  * si no hay un cruce de conservación activo) llegan ocultas desde la propia base de datos.
  */
 export async function registros(filtros) {
-  const { pagina, tamano } = filtros;
+  const { pagina, tamano, orden = 'anio_desc' } = filtros;
   return conLimite(async (client) => {
     const lote = await loteActivo(client, filtros.grupo);
     if (!lote) return null;
     exigirIndividual(lote);
     const ctx = crearContexto();
-    const { desde, where } = condiciones(ctx, lote, filtros);
-    const { rows: [{ n }] } = await client.query(`SELECT count(*)::int AS n ${desde} WHERE ${where}`, ctx.params);
+    const { desde, where } = alcance(ctx, lote, filtros);
+    const { rows: [{ n }] } = await client.query(`SELECT count(DISTINCT v.gbif_id)::int AS n ${desde} WHERE ${where}`, ctx.params);
     const { rows } = await client.query(
-      `SELECT ${COLUMNAS_REGISTRO} ${desde} ${UNIR_CONJUNTO}
-        WHERE ${where}
-        ORDER BY v.gbif_id, a.codigo
+      // Un registro en varios municipios aparece una vez (con el primer municipio que cumple el alcance).
+      `SELECT * FROM (
+         SELECT ${COLUMNAS_REGISTRO}, row_number() OVER (PARTITION BY v.gbif_id ORDER BY a.codigo) AS _n
+           ${desde} ${UNIR_CONJUNTO} WHERE ${where}) x
+        WHERE _n = 1
+        ORDER BY ${ORDENES[orden]}
         LIMIT ${ctx.p(tamano)} OFFSET ${ctx.p((pagina - 1) * tamano)}`,
       ctx.params);
     return {
       grupo: lote.grupo, desde: lote.desde, hasta: lote.hasta, pagina, tamano, total: n,
-      registros: rows.map((r) => sinFotos(conFotos(r))),
+      registros: rows.map(({ _n, ...r }) => sinFotos(conFotos(r))),
     };
   });
 }

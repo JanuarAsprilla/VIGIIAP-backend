@@ -1,4 +1,5 @@
-import { crearContexto, fuente, condicionesTerritorio, condicionesEspecie } from './comun.js';
+import { crearContexto } from './comun.js';
+import { alcance } from './alcance.js';
 import { fotosPublicas, PATRON_IMAGEN, PATRON_REFERENCIA } from './fotos.js';
 
 /**
@@ -12,13 +13,10 @@ export async function fotosPorEspecie(client, lote, filtros, claves) {
   const fotosPorClave = new Map();
   if (lote.metodo !== 'individual' || claves.length === 0) return fotosPorClave;
   const ctx = crearContexto();
-  const f = fuente(lote, ctx);
+  const f = alcance(ctx, lote, filtros, ['con_foto']);
   const imagen = ctx.p(PATRON_IMAGEN);
   const referencia = ctx.p(PATRON_REFERENCIA);
-  const donde = [
-    f.condicionLote, `v.fotos <> '[]'::jsonb`, `t.especie_clave = ANY(${ctx.p(claves)}::text[])`,
-    ...condicionesTerritorio(ctx, filtros, f.codigo), ...condicionesEspecie(ctx, filtros),
-  ].join(' AND ');
+  const donde = `${f.where} AND v.fotos <> '[]'::jsonb AND t.especie_clave = ANY(${ctx.p(claves)}::text[])`;
   const { rows } = await client.query(
     `WITH reg AS (
        SELECT DISTINCT ON (v.gbif_id) t.especie_clave, v.gbif_id, v.anio,
