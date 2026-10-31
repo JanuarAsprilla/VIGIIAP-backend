@@ -15,6 +15,7 @@ import { createGunzip } from 'zlib';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import pool, { getClient, query } from '../../src/config/database.js';
+import { codigosGbif } from '../../src/modules/biodiversidad/consultas/marcas.js';
 import { invalidateCache } from '../../src/middlewares/cache.js';
 
 const ROL_INGESTA = 'biodiversidad_ingesta';
@@ -156,7 +157,7 @@ async function procesar(client, ruta) {
       if (lote.omitido && !complemento) continue;
       const { lote: _ref, ...resto } = d;
       // Un archivo de un formato anterior puede no traer fotos o marcas: se cargan vacías, no nulas.
-      const porDefecto = t === 'registro_detalle' ? { fotos: resto.fotos ?? [], marcas_gbif: resto.marcas_gbif ?? [] } : {};
+      const porDefecto = t === 'registro_detalle' ? { fotos: resto.fotos ?? [], marcas_gbif: codigosGbif(resto.marcas_gbif) } : {};
       await encolar(t, DE_LOTE[t], { ...resto, ...porDefecto, lote_id: lote.id }, complemento);
     } else if (t === 'conservacion_importacion') {
       await vaciar();

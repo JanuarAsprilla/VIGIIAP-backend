@@ -170,6 +170,14 @@ describe('cargarDatos() — detalle de registros (formato v2)', () => {
     ]);
   });
 
+  it('descarta al cargar los marcas_gbif que no son códigos válidos', async () => {
+    const sucio = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: null, identificado_por: null, fotos: [], marcas_gbif: ['OK_1', 'ok', '<script>', 7, null, 'OK_1'] }],
+      ['registro_detalle', { lote: 1, gbif_id: 'g2', registrado_por: null, identificado_por: null, fotos: [], marcas_gbif: { x: 1 } }]];
+    await cargarDatos(archivo(cuerpo({ detalle: true, detalles: sucio })));
+    const { rows } = await query('SELECT gbif_id, marcas_gbif FROM biodiversidad.registro_detalle ORDER BY gbif_id');
+    expect(rows).toEqual([{ gbif_id: 'g1', marcas_gbif: ['OK_1'] }, { gbif_id: 'g2', marcas_gbif: [] }]);
+  });
+
   it('un archivo 10b antiguo (detalle sin marcas_gbif ni fotos) sigue cargando con arreglos vacíos', async () => {
     const antiguo = [['registro_detalle', { lote: 1, gbif_id: 'g1', registrado_por: 'Ana', identificado_por: null }]];
     await cargarDatos(archivo(cuerpo({ detalle: true, detalles: antiguo })));

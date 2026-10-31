@@ -80,6 +80,16 @@ describe('codigosGbif()', () => {
   });
 
   it('tolera entradas que no son arreglo', () => {
-    for (const x of [null, undefined, 'TEXTO', {}, 3]) expect(codigosGbif(x)).toEqual([]);
+    for (const x of [null, undefined, 'TEXTO', {}, 3, { 0: 'ABC' }]) expect(codigosGbif(x)).toEqual([]);
+  });
+
+  it('descarta minúsculas, espacios, etiquetas y no-cadenas', () => {
+    expect(codigosGbif(['coordinate_rounded', ' ABC', 'ABC ', 'AB C', '<script>alert(1)</script>', 'A-B-C', ['ABC'], true, 'ABC\n', 'VALIDO_1']))
+      .toEqual(['VALIDO_1']);
+  });
+
+  it('limita a 50 códigos', () => {
+    const muchos = Array.from({ length: 80 }, (_, i) => `CODIGO_${i}`);
+    expect(codigosGbif(muchos)).toHaveLength(50);
   });
 });

@@ -2,6 +2,7 @@ import {
   conLimite, loteActivo, exigirIndividual, crearContexto, fuente, condicionesTerritorio, condicionesEspecie,
   COLUMNAS_CONSERVACION,
 } from './comun.js';
+import { codigosGbif } from './marcas.js';
 import { fotosPublicas, sqlTieneFoto, PATRON_IMAGEN, PATRON_REFERENCIA } from './fotos.js';
 
 const COLUMNAS_REGISTRO = `
@@ -10,7 +11,7 @@ const COLUMNAS_REGISTRO = `
   c.titulo AS conjunto, c.doi AS doi_conjunto, a.codigo AS codigo_municipal, m.nombre AS municipio, m.departamento,
   v.registrado_por, v.identificado_por, v.fotos, ${COLUMNAS_CONSERVACION}`;
 
-const COLUMNAS_DETALLE = `, v.marcas_revision, v.institution_code, v.collection_code, v.catalog_number,
+const COLUMNAS_DETALLE = `, v.marcas_revision, v.marcas_gbif, v.institution_code, v.collection_code, v.catalog_number,
   v.occurrence_id, v.nombre_original, t.reino, t.clase, t.orden, t.familia, t.genero`;
 
 const UNIR_CONJUNTO = 'JOIN biodiversidad.conjunto c ON c.clave = v.dataset_key';
@@ -75,8 +76,8 @@ export async function registro(gbifId, grupo) {
       ctx.params);
     if (!fila) return null;
     const {
-      marcas_revision, reino, clase, orden, familia, genero, _fotos, ...resto
+      marcas_revision, marcas_gbif, reino, clase, orden, familia, genero, _fotos, ...resto
     } = conFotos(fila);
-    return { ...resto, fotos: _fotos, marcas_revision: marcas(marcas_revision), taxonomia: { reino, clase, orden, familia, genero } };
+    return { ...resto, fotos: _fotos, marcas_revision: marcas(marcas_revision), marcas_gbif: codigosGbif(marcas_gbif), taxonomia: { reino, clase, orden, familia, genero } };
   });
 }
