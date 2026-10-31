@@ -40,6 +40,7 @@ export const especiesQuerySchema = limitarProfundidad(z.strictObject({
   grupo,
   ...territorio,
   ...especie,
+  con_foto: z.enum(['true']).transform(() => true).optional(),
   orden: z.enum(['registros', 'nombre']).default('registros'),
   ...paginacion,
 }));

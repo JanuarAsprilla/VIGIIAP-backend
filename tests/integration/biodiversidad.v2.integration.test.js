@@ -179,6 +179,7 @@ describe('especies()', () => {
     expect(r.especies[0]).toEqual({
       especie: 'Rhinella común', especie_clave: '2', reino: 'Animalia', clase: 'Amphibia', orden: 'Anura', familia: 'Bufonidae', genero: 'Rhinella',
       registros: 2, municipios: 2, amenaza: null, endemica_colombia: false, endemica_choco: false, introducida: false, invasora: false,
+      foto: foto(2, 'c'), fotos_total: 2,
     });
     const por = Object.fromEntries(r.especies.map((e) => [e.especie_clave, e]));
     expect(por['1']).toMatchObject({ amenaza: 'CR', registros: 1, municipios: 1 });
@@ -251,6 +252,143 @@ describe('especies()', () => {
   it('null si el grupo no tiene lote activo', async () => {
     await sembrar();
     expect(await especies({ grupo: 'hongos', orden: 'registros', pagina: 1, tamano: 25 })).toBeNull();
+  });
+});
+
+/** Registro adicional de anfibios para las pruebas de foto representativa (misma geometría que el sembrado). */
+async function registroExtra(gbif, taxon, anio, codigos, fotos) {
+  const { rows: [{ id }] } = await query(`SELECT id FROM biodiversidad.lote WHERE grupo = 'anfibios'`);
+  await query(
+    `INSERT INTO biodiversidad.registro (lote_id, gbif_id, dataset_key, taxon_huella, anio, latitud, longitud, incertidumbre_m, tipo_evidencia, licencia, vista_1000m)
+     VALUES ($1, $2, 'ds1', $3, $4, 5.8, -76.7, 25, 'HUMAN_OBSERVATION', 'CC_BY_4_0', true)`, [id, gbif, taxon, anio]);
+  for (const c of codigos) await query(`INSERT INTO biodiversidad.asignacion VALUES ($1, $2, 't1', $3)`, [id, gbif, c]);
+  if (fotos) {
+    await query(`INSERT INTO biodiversidad.registro_detalle (lote_id, gbif_id, fotos) VALUES ($1, $2, $3::jsonb)`, [id, gbif, JSON.stringify(fotos)]);
+  }
+}
+
+const porClave = (r) => Object.fromEntries(r.especies.map((e) => [e.especie_clave, e]));
+const listar = (extra) => especies({ grupo: 'anfibios', orden: 'nombre', pagina: 1, tamano: 25, ...extra });
+
+describe('especies() — foto representativa', () => {
+  it('entrega la foto de la primera foto válida del registro elegido y cuenta solo fotos válidas', async () => {
+    await sembrar();
+    const por = porClave(await listar());
+    expect(por['1']).toMatchObject({ foto: foto(1, 'a'), fotos_total: 2 });
+    expect(por['2']).toMatchObject({ foto: foto(2, 'c'), fotos_total: 2 });
+    expect(por['3']).toMatchObject({ foto: foto(4, 'e'), fotos_total: 1 });
+    expect(por['4']).toMatchObject({ foto: null, fotos_total: 0 });
+  });
+
+  it('elige el registro de año más reciente', async () => {
+    await sembrar();
+    await registroExtra('g20', 'tx2', 2024, ['27001'], [foto(200, 'f', 'Reciente')]);
+    await registroExtra('g21', 'tx2', 2005, ['27001'], [foto(210, 'f', 'Antigua')]);
+    const e = porClave(await listar())['2'];
+    expect(e.foto).toEqual(foto(200, 'f', 'Reciente'));
+    expect(e.fotos_total).toBe(2 + 1 + 1);
+  });
+
+  it('a igualdad de año desempata por menor gbif_id, sin depender del orden de inserción', async () => {
+    await sembrar();
+    await registroExtra('g25', 'tx2', 2021, ['27001'], [foto(250, '1', 'Z')]);
+    await registroExtra('g10', 'tx2', 2021, ['27001'], [foto(100, '2', 'A')]);
+    expect(porClave(await listar())['2'].foto).toEqual(foto(100, '2', 'A'));
+  });
+
+  it('descarta un registro más reciente cuyas URLs no son válidas y pasa al siguiente', async () => {
+    await sembrar();
+    await registroExtra('g30', 'tx2', 2025, ['27001'], [FOTO_S3, { ...foto(300, '3'), referencia: 'http://inseguro.example/x' }, { ...foto(301, '4'), imagen: 'https://evil.example/v1/image/cache/500x/occurrence/1/media/' + 'a'.repeat(32) }]);
+    const e = porClave(await listar())['2'];
+    expect(e.foto).toEqual(foto(2, 'c'));
+    expect(e.fotos_total).toBe(2);
+  });
+
+  it('un registro sin año pierde frente a uno con año', async () => {
+    await sembrar();
+    await registroExtra('g31', 'tx2', null, ['27001'], [foto(310, '5')]);
+    expect(porClave(await listar())['2'].foto).toEqual(foto(2, 'c'));
+  });
+
+  it('un registro en dos municipios no duplica sus fotos en fotos_total', async () => {
+    await sembrar();
+    await registroExtra('g32', 'tx3', 2022, ['27001', '05045'], [foto(320, '6'), foto(321, '7')]);
+    const e = porClave(await listar())['3'];
+    expect(e.fotos_total).toBe(3);
+    expect(e.foto).toEqual(foto(320, '6'));
+  });
+
+  it('respeta el alcance: la foto y el total salen solo de los registros del municipio o departamento', async () => {
+    await sembrar();
+    await registroExtra('g40', 'tx2', 2024, ['05045'], [foto(400, '8', 'Apartadó')]);
+    const quibdo = porClave(await listar({ codigo_municipal: '27001' }))['2'];
+    expect(quibdo).toMatchObject({ foto: foto(2, 'c'), fotos_total: 2 });
+    const apartado = porClave(await listar({ codigo_municipal: '05045' }))['2'];
+    expect(apartado).toMatchObject({ foto: foto(400, '8', 'Apartadó'), fotos_total: 1 });
+    const antioquia = porClave(await listar({ departamento: 'Antioquia' }))['2'];
+    expect(antioquia.foto).toEqual(foto(400, '8', 'Apartadó'));
+    const choco = porClave(await listar({ departamento: 'Chocó' }))['2'];
+    expect(choco).toMatchObject({ foto: foto(2, 'c'), fotos_total: 2 });
+    const sinFoto = porClave(await listar({ codigo_municipal: '05045' }))['4'];
+    expect(sinFoto).toMatchObject({ foto: null, fotos_total: 0 });
+  });
+
+  it('con_foto=true deja solo especies con al menos una foto válida y mantiene total y paginación', async () => {
+    await sembrar();
+    const r = await listar({ con_foto: true });
+    expect(r.especies.map((e) => e.especie_clave)).toEqual(['3', '1', '2']);
+    expect(r.total).toBe(3);
+    expect(r.especies.every((e) => e.foto !== null && e.fotos_total > 0)).toBe(true);
+    const p2 = await listar({ con_foto: true, tamano: 2, pagina: 2 });
+    expect(p2.especies.map((e) => e.especie_clave)).toEqual(['2']);
+    expect(p2.total).toBe(3);
+    const fuera = await listar({ con_foto: true, tamano: 2, pagina: 3 });
+    expect(fuera.especies).toEqual([]);
+    expect(fuera.total).toBe(3);
+  });
+
+  it('con_foto=true respeta el alcance territorial y combina con otros filtros', async () => {
+    await sembrar();
+    expect((await listar({ con_foto: true, codigo_municipal: '05045' })).especies).toEqual([]);
+    expect((await listar({ con_foto: true, departamento: 'Chocó', conservacion: 'amenazada' })).especies.map((e) => e.especie_clave)).toEqual(['1']);
+  });
+
+  it('con_foto no altera el conteo de registros de la especie', async () => {
+    await sembrar();
+    const sin = porClave(await listar())['2'];
+    const con = porClave(await listar({ con_foto: true }))['2'];
+    expect(con.registros).toBe(sin.registros);
+    expect(con.municipios).toBe(sin.municipios);
+  });
+
+  it('en grupos agregados foto=null y fotos_total=0; con_foto responde 422 «no aplica»', async () => {
+    await sembrar();
+    const r = await especies({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25 });
+    expect(r.especies.every((e) => e.foto === null && e.fotos_total === 0)).toBe(true);
+    await expect(especies({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25, con_foto: true }))
+      .rejects.toThrow(ConsultaInvalida);
+    await expect(especies({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25, con_foto: true }))
+      .rejects.toMatchObject({ status: 422, message: expect.stringMatching(/no aplica/) });
+  });
+
+  it('mantiene intactos los campos previos y no expone coordenadas ni la lista cruda de fotos', async () => {
+    await sembrar();
+    const r = await listar();
+    for (const e of r.especies) {
+      expect(Object.keys(e).sort()).toEqual([
+        'amenaza', 'clase', 'endemica_choco', 'endemica_colombia', 'especie', 'especie_clave', 'familia', 'foto', 'fotos_total',
+        'genero', 'introducida', 'invasora', 'municipios', 'orden', 'registros', 'reino',
+      ]);
+      if (e.foto) expect(Object.keys(e.foto).sort()).toEqual(['autor', 'editor', 'imagen', 'licencia', 'referencia']);
+    }
+    expect(JSON.stringify(r)).not.toMatch(/latitud|longitud|5\.69|-76\.6|s3\.amazonaws/);
+  });
+
+  it('la foto sale aunque la especie esté amenazada (las fotos no revelan coordenadas) y las coordenadas siguen ocultas en /registros', async () => {
+    await sembrar();
+    expect(porClave(await listar())['1'].foto).toEqual(foto(1, 'a'));
+    const reg = await registros(base({ especie_clave: '1' }));
+    expect(reg.registros[0]).toMatchObject({ latitud: null, longitud: null, coordenadas_ocultas: true });
   });
 });
 
