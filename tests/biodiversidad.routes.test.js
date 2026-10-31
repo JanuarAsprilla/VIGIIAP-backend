@@ -231,6 +231,27 @@ describe.each([
   });
 });
 
+describe('GET /especies — con_foto', () => {
+  it('pasa con_foto=true validado al servicio', async () => {
+    servicio.especies.mockResolvedValue({ especies: [] });
+    await request(app).get('/api/biodiversidad/especies?grupo=anfibios&con_foto=true');
+    expect(servicio.especies).toHaveBeenCalledWith({ grupo: 'anfibios', con_foto: true, orden: 'registros', pagina: 1, tamano: 25 });
+  });
+
+  it('422 con con_foto distinto de true, sin tocar el servicio', async () => {
+    servicio.especies.mockClear();
+    expect((await request(app).get('/api/biodiversidad/especies?grupo=anfibios&con_foto=false')).status).toBe(422);
+    expect(servicio.especies).not.toHaveBeenCalled();
+  });
+
+  it('422 «no aplica» si el servicio rechaza un grupo agregado', async () => {
+    servicio.especies.mockRejectedValue(new ConsultaInvalida('con_foto no aplica a grupos con inventario agregado'));
+    const res = await request(app).get('/api/biodiversidad/especies?grupo=aves&con_foto=true');
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/no aplica/);
+  });
+});
+
 describe('GET /municipios — especies', () => {
   it('devuelve lo que entrega el servicio (con el nuevo campo especies)', async () => {
     servicio.municipios.mockResolvedValue({ grupo: 'aves', municipios: [{ codigo_municipal: '27001', registros: 5, sin_especie: 0, especies: 3 }] });

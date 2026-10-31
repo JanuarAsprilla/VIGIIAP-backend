@@ -100,6 +100,16 @@ describe('resumenQuerySchema y seriesQuerySchema', () => {
 });
 
 describe('especiesQuerySchema', () => {
+  it('acepta con_foto=true como booleano', () => {
+    expect(especiesQuerySchema.parse({ grupo: 'anfibios', con_foto: 'true' })).toMatchObject({ con_foto: true });
+  });
+
+  it('con_foto solo admite true', () => {
+    expect(() => especiesQuerySchema.parse({ grupo: 'anfibios', con_foto: 'false' })).toThrow();
+    expect(() => especiesQuerySchema.parse({ grupo: 'anfibios', con_foto: '1' })).toThrow();
+    expect(() => especiesQuerySchema.parse({ grupo: 'anfibios', con_foto: ['true', 'true'] })).toThrow();
+  });
+
   it('aplica defecto de orden y paginación', () => {
     expect(especiesQuerySchema.parse({ grupo: 'aves' })).toEqual({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25 });
   });
@@ -109,10 +119,9 @@ describe('especiesQuerySchema', () => {
       .toMatchObject({ buscar: 'tangara', conservacion: 'endemica', amenaza: 'VU', orden: 'nombre', departamento: 'Chocó' });
   });
 
-  it('rechaza orden desconocido, parámetros no declarados y filtros de registro (con_foto)', () => {
+  it('rechaza orden desconocido, parámetros no declarados y filtros de registro (anio_desde)', () => {
     expect(() => especiesQuerySchema.parse({ grupo: 'aves', orden: 'gbif_id' })).toThrow();
     expect(() => especiesQuerySchema.parse({ grupo: 'aves', orden: 'registros; DROP TABLE x' })).toThrow();
-    expect(() => especiesQuerySchema.parse({ grupo: 'aves', con_foto: 'true' })).toThrow();
     expect(() => especiesQuerySchema.parse({ grupo: 'aves', anio_desde: '2000' })).toThrow();
   });
 
