@@ -763,3 +763,86 @@ describe('sendTestEmail()', () => {
     await expect(mailer.sendTestEmail('super@iiap.org.co')).rejects.toThrow('connect ECONNREFUSED 127.0.0.1:587');
   });
 });
+
+describe('send() — reintentos con cola y transporte reutilizado', () => {
+  async function loadMailerFresh() {
+    vi.resetModules();
+    const dbMod = await import('../src/config/database.js');
+    const mailerMod = await import('../src/utils/mailer.js');
+    return { query: dbMod.query, mailer: mailerMod };
+  }
+
+  const solicitud = { email: 'u@test.co', nombre: 'U', tipo: 'otro' };
+  const encolados = (q) => q.mock.calls.filter(([sql]) => /INSERT INTO correos_pendientes/.test(sql));
+
+  it('reutiliza una sola conexión SMTP entre envíos con la misma configuración', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+
+    await mailer.notifySolicitudRecibida(solicitud);
+    await mailer.notifySolicitudRecibida(solicitud);
+
+    expect(nodemailer.createTransport).toHaveBeenCalledTimes(1);
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({ pool: true }));
+    expect(sendMailSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('un envío correcto no guarda nada en la cola', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+
+    await mailer.notifySolicitudRecibida(solicitud);
+
+    expect(encolados(freshQuery)).toHaveLength(0);
+  });
+
+  it('un fallo temporal deja el correo en la cola para reintentarlo, sin romper el flujo', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    sendMailSpy.mockRejectedValueOnce(Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }));
+
+    await expect(mailer.notifySolicitudRecibida(solicitud)).resolves.toBeUndefined();
+
+    const [llamada] = encolados(freshQuery);
+    expect(llamada[1]).toEqual(expect.arrayContaining(['u@test.co']));
+  });
+
+  it('un rechazo permanente del servidor no se encola', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    sendMailSpy.mockRejectedValueOnce(Object.assign(new Error('550 buzón inexistente'), { responseCode: 550 }));
+
+    await mailer.notifySolicitudRecibida(solicitud);
+
+    expect(encolados(freshQuery)).toHaveLength(0);
+  });
+
+  it('el correo con contraseña temporal nunca se guarda en la cola, ni siquiera si falla', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    sendMailSpy.mockRejectedValueOnce(Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }));
+
+    await mailer.notifyUsuarioCreado({ email: 'nuevo@test.co', nombre: 'Nuevo', passwordTemporal: 'Temp#1234', rol: 'investigador' });
+
+    expect(encolados(freshQuery)).toHaveLength(0);
+  });
+
+  it('si no se puede encolar, el fallo se registra y el flujo principal continúa', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockImplementation(async (sql) => {
+      if (/INSERT INTO correos_pendientes/.test(sql)) throw new Error('BD caída');
+      return { rows: [] };
+    });
+    sendMailSpy.mockRejectedValueOnce(new Error('connect ETIMEDOUT'));
+
+    await expect(mailer.notifySolicitudRecibida(solicitud)).resolves.toBeUndefined();
+  });
+
+  it('enviarDirecto rechaza la promesa cuando el envío falla, para que la cola reintente', async () => {
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: [] });
+    sendMailSpy.mockRejectedValueOnce(new Error('connect ETIMEDOUT'));
+
+    await expect(mailer.enviarDirecto({ to: 'u@test.co', subject: 's', html: '<p>x</p>' })).rejects.toThrow('ETIMEDOUT');
+  });
+});
