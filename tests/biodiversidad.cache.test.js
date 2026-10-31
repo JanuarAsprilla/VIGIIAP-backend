@@ -21,6 +21,10 @@ vi.mock('../src/modules/biodiversidad/biodiversidad.service.js', () => ({
   estado: vi.fn(),
   municipios: vi.fn(),
   registros: vi.fn(),
+  registro: vi.fn(),
+  resumen: vi.fn(),
+  especies: vi.fn(),
+  series: vi.fn(),
 }));
 vi.mock('../src/modules/herramientas/herramientas.service.js', () => ({
   herramientaDisponible: vi.fn().mockResolvedValue(true),
@@ -62,6 +66,22 @@ describe('cache de las rutas de biodiversidad', () => {
     expect(p1.body.pagina).toBe(1);
     expect(p2.body.pagina).toBe(2);
     expect(choco.body.departamento).toBe('Chocó');
+  });
+
+  it.each(['resumen', 'especies', 'series'])('/%s no mezcla grupos ni filtros distintos', async (ruta) => {
+    servicio[ruta].mockImplementation(async (f) => ({ grupo: f.grupo, departamento: f.departamento ?? null }));
+    const a = await request(app).get(`/api/biodiversidad/${ruta}?grupo=aves`);
+    const b = await request(app).get(`/api/biodiversidad/${ruta}?grupo=hongos&departamento=Choc%C3%B3`);
+    expect(a.body).toEqual({ grupo: 'aves', departamento: null });
+    expect(b.body).toEqual({ grupo: 'hongos', departamento: 'Chocó' });
+    expect(servicio[ruta]).toHaveBeenCalledTimes(2);
+  });
+
+  it('/registros/:gbif_id no mezcla registros distintos', async () => {
+    servicio.registro.mockImplementation(async (id) => ({ gbif_id: id }));
+    const a = await request(app).get('/api/biodiversidad/registros/111?grupo=anfibios');
+    const b = await request(app).get('/api/biodiversidad/registros/222?grupo=anfibios');
+    expect([a.body.gbif_id, b.body.gbif_id]).toEqual(['111', '222']);
   });
 
   it('/estado, que no tiene parámetros, sí puede servirse desde cache', async () => {
