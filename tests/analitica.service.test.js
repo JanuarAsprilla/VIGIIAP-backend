@@ -142,6 +142,31 @@ describe('analitica.service → getResumen()', () => {
     expect(result.paginasVistas.serie7).toHaveLength(7);
     expect(result.visitantes.serie7).toHaveLength(7);
   });
+
+  it('cuenta por día en SQL (GROUP BY) en lugar de traer cada fila a Node', async () => {
+    query.mockResolvedValue({ rows: [{ total_sesiones: 0, sesiones_una_pagina: 0, duracion_prom_seg: null }] });
+
+    await getResumen();
+
+    const [sqlVistas] = query.mock.calls[0];
+    expect(sqlVistas).toMatch(/GROUP BY/);
+    expect(sqlVistas).toMatch(/America\/Bogota/);
+    expect(sqlVistas).not.toMatch(/SELECT p\.creado_en/);
+    expect(query.mock.calls[1][0]).toMatch(/GROUP BY/);
+  });
+
+  it('arma la serie con los conteos diarios que devuelve la base, por día de Bogotá', async () => {
+    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+    query.mockResolvedValueOnce({ rows: [{ dia: hoy, total: 4 }] });
+    query.mockResolvedValueOnce({ rows: [{ dia: hoy, total: 2 }] });
+    query.mockResolvedValueOnce({ rows: [{ total_sesiones: 2, sesiones_una_pagina: 1, duracion_prom_seg: null }] });
+
+    const result = await getResumen();
+
+    expect(result.paginasVistas.serie7.at(-1)).toBe(4);
+    expect(result.paginasVistas.semanaActual).toBe(4);
+    expect(result.visitantes.serie7.at(-1)).toBe(2);
+  });
 });
 
 describe('analitica.service → getPaginasTop()', () => {

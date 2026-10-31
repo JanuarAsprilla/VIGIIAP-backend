@@ -27,7 +27,7 @@ Se eliminaron tres índices duplicados (`idx_usuarios_email`, `idx_refresh_token
 ### Consultas
 
 - **Resumen de auditoría (24 h):** filtrar por tiempo *antes* de agregar bajó la consulta de 1565 ms a 3,9 ms con el mismo resultado.
-- **Analítica:** `getResumen` aún trae filas a Node para agregarlas (≈250 000 filas en el peor caso medido, 80–220 ms). Es el siguiente candidato: agregar en SQL con `date_trunc` y `GROUP BY`, y servirlo con la caché local de la sección 3.3.
+- **Analítica:** `getResumen` ya no trae cada vista a Node: cuenta en SQL. Lección de la medición: convertir la zona horaria fila por fila (`AT TIME ZONE`) resultó **más lento** que traer las filas (505 ms frente a 396 ms con 300 000 vistas), así que se agrupa primero por hora y solo esas ~336 horas se convierten al día de Bogotá (369 ms, sin transferir ni guardar las filas en memoria). El resto del tiempo es la consulta de rebote y duración, igual que antes. Los conteos diarios se calculan ahora en hora de Colombia sin importar la zona del servidor.
 
 ### Cómo revisar una consulta lenta
 
@@ -64,9 +64,11 @@ Cuando una entidad aparece dentro de otras, se invalidan también esas (renombra
 
 Regla para código nuevo: si un endpoint `GET` usa `cacheMiddleware`, cada `POST/PUT/PATCH/DELETE` del mismo recurso debe llamar a `invalidarRecurso`.
 
-### 3.3 Siguiente paso: caché local de corta duración para analítica de administración
+### 3.3 Caché local de corta duración para la analítica de administración
 
-Los tableros de administración son autenticados y pesados, pero los consultan pocas personas. Una memoria local con TTL de 30–60 s y *single-flight* (varias peticiones simultáneas comparten una sola consulta) elimina picos sin añadir infraestructura ni riesgo de mezclar datos entre usuarios, si la clave incluye el rol del solicitante.
+Los tableros de administración son autenticados y pesados, pero los consultan pocas personas. `memoizar` (`src/utils/cacheLocal.js`) guarda el resultado en memoria del proceso 30 s (`ANALITICA_CACHE_TTL_MS`, en 0 se desactiva) y hace *single-flight*: varias peticiones simultáneas comparten una sola consulta. Los errores no se guardan y hay un máximo de 50 entradas por función.
+
+Se aplica a resumen, páginas más vistas, dispositivos, fuentes, entrada y salida y ubicaciones. **No** se aplica al tiempo real (debe ser vivo) ni a las sesiones recientes (llevan IP). Es seguro mezclar usuarios porque estos datos son los mismos para cualquier administrador con acceso al módulo, que se verifica antes de llegar a la función. Con varias instancias cada una tendría su propia copia, lo que es aceptable para un desfase de 30 s.
 
 ### 3.4 Medición
 
@@ -132,7 +134,7 @@ Cuándo ejecutarlas: antes de cada release que toque consultas o caché, y tras 
 | Alta | Índices medidos, resumen de auditoría y limpieza de duplicados | Hecho |
 | Alta | Invalidación de caché en `/api` y `/api/v1`, incluidos los geovisores | Hecho |
 | Alta | Kit de pruebas de carga y línea base | Hecho |
-| Media | Analítica agregada en SQL + caché local de administración | Pendiente |
+| Media | Analítica agregada en SQL + caché local de administración | Hecho |
 | Media | Transporte SMTP reutilizable y cola *outbox* de correos | Pendiente |
 | Antes de escalar | Bloqueo de asesoría en planificadores y revocación compartida de tokens | Pendiente |
 | Baja | Exportaciones por cursor | Pendiente |
