@@ -40,6 +40,12 @@ function normalizeIp(req) {
 // crear uno). Se excluyen de acá para que caigan solo bajo tileRateLimiter.
 const esRutaDeTiles = (req) => req.path.includes('/wms') || req.path.includes('/leyenda');
 
+// Cada cambio de filtro del Observatorio de Biodiversidad dispara varias consultas (mapa, indicadores,
+// serie, listados, opciones, puntos): bajo el cupo general se agotaría en minutos y bloquearía el resto
+// de la SPA de esa IP. Se excluye de acá y queda solo bajo biodiversidadRateLimiter. El patrón es
+// estricto (prefijo de la API): un documento con «biodiversidad» en su título no escapa del cupo general.
+const esRutaDeBiodiversidad = (req) => /^\/api(\/v1)?\/biodiversidad(\/|$)/.test(req.path);
+
 const _rateLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: async (req) => {
@@ -48,7 +54,7 @@ const _rateLimiter = rateLimit({
     return dynamic ?? (Number(process.env.RATE_LIMIT_MAX) || 300);
   },
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
-  skip: esRutaDeTiles,
+  skip: (req) => esRutaDeTiles(req) || esRutaDeBiodiversidad(req),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' },
@@ -147,10 +153,13 @@ export const downloadRateLimiter = rateLimit({
   message: { error: 'Demasiadas descargas. Intenta de nuevo en unos minutos.' },
 });
 
-/** API de biodiversidad (pública, consultas con uniones): máximo 120 en 5 minutos por IP. */
+/**
+ * API de biodiversidad (pública): máximo 600 en 5 minutos por IP. Una oficina entera sale por una IP y cada
+ * cambio de filtro dispara varias consultas; cada una está acotada por el tope de 5 s y la profundidad de paginación.
+ */
 export const biodiversidadRateLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 120,
+  max: 600,
   keyGenerator: normalizeIp,
   standardHeaders: true,
   legacyHeaders: false,

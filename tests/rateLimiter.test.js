@@ -12,6 +12,7 @@ import {
   passwordResetLimiter,
   emailActionRateLimiter,
   tileRateLimiter,
+  biodiversidadRateLimiter,
 } from '../src/middlewares/rateLimiter.js';
 
 function buildApp(limiter, { withUser = false } = {}) {
@@ -175,6 +176,47 @@ describe('tileRateLimiter', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['ratelimit-limit']).toBe('600');
+  });
+});
+
+describe('biodiversidadRateLimiter', () => {
+  it('expone un cupo propio de 600 consultas por 5 minutos', async () => {
+    const app = buildApp(biodiversidadRateLimiter);
+    const res = await request(app).get('/ping');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('600');
+  });
+});
+
+// Regresión anticipada: cada cambio de filtro del Observatorio de Biodiversidad dispara varias consultas
+// (mapa, indicadores, serie, listados, opciones, puntos). Si compartieran el cupo general (300 por
+// 15 min por IP, la misma para toda una oficina) se agotaría en minutos y bloquearía el resto de la SPA.
+describe('rateLimiter — excluye /biodiversidad de su propio cupo', () => {
+  function buildBiodiversidadApp() {
+    const app = express();
+    app.use(rateLimiter);
+    app.get('/api/v1/biodiversidad/municipios', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/biodiversidad/resumen', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/v1/documentos/biodiversidad-del-choco', (_req, res) => res.status(200).json({ ok: true }));
+    return app;
+  }
+
+  it.each(['/api/v1/biodiversidad/municipios', '/api/biodiversidad/resumen'])(
+    'no cuenta contra el cupo general en %s',
+    async (ruta) => {
+      const res = await request(buildBiodiversidadApp()).get(ruta);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['ratelimit-limit']).toBeUndefined();
+    },
+  );
+
+  it('un documento con «biodiversidad» en el título sigue sujeto al cupo general', async () => {
+    const res = await request(buildBiodiversidadApp()).get('/api/v1/documentos/biodiversidad-del-choco');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('300');
   });
 });
 
