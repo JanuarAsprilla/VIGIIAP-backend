@@ -1,33 +1,35 @@
 import { query } from '../../config/database.js';
 import { normalizarIp, ubicarIp } from '../../utils/geolocalizacion.js';
+import { memoizar } from '../../utils/cacheLocal.js';
 
 const VENTANA_DIAS = 14;
+const ZONA_HORARIA = 'America/Bogota';
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+// Las lecturas del panel se repiten con cada recarga y cambian poco: 30 s bastan para absorber
+// ráfagas sin que se note. En 0 se desactiva (los tests lo fijan así).
+const TTL_PANEL_MS = Number(process.env.ANALITICA_CACHE_TTL_MS ?? 30_000);
+
+// Los días se cuentan en hora de Colombia sin importar la zona del servidor.
+const FORMATO_DIA = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ZONA_HORARIA, year: 'numeric', month: '2-digit', day: '2-digit',
+});
 
 function fmtLocalDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return FORMATO_DIA.format(d);
 }
 
-function rangoPorDefecto() {
-  const hasta = new Date();
-  const desde = new Date();
-  desde.setDate(desde.getDate() - VENTANA_DIAS);
-  desde.setHours(0, 0, 0, 0);
-  return { desde, hasta };
-}
+// Medianoche de Bogotá de hace VENTANA_DIAS días: misma ventana que antes, calculada en la base.
+const INICIO_VENTANA_SQL = `(date_trunc('day', NOW() AT TIME ZONE '${ZONA_HORARIA}') - INTERVAL '${VENTANA_DIAS} days') AT TIME ZONE '${ZONA_HORARIA}'`;
 
 /** Serie de 14 días + comparación semana actual vs. anterior — mismo cálculo
  *  que getDashboardTendencias (admin.service.js), para que las tarjetas KPI
  *  de analítica se vean y se calculen igual que el resto del panel. */
 function calcularTendencia(conteosPorDia) {
   const hoy = new Date();
-  const dias14 = Array.from({ length: VENTANA_DIAS }, (_, i) => {
-    const d = new Date(hoy);
-    d.setDate(hoy.getDate() - (VENTANA_DIAS - 1 - i));
-    return fmtLocalDate(d);
-  });
+  const dias14 = Array.from({ length: VENTANA_DIAS }, (_, i) => (
+    fmtLocalDate(new Date(hoy.getTime() - (VENTANA_DIAS - 1 - i) * MS_POR_DIA))
+  ));
   const serie = dias14.map((d) => conteosPorDia.get(d) ?? 0);
   const semanaActual = serie.slice(7).reduce((a, b) => a + b, 0);
   const semanaAnterior = serie.slice(0, 7).reduce((a, b) => a + b, 0);
@@ -85,30 +87,33 @@ export async function registrarPageview({
 }
 
 /** KPIs principales con tendencia 14 días, mismo formato que getDashboardTendencias. */
-export async function getResumen() {
-  const { desde } = rangoPorDefecto();
+async function calcularResumen() {
+  // Se agrupa primero por hora y solo esas ~336 horas se convierten a día de Bogotá: convertir
+  // la zona fila por fila costaba más que traer las filas a Node.
   const { rows: pv } = await query(
-    `SELECT p.creado_en FROM analytics_pageviews p
-     JOIN analytics_sessions s ON s.id = p.session_id
-     WHERE p.creado_en >= $1 AND s.es_bot = false`,
-    [desde],
+    `SELECT to_char((h.hora AT TIME ZONE '${ZONA_HORARIA}')::date, 'YYYY-MM-DD') AS dia, SUM(h.n)::int AS total
+     FROM (
+       SELECT date_trunc('hour', p.creado_en) AS hora, COUNT(*) AS n
+       FROM analytics_pageviews p
+       JOIN analytics_sessions s ON s.id = p.session_id
+       WHERE p.creado_en >= ${INICIO_VENTANA_SQL} AND s.es_bot = false
+       GROUP BY 1
+     ) h
+     GROUP BY 1`,
   );
   const { rows: sesiones } = await query(
-    `SELECT primera_visita_en FROM analytics_sessions
-     WHERE primera_visita_en >= $1 AND es_bot = false`,
-    [desde],
+    `SELECT to_char((h.hora AT TIME ZONE '${ZONA_HORARIA}')::date, 'YYYY-MM-DD') AS dia, SUM(h.n)::int AS total
+     FROM (
+       SELECT date_trunc('hour', primera_visita_en) AS hora, COUNT(*) AS n
+       FROM analytics_sessions
+       WHERE primera_visita_en >= ${INICIO_VENTANA_SQL} AND es_bot = false
+       GROUP BY 1
+     ) h
+     GROUP BY 1`,
   );
 
-  const pvPorDia = new Map();
-  pv.forEach((r) => {
-    const dia = fmtLocalDate(new Date(r.creado_en));
-    pvPorDia.set(dia, (pvPorDia.get(dia) ?? 0) + 1);
-  });
-  const sesionesPorDia = new Map();
-  sesiones.forEach((r) => {
-    const dia = fmtLocalDate(new Date(r.primera_visita_en));
-    sesionesPorDia.set(dia, (sesionesPorDia.get(dia) ?? 0) + 1);
-  });
+  const pvPorDia = new Map(pv.map((r) => [r.dia, r.total]));
+  const sesionesPorDia = new Map(sesiones.map((r) => [r.dia, r.total]));
 
   const { rows: statsSesiones } = await query(
     `SELECT
@@ -121,10 +126,9 @@ export async function getResumen() {
               EXTRACT(EPOCH FROM (MAX(p.creado_en) - MIN(p.creado_en))) AS duracion_seg
        FROM analytics_sessions s
        JOIN analytics_pageviews p ON p.session_id = s.id
-       WHERE s.primera_visita_en >= $1 AND s.es_bot = false
+       WHERE s.primera_visita_en >= ${INICIO_VENTANA_SQL} AND s.es_bot = false
        GROUP BY s.id
      ) sub`,
-    [desde],
   );
   const { total_sesiones, sesiones_una_pagina, duracion_prom_seg } = statsSesiones[0];
   const tasaRebote = total_sesiones > 0 ? Math.round((sesiones_una_pagina / total_sesiones) * 100) : 0;
@@ -137,7 +141,11 @@ export async function getResumen() {
   };
 }
 
-export async function getPaginasTop({ desde, hasta, limit = 10 }) {
+export const getResumen = memoizar(calcularResumen, TTL_PANEL_MS);
+
+export const getPaginasTop = memoizar(calcularPaginasTop, TTL_PANEL_MS);
+
+async function calcularPaginasTop({ desde, hasta, limit = 10 }) {
   const { rows } = await query(
     `SELECT p.ruta, COUNT(*)::int AS vistas, COUNT(DISTINCT p.session_id)::int AS visitantes
      FROM analytics_pageviews p
@@ -149,7 +157,9 @@ export async function getPaginasTop({ desde, hasta, limit = 10 }) {
   return rows;
 }
 
-export async function getDispositivos({ desde, hasta }) {
+export const getDispositivos = memoizar(calcularDispositivos, TTL_PANEL_MS);
+
+async function calcularDispositivos({ desde, hasta }) {
   const { rows } = await query(
     `SELECT dispositivo, COUNT(*)::int AS sesiones
      FROM analytics_sessions
@@ -174,7 +184,9 @@ function categorizarFuente(referrer) {
   return 'Otros sitios';
 }
 
-export async function getFuentesTrafico({ desde, hasta }) {
+export const getFuentesTrafico = memoizar(calcularFuentesTrafico, TTL_PANEL_MS);
+
+async function calcularFuentesTrafico({ desde, hasta }) {
   const { rows } = await query(
     `SELECT referrer_inicial, COUNT(*)::int AS sesiones
      FROM analytics_sessions
@@ -191,7 +203,9 @@ export async function getFuentesTrafico({ desde, hasta }) {
     .sort((a, b) => b.sesiones - a.sesiones);
 }
 
-export async function getEntradaSalida({ desde, hasta, limit = 10 }) {
+export const getEntradaSalida = memoizar(calcularEntradaSalida, TTL_PANEL_MS);
+
+async function calcularEntradaSalida({ desde, hasta, limit = 10 }) {
   const { rows: entradas } = await query(
     `SELECT ruta, COUNT(*)::int AS veces FROM analytics_pageviews p
      JOIN analytics_sessions s ON s.id = p.session_id
@@ -215,7 +229,9 @@ export async function getEntradaSalida({ desde, hasta, limit = 10 }) {
 }
 
 /** Sesiones por país y, dentro de Colombia, por departamento. Las sin ubicación se cuentan aparte. */
-export async function getUbicaciones({ desde, hasta, limit = 40 }) {
+export const getUbicaciones = memoizar(calcularUbicaciones, TTL_PANEL_MS);
+
+async function calcularUbicaciones({ desde, hasta, limit = 40 }) {
   const { rows: paises } = await query(
     `SELECT pais, COUNT(*)::int AS sesiones
      FROM analytics_sessions
