@@ -102,12 +102,15 @@ Hoy el servicio corre como **una instancia**, y con una instancia todo lo anteri
 
 1. **Planificadores duplicados.** Cada instancia ejecutaría el informe semanal y las purgas. Solución prevista: un bloqueo de asesoría en PostgreSQL (`pg_try_advisory_lock`) al inicio de cada tarea, de modo que solo una instancia la ejecute. No requiere infraestructura nueva.
 2. **Lista de tokens revocados en memoria.** Un cierre de sesión atendido por la instancia A no lo vería la instancia B hasta reiniciarse. Solución prevista: consultar la tabla de revocados con una caché de pocos segundos, o publicar la revocación por Redis.
-3. **Correo síncrono sin reintentos.** Cada envío crea su transporte SMTP y, si falla, el correo se pierde (se registra el error). Solución prevista, en este orden:
-   1. reutilizar un único transporte con *pool*;
-   2. tabla `correos_pendientes` (patrón *outbox*): la petición solo inserta una fila en su misma transacción;
-   3. un trabajador toma lotes con `SELECT … FOR UPDATE SKIP LOCKED`, envía, y reintenta con espera creciente hasta un máximo de intentos, marcando los fallidos para revisión.
+3. **Correo con reintentos (resuelto).** Antes cada envío creaba su transporte SMTP y, si fallaba, el correo se perdía. Ahora:
+   - Se reutiliza una sola conexión con *pool* mientras la configuración no cambie.
+   - `send` intenta enviar de inmediato (sin añadir latencia) y **solo si falla** por algo temporal deja el correo en `correos_pendientes`. Un envío correcto nunca se guarda.
+   - Un trabajador revisa la cola cada minuto, reclama lotes con `FOR UPDATE SKIP LOCKED` y un arrendamiento de 5 min (seguro con varias instancias, y si un proceso muere el correo vuelve a estar disponible) y reintenta con esperas de 1, 5, 30, 120 y 360 minutos, hasta 5 intentos.
+   - Un rechazo permanente del servidor (5xx, como un buzón inexistente) no se reintenta; un fallo de autenticación sí, porque el administrador puede corregir la configuración.
+   - Al enviarse o agotar los intentos se **borra el cuerpo** del correo, y las filas se purgan a los 14 días.
+   - Los correos con **contraseña temporal nunca se encolan**. Los enlaces de restablecimiento (válidos 30 min) y de verificación (24 h) sí pueden esperar en la cola, como máximo unas 8 horas. Efecto práctico: un correo de verificación reintentado llega a tiempo, pero uno de restablecimiento reintentado pasados los 30 min llega con el enlace ya vencido y la persona debe pedir otro. A cambio, el enlace guardado en la cola deja de servir a los 30 min, así que conservarlo temporalmente tiene poco riesgo.
 
-   Así un SMTP caído no demora ni rompe el registro, la recuperación de contraseña ni las alertas, y se mantiene la garantía de «al menos una vez» sin añadir un servicio externo.
+   Garantía: «al menos una vez» sin añadir un servicio externo. Un SMTP caído ya no pierde correos ni demora el registro, la recuperación de contraseña o las alertas.
 4. **Trabajo pesado en el hilo del servidor.** El procesamiento de imágenes y el cifrado de contraseñas usan el pool de hilos de libuv (4 por defecto). Si la carga de subidas crece, subir `UV_THREADPOOL_SIZE` o mover el trabajo a un proceso aparte.
 5. **Exportaciones en memoria.** Las exportaciones cargan hasta 10 000 filas. Para volúmenes mayores, transmitirlas por bloques (cursor) en lugar de armarlas completas.
 
@@ -135,6 +138,6 @@ Cuándo ejecutarlas: antes de cada release que toque consultas o caché, y tras 
 | Alta | Invalidación de caché en `/api` y `/api/v1`, incluidos los geovisores | Hecho |
 | Alta | Kit de pruebas de carga y línea base | Hecho |
 | Media | Analítica agregada en SQL + caché local de administración | Hecho |
-| Media | Transporte SMTP reutilizable y cola *outbox* de correos | Pendiente |
+| Media | Transporte SMTP reutilizable y cola *outbox* de correos | Hecho |
 | Antes de escalar | Bloqueo de asesoría en planificadores y revocación compartida de tokens | Pendiente |
 | Baja | Exportaciones por cursor | Pendiente |

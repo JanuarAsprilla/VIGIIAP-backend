@@ -5,6 +5,7 @@
  */
 import nodemailer from 'nodemailer';
 import logger from './logger.js';
+import { encolarFallo, esReintentable } from './correosPendientes.js';
 
 /** Elimina caracteres de control CRLF de valores que van en headers SMTP (Subject, To, etc.).
  *  escHtml no es suficiente — escapa HTML pero no elimina \r\n que inyectan headers. */
@@ -43,6 +44,7 @@ export function clearMailConfigCache() {
   _smtpCacheAt = 0;
   _fromCache = null;
   _fromCacheAt = 0;
+  cerrarTransporte();
 }
 
 async function getSmtpConfig() {
@@ -77,14 +79,31 @@ async function getSmtpConfig() {
   return _smtpCache;
 }
 
+// Una sola conexión reutilizable (con pool) mientras la configuración no cambie: crear un
+// transporte por correo abría y cerraba una conexión SMTP en cada envío.
+let _transporte = null;
+let _transporteClave = null;
+
+function cerrarTransporte() {
+  _transporte?.close?.();
+  _transporte = null;
+  _transporteClave = null;
+}
+
 /** null si SMTP no está configurado (ni por BD ni por env vars) — send() lo trata como "omitir envío". */
 async function createTransport() {
   const cfg = await getSmtpConfig();
   if (!cfg) return null;
-  return nodemailer.createTransport({
+  const clave = JSON.stringify(cfg);
+  if (_transporte && clave === _transporteClave) return _transporte;
+  cerrarTransporte();
+  _transporte = nodemailer.createTransport({
     host: cfg.host, port: cfg.port, secure: cfg.secure,
     auth: { user: cfg.user, pass: cfg.pass },
+    pool: true, maxConnections: 3,
   });
+  _transporteClave = clave;
+  return _transporte;
 }
 
 // ─── Remitente dinámico — leído de la tabla configuracion con cache de 5 min ──
@@ -125,18 +144,36 @@ const TIPO_LABEL = {
 };
 
 // ─── Helper de envío ──────────────────────────────────────────────────────────
-async function send({ to, subject, html }) {
+/** Envía un correo y rechaza la promesa si falla: lo usan `send` y el trabajador de reintentos. */
+export async function enviarDirecto({ to, subject, html }) {
   const transporter = await createTransport();
   if (!transporter) {
-    logger.warn(`[mailer] SMTP no configurado (ni panel ni env vars) — email a ${to} omitido`);
-    return;
+    throw Object.assign(new Error('SMTP no configurado'), { code: 'SMTP_NO_CONFIGURADO' });
   }
+  const info = await transporter.sendMail({ from: await getFromAddress(), to, subject, html });
+  logger.info(`[mailer] Email enviado a ${to} — messageId: ${info.messageId}`);
+  return info;
+}
+
+/**
+ * Envío que nunca rompe el flujo principal. Si falla por algo temporal, el correo queda en la
+ * cola de reintentos; `reintentable: false` lo evita para correos con credenciales (no se guardan).
+ */
+async function send({ to, subject, html, reintentable = true }) {
   try {
-    const info = await transporter.sendMail({ from: await getFromAddress(), to, subject, html });
-    logger.info(`[mailer] Email enviado a ${to} — messageId: ${info.messageId}`);
+    await enviarDirecto({ to, subject, html });
   } catch (err) {
-    // El fallo de email NO debe romper el flujo principal
+    if (err.code === 'SMTP_NO_CONFIGURADO') {
+      logger.warn(`[mailer] SMTP no configurado (ni panel ni env vars) — email a ${to} omitido`);
+      return;
+    }
     logger.error(`[mailer] Error enviando email a ${to}:`, err.message);
+    if (!reintentable || !esReintentable(err)) return;
+    try {
+      await encolarFallo({ to, subject, html, error: err });
+    } catch (errCola) {
+      logger.warn(`[mailer] No se pudo encolar el reintento para ${to}: ${errCola.message}`);
+    }
   }
 }
 
@@ -360,6 +397,7 @@ export async function notifyUsuarioActivacion({ email, nombre, activo, rol }) {
 export async function notifyUsuarioCreado({ email, nombre, passwordTemporal, rol }) {
   const rolLabel = { admin_sig: 'Administrador SIG', investigador: 'Investigador', publico: 'Público' }[rol] ?? rol;
   await send({
+    reintentable: false, // lleva la contraseña temporal: nunca se guarda en la cola
     to: email,
     subject: '[VIGI-IIAP] Bienvenido — Tu cuenta ha sido creada',
     html: baseTemplate({

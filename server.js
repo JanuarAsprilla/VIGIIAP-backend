@@ -9,6 +9,8 @@ import { startRetencionScheduler, stopRetencionScheduler } from './src/utils/ret
 import { startRetencionAuditoria, stopRetencionAuditoria } from './src/utils/retencionAuditoria.js';
 import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportScheduler } from './src/utils/weeklyReportScheduler.js';
 import { startRateLimitAutoScaler, stopRateLimitAutoScaler } from './src/utils/rateLimitAutoScaler.js';
+import { startOutboxCorreos, stopOutboxCorreos } from './src/utils/correosPendientes.js';
+import { enviarDirecto } from './src/utils/mailer.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 4000;
@@ -140,6 +142,7 @@ async function start() {
   startRetencionScheduler();
   startRateLimitAutoScaler();
   startRetencionAuditoria();
+  startOutboxCorreos(enviarDirecto);
 
   // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
   const { query } = await import('./src/config/database.js');
@@ -162,6 +165,7 @@ async function start() {
     stopRetencionScheduler();
     stopRateLimitAutoScaler();
     stopRetencionAuditoria();
+    stopOutboxCorreos();
     server.close(async () => {
       try {
         await pool.end();
