@@ -238,7 +238,32 @@ async function activarCortes(client, lotes, cruces) {
   }
 }
 
-export async function cargarDatos(ruta, { activar = false } = {}) {
+// Lista fija: nada del archivo decide qué se analiza.
+const TABLAS_ANALIZAR = [
+  ...Object.keys(DIMENSIONES), 'lote', ...Object.keys(DE_LOTE),
+  'conservacion_importacion', 'conservacion_fuente', 'conservacion_afirmacion', 'conservacion_vinculo',
+];
+
+/**
+ * ANALYZE de lo cargado, DESPUÉS del COMMIT y como dueño (no dentro de la carga atómica ni con el rol de
+ * ingesta): sin estadísticas la primera consulta pesada puede superar el tope de tiempo. Un fallo se
+ * informa como aviso y nunca deshace una carga ya confirmada.
+ */
+async function analizarTablas(ejecutar) {
+  const analizado = [];
+  const avisos = [];
+  for (const tabla of TABLAS_ANALIZAR) {
+    try {
+      await ejecutar(`ANALYZE biodiversidad.${tabla}`);
+      analizado.push(tabla);
+    } catch (err) {
+      avisos.push(`ANALYZE ${tabla} falló: ${err.message}`);
+    }
+  }
+  return { analizado, avisos_analisis: avisos };
+}
+
+async function cargarAtomico(ruta, activar) {
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -257,6 +282,11 @@ export async function cargarDatos(ruta, { activar = false } = {}) {
   } finally {
     client.release();
   }
+}
+
+export async function cargarDatos(ruta, { activar = false, ejecutarAnalisis = (sql) => query(sql) } = {}) {
+  const resultado = await cargarAtomico(ruta, activar);
+  return { ...resultado, ...(await analizarTablas(ejecutarAnalisis)) };
 }
 
 export async function estadoCarga() {

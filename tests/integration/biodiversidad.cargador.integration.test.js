@@ -238,6 +238,50 @@ describe('cargarDatos() — detalle de registros (formato v2)', () => {
   });
 });
 
+describe('cargarDatos() — ANALYZE posterior a la carga', () => {
+  const ultimoAnalisis = async () => {
+    for (let i = 0; i < 30; i += 1) {
+      await query('SELECT pg_stat_clear_snapshot()');
+      const { rows: [r] } = await query(
+        `SELECT GREATEST(last_analyze, last_autoanalyze) AS cuando FROM pg_stat_user_tables
+          WHERE schemaname = 'biodiversidad' AND relname = 'registro'`);
+      if (r?.cuando) return r.cuando;
+      await new Promise((ok) => setTimeout(ok, 200));
+    }
+    return null;
+  };
+
+  it('analiza las tablas cargadas después de confirmar y lo informa', async () => {
+    const { rows: [{ inicio }] } = await query('SELECT clock_timestamp() AS inicio');
+    const r = await cargarDatos(archivo(cuerpo({ detalle: true })));
+    expect(r.analizado).toEqual(expect.arrayContaining(['registro', 'registro_detalle', 'asignacion', 'inventario_especie', 'taxon_version']));
+    expect(r.avisos_analisis).toEqual([]);
+    expect(new Date(await ultimoAnalisis()).getTime()).toBeGreaterThanOrEqual(new Date(inicio).getTime());
+  });
+
+  it('la lista de tablas es fija: nada del archivo decide qué se analiza', async () => {
+    const r = await cargarDatos(archivo(cuerpo()));
+    expect(r.analizado.every((t) => /^[a-z_]+$/.test(t))).toBe(true);
+    expect(r.analizado).not.toContain('usuarios');
+  });
+
+  it('un fallo de ANALYZE no deshace la carga: queda como aviso', async () => {
+    const r = await cargarDatos(archivo(cuerpo()), { ejecutarAnalisis: async () => { throw new Error('fallo simulado'); } });
+    expect(r.analizado).toEqual([]);
+    expect(r.avisos_analisis.join(' ')).toMatch(/fallo simulado/);
+    expect(await contar('registro')).toBe(3);
+  });
+
+  it('se analiza como dueño, no con el rol de ingesta', async () => {
+    const roles = [];
+    await cargarDatos(archivo(cuerpo()), { ejecutarAnalisis: async (sql) => { roles.push(sql); } });
+    expect(roles.length).toBeGreaterThan(0);
+    expect(roles.every((s) => /^ANALYZE biodiversidad\.[a-z_]+$/.test(s))).toBe(true);
+    const { rows: [r] } = await query('SELECT current_user AS u');
+    expect(r.u).not.toBe('biodiversidad_ingesta');
+  });
+});
+
 describe('estadoCarga() y cambiarHerramienta()', () => {
   it('resume lotes, cruce y estado de la herramienta', async () => {
     await cargarDatos(archivo(cuerpo()), { activar: true });
