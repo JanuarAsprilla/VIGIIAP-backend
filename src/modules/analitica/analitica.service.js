@@ -1,6 +1,7 @@
 import { query } from '../../config/database.js';
 import { normalizarIp, ubicarIp } from '../../utils/geolocalizacion.js';
 import { memoizar } from '../../utils/cacheLocal.js';
+import { EMBUDOS, construirConsultaEmbudo } from './embudos.js';
 
 const VENTANA_DIAS = 14;
 const ZONA_HORARIA = 'America/Bogota';
@@ -288,6 +289,53 @@ export async function getEventosTop({ desde, hasta, limit = 20 }) {
   );
   return { eventos, recursos };
 }
+
+const porcentaje = (parte, total) => (total > 0 ? Math.round((parte / total) * 100) : 0);
+
+async function calcularEmbudos({ desde, hasta }) {
+  const resultados = [];
+  for (const [id, embudo] of Object.entries(EMBUDOS)) {
+    const { sql, params } = construirConsultaEmbudo(embudo.pasos);
+    const { rows } = await query(sql, [desde, hasta, ...params]);
+    const conteos = embudo.pasos.map((_, i) => rows[0]?.[`c${i + 1}`] ?? 0);
+    resultados.push({
+      id,
+      titulo: embudo.titulo,
+      pasos: embudo.pasos.map((paso, i) => ({
+        etiqueta: paso.etiqueta,
+        sesiones: conteos[i],
+        pctDelAnterior: i === 0 ? porcentaje(conteos[0], conteos[0]) : porcentaje(conteos[i], conteos[i - 1]),
+        pctDelInicio: porcentaje(conteos[i], conteos[0]),
+      })),
+    });
+  }
+  return resultados;
+}
+
+/** Sesiones que llegan a cada paso de cada embudo del catálogo, en orden y sin bots. */
+export const getEmbudos = memoizar(calcularEmbudos, TTL_PANEL_MS);
+
+async function calcularFlujoNavegacion({ desde, hasta, limit = 15 }) {
+  const { rows } = await query(
+    `SELECT ruta AS desde, siguiente AS hacia, COUNT(*)::int AS veces
+     FROM (
+       SELECT p.ruta,
+              LEAD(p.ruta) OVER (PARTITION BY p.session_id ORDER BY p.creado_en) AS siguiente
+       FROM analytics_pageviews p
+       JOIN analytics_sessions s ON s.id = p.session_id
+       WHERE p.creado_en BETWEEN $1 AND $2 AND s.es_bot = false AND p.es_area_admin = false
+     ) t
+     WHERE siguiente IS NOT NULL AND siguiente <> ruta
+     GROUP BY ruta, siguiente
+     ORDER BY veces DESC
+     LIMIT $3`,
+    [desde, hasta, limit],
+  );
+  return rows;
+}
+
+/** Pares «de esta página a esta otra» más frecuentes dentro de una misma sesión. */
+export const getFlujoNavegacion = memoizar(calcularFlujoNavegacion, TTL_PANEL_MS);
 
 const VENTANA_TIEMPO_REAL_MIN = 5;
 

@@ -17,6 +17,8 @@ vi.mock('../src/modules/analitica/analitica.service.js', () => ({
   registrarEvento: vi.fn(),
   getEventosTop: vi.fn(),
   getTiempoReal: vi.fn(),
+  getEmbudos: vi.fn(),
+  getFlujoNavegacion: vi.fn(),
 }));
 
 // query() aquí solo lo consume requireModulo (tienePermisoModulo) — el
@@ -135,6 +137,22 @@ describe('Rutas /api/analitica — auth guards', () => {
     const vivo = await request(app).get('/api/analitica/tiempo-real').set('Authorization', `Bearer ${adminToken}`);
     expect(eventos.status).toBe(200);
     expect(vivo.status).toBe(200);
+  });
+
+  it('GET /api/analitica/embudos y /flujo-navegacion → 401 sin token y 403 con un rol que no es admin_sig', async () => {
+    expect((await request(app).get('/api/analitica/embudos')).status).toBe(401);
+    expect((await request(app).get('/api/analitica/flujo-navegacion')).status).toBe(401);
+    const token = jwt.sign({ id: 'u1', email: 'i@iiap.org.co', rol: 'investigador' }, process.env.JWT_SECRET);
+    expect((await request(app).get('/api/analitica/embudos').set('Authorization', `Bearer ${token}`)).status).toBe(403);
+  });
+
+  it('GET /api/analitica/embudos y /flujo-navegacion → 200 con token admin_sig', async () => {
+    analiticaService.getEmbudos.mockResolvedValue([]);
+    analiticaService.getFlujoNavegacion.mockResolvedValue([]);
+    const embudos = await request(app).get('/api/analitica/embudos').set('Authorization', `Bearer ${adminToken}`);
+    const flujo = await request(app).get('/api/analitica/flujo-navegacion').set('Authorization', `Bearer ${adminToken}`);
+    expect(embudos.status).toBe(200);
+    expect(flujo.status).toBe(200);
   });
 
   it('GET /api/analitica/fuentes-trafico → 401 sin token', async () => {
