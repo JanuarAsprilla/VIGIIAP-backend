@@ -10,6 +10,8 @@ vi.mock('../src/modules/biodiversidad/biodiversidad.service.js', () => ({
   resumen: vi.fn(),
   especies: vi.fn(),
   series: vi.fn(),
+  puntos: vi.fn(),
+  opciones: vi.fn(),
 }));
 vi.mock('../src/modules/herramientas/herramientas.service.js', () => ({
   herramientaDisponible: vi.fn(),
@@ -107,7 +109,7 @@ describe('GET /municipios', () => {
     servicio.municipios.mockResolvedValue({ grupo: 'hongos', municipios: [] });
     const res = await request(app).get('/api/biodiversidad/municipios?grupo=hongos');
     expect(res.status).toBe(200);
-    expect(servicio.municipios).toHaveBeenCalledWith('hongos');
+    expect(servicio.municipios).toHaveBeenCalledWith({ grupo: 'hongos' });
   });
 });
 
@@ -127,7 +129,7 @@ describe('GET /registros', () => {
     servicio.registros.mockResolvedValue({ registros: [], total: 0 });
     const res = await request(app).get('/api/biodiversidad/registros?grupo=anfibios&anio_desde=2010&pagina=2&tamano=10');
     expect(res.status).toBe(200);
-    expect(servicio.registros).toHaveBeenCalledWith({ grupo: 'anfibios', anio_desde: 2010, pagina: 2, tamano: 10 });
+    expect(servicio.registros).toHaveBeenCalledWith({ grupo: 'anfibios', anio_desde: 2010, pagina: 2, tamano: 10, orden: 'anio_desc' });
   });
 
   it('devuelve 404 si el grupo no tiene datos cargados', async () => {
@@ -156,7 +158,7 @@ describe('GET /registros — filtros nuevos', () => {
     servicio.registros.mockResolvedValue({ registros: [], total: 0 });
     await request(app).get('/api/biodiversidad/registros?grupo=hongos&buscar=amanita&con_foto=true&conservacion=endemica&amenaza=VU&especie_clave=77');
     expect(servicio.registros).toHaveBeenCalledWith({
-      grupo: 'hongos', buscar: 'amanita', con_foto: true, conservacion: 'endemica', amenaza: 'VU', especie_clave: '77', pagina: 1, tamano: 25,
+      grupo: 'hongos', buscar: 'amanita', con_foto: true, conservacion: 'endemica', amenaza: 'VU', especie_clave: '77', pagina: 1, tamano: 25, orden: 'anio_desc',
     });
   });
 

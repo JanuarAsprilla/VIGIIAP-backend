@@ -81,7 +81,7 @@ describe('estado()', () => {
 describe('municipios()', () => {
   it('devuelve el resumen por municipio ordenado por departamento y nombre', async () => {
     await sembrar();
-    const r = await municipios('anfibios');
+    const r = await municipios({ grupo: 'anfibios' });
     expect(r).toMatchObject({ grupo: 'anfibios', metodo: 'individual' });
     expect(r.municipios).toEqual([
       { codigo_municipal: '05045', municipio: 'Apartadó', departamento: 'Antioquia', registros: 1, sin_especie: 0, especies: 1 },
@@ -91,7 +91,7 @@ describe('municipios()', () => {
 
   it('devuelve null si el grupo no tiene lote activo', async () => {
     await sembrar();
-    expect(await municipios('hongos')).toBeNull();
+    expect(await municipios({ grupo: 'hongos' })).toBeNull();
   });
 });
 
@@ -127,17 +127,17 @@ describe('registros() — filtros y paginación', () => {
   beforeEach(sembrar);
 
   it('filtra por municipio, departamento y rango de años', async () => {
-    expect((await registros({ grupo: 'anfibios', pagina: 1, tamano: 25, codigo_municipal: '27001' })).registros.map((x) => x.gbif_id)).toEqual(['g1', 'g2']);
+    expect((await registros({ grupo: 'anfibios', orden: 'anio_asc', pagina: 1, tamano: 25, codigo_municipal: '27001' })).registros.map((x) => x.gbif_id)).toEqual(['g1', 'g2']);
     expect((await registros({ grupo: 'anfibios', pagina: 1, tamano: 25, departamento: 'Antioquia' })).registros.map((x) => x.gbif_id)).toEqual(['g3']);
-    expect((await registros({ grupo: 'anfibios', pagina: 1, tamano: 25, anio_desde: 2020 })).registros.map((x) => x.gbif_id)).toEqual(['g1', 'g2']);
+    expect((await registros({ grupo: 'anfibios', orden: 'anio_asc', pagina: 1, tamano: 25, anio_desde: 2020 })).registros.map((x) => x.gbif_id)).toEqual(['g1', 'g2']);
     expect((await registros({ grupo: 'anfibios', pagina: 1, tamano: 25, anio_hasta: 2016 })).registros.map((x) => x.gbif_id)).toEqual(['g3']);
   });
 
   it('pagina de forma estable y reporta el total', async () => {
-    const p1 = await registros({ grupo: 'anfibios', pagina: 1, tamano: 2 });
-    const p2 = await registros({ grupo: 'anfibios', pagina: 2, tamano: 2 });
-    expect(p1.registros.map((x) => x.gbif_id)).toEqual(['g1', 'g2']);
-    expect(p2.registros.map((x) => x.gbif_id)).toEqual(['g3']);
+    const p1 = await registros({ grupo: 'anfibios', orden: 'anio_asc', pagina: 1, tamano: 2 });
+    const p2 = await registros({ grupo: 'anfibios', orden: 'anio_asc', pagina: 2, tamano: 2 });
+    expect(p1.registros.map((x) => x.gbif_id)).toEqual(['g3', 'g1']);
+    expect(p2.registros.map((x) => x.gbif_id)).toEqual(['g2']);
     expect(p1.total).toBe(3);
     expect(p2).toMatchObject({ pagina: 2, tamano: 2 });
   });

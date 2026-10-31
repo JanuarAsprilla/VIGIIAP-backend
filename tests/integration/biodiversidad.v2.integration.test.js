@@ -105,20 +105,20 @@ async function sembrar({ cruceActivo = true } = {}) {
 beforeEach(limpiar);
 afterEach(limpiar);
 
-const base = (extra) => ({ grupo: 'anfibios', pagina: 1, tamano: 25, ...extra });
+const base = (extra) => ({ grupo: 'anfibios', pagina: 1, tamano: 25, orden: 'anio_asc', ...extra });
 const ids = (r) => r.registros.map((x) => x.gbif_id);
 
 describe('municipios() — especies', () => {
   it('cuenta especies distintas por municipio en individuales (sin contar registros sin especie)', async () => {
     await sembrar();
-    const r = await municipios('anfibios');
+    const r = await municipios({ grupo: 'anfibios' });
     expect(r.municipios.map((m) => [m.codigo_municipal, m.especies])).toEqual([['05045', 2], ['27001', 4]]);
     expect(r.municipios[0]).toMatchObject({ registros: 2, sin_especie: 0 });
   });
 
   it('en agregados la cuenta sale del inventario por especie', async () => {
     await sembrar();
-    const r = await municipios('aves');
+    const r = await municipios({ grupo: 'aves' });
     expect(r.municipios.map((m) => [m.codigo_municipal, m.especies])).toEqual([['05045', 1], ['27001', 2]]);
   });
 });
@@ -459,13 +459,13 @@ describe('registros() — campos y filtros nuevos', () => {
 
   it('filtra por buscar, especie_clave y conservación', async () => {
     await sembrar();
-    expect(ids(await registros(base({ buscar: 'rhinella' })))).toEqual(['g2', 'g3']);
-    expect(ids(await registros(base({ especie_clave: '2' })))).toEqual(['g2', 'g3']);
+    expect(ids(await registros(base({ buscar: 'rhinella' })))).toEqual(['g3', 'g2']);
+    expect(ids(await registros(base({ especie_clave: '2' })))).toEqual(['g3', 'g2']);
     expect(ids(await registros(base({ conservacion: 'amenazada' })))).toEqual(['g1']);
     expect(ids(await registros(base({ amenaza: 'CR' })))).toEqual(['g1']);
     expect(ids(await registros(base({ amenaza: 'EN' })))).toEqual([]);
     expect(ids(await registros(base({ conservacion: 'endemica' })))).toEqual(['g4']);
-    expect(ids(await registros(base({ conservacion: 'invasora' })))).toEqual(['g6', 'g6']);
+    expect(ids(await registros(base({ conservacion: 'invasora' })))).toEqual(['g6']);
   });
 
   it('combina filtros y el total refleja el conjunto filtrado', async () => {

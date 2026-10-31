@@ -51,7 +51,7 @@ beforeEach(() => {
 
 describe('cache de las rutas de biodiversidad', () => {
   it('/municipios no mezcla grupos distintos', async () => {
-    servicio.municipios.mockImplementation(async (grupo) => ({ grupo, municipios: [] }));
+    servicio.municipios.mockImplementation(async ({ grupo }) => ({ grupo, municipios: [] }));
     const aves = await request(app).get('/api/biodiversidad/municipios?grupo=aves');
     const hongos = await request(app).get('/api/biodiversidad/municipios?grupo=hongos');
     expect(aves.body.grupo).toBe('aves');
