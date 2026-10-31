@@ -5,6 +5,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup.js'],
     environment: 'node',
     globals: false,
+    env: { ANALITICA_CACHE_TTL_MS: '0' },
     exclude: ['node_modules/**', '.claude/**', 'tests/integration/**'],
     coverage: {
       provider: 'istanbul',
