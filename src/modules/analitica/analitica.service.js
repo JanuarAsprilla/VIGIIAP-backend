@@ -239,6 +239,63 @@ export async function getUbicaciones({ desde, hasta, limit = 40 }) {
   return { paises, departamentos, sinUbicacion: sinUbicacion[0]?.sesiones ?? 0 };
 }
 
+export { EVENTOS_PERMITIDOS } from './eventos.js';
+
+/** Guarda un evento de una sesión existente. Devuelve false si se descarta (sesión inexistente o bot). */
+export async function registrarEvento({ sessionId, nombre, recurso = null, ruta = null }) {
+  const { rows } = await query('SELECT es_bot FROM analytics_sessions WHERE id = $1', [sessionId]);
+  if (!rows.length || rows[0].es_bot) return false;
+  await query(
+    'INSERT INTO analytics_eventos (session_id, nombre, recurso, ruta) VALUES ($1, $2, $3, $4)',
+    [sessionId, nombre, recurso, ruta],
+  );
+  return true;
+}
+
+/** Total por evento (con sesiones distintas) y los recursos más frecuentes de cada uno. */
+export async function getEventosTop({ desde, hasta, limit = 20 }) {
+  const { rows: eventos } = await query(
+    `SELECT e.nombre, COUNT(*)::int AS total, COUNT(DISTINCT e.session_id)::int AS sesiones
+     FROM analytics_eventos e
+     JOIN analytics_sessions s ON s.id = e.session_id
+     WHERE e.creado_en BETWEEN $1 AND $2 AND s.es_bot = false
+     GROUP BY e.nombre ORDER BY total DESC`,
+    [desde, hasta],
+  );
+  const { rows: recursos } = await query(
+    `SELECT e.nombre, e.recurso, COUNT(*)::int AS total
+     FROM analytics_eventos e
+     JOIN analytics_sessions s ON s.id = e.session_id
+     WHERE e.creado_en BETWEEN $1 AND $2 AND s.es_bot = false AND e.recurso IS NOT NULL
+     GROUP BY e.nombre, e.recurso ORDER BY total DESC LIMIT $3`,
+    [desde, hasta, limit],
+  );
+  return { eventos, recursos };
+}
+
+const VENTANA_TIEMPO_REAL_MIN = 5;
+
+/** Visitantes con actividad en los últimos minutos y la página en la que están ahora. */
+export async function getTiempoReal() {
+  const { rows: activos } = await query(
+    `SELECT COUNT(*)::int AS activos FROM analytics_sessions
+     WHERE es_bot = false AND ultima_actividad_en >= NOW() - INTERVAL '${VENTANA_TIEMPO_REAL_MIN} minutes'`,
+  );
+  const { rows: paginasActuales } = await query(
+    `SELECT ruta, COUNT(*)::int AS visitantes FROM (
+       SELECT DISTINCT ON (p.session_id) p.ruta
+       FROM analytics_pageviews p
+       JOIN analytics_sessions s ON s.id = p.session_id
+       WHERE s.es_bot = false AND p.es_area_admin = false
+         AND s.ultima_actividad_en >= NOW() - INTERVAL '${VENTANA_TIEMPO_REAL_MIN} minutes'
+         AND p.creado_en >= NOW() - INTERVAL '${VENTANA_TIEMPO_REAL_MIN} minutes'
+       ORDER BY p.session_id, p.creado_en DESC
+     ) actuales
+     GROUP BY ruta ORDER BY visitantes DESC LIMIT 10`,
+  );
+  return { ventanaMin: VENTANA_TIEMPO_REAL_MIN, visitantesActivos: activos[0]?.activos ?? 0, paginasActuales };
+}
+
 /** Últimas sesiones con su IP (mientras no se haya purgado) y ubicación; solo para administradores. */
 export async function getSesionesRecientes({ limit = 50 } = {}) {
   const { rows } = await query(

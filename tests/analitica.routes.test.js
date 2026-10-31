@@ -14,6 +14,9 @@ vi.mock('../src/modules/analitica/analitica.service.js', () => ({
   getEntradaSalida: vi.fn(),
   getUbicaciones: vi.fn(),
   getSesionesRecientes: vi.fn(),
+  registrarEvento: vi.fn(),
+  getEventosTop: vi.fn(),
+  getTiempoReal: vi.fn(),
 }));
 
 // query() aquí solo lo consume requireModulo (tienePermisoModulo) — el
@@ -103,6 +106,35 @@ describe('Rutas /api/analitica — auth guards', () => {
     analiticaService.getDispositivos.mockResolvedValue([]);
     const res = await request(app).get('/api/analitica/dispositivos').set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
+  });
+
+  it('POST /api/analitica/evento → 204 sin autenticación con un evento del catálogo', async () => {
+    analiticaService.registrarEvento.mockResolvedValue(true);
+    const res = await request(app).post('/api/analitica/evento')
+      .send({ sessionId: '11111111-1111-4111-8111-111111111111', nombre: 'descarga_mapa', recurso: 'rio-atrato' });
+    expect(res.status).toBe(204);
+    expect(analiticaService.registrarEvento).toHaveBeenCalledWith(expect.objectContaining({ nombre: 'descarga_mapa' }));
+  });
+
+  it('POST /api/analitica/evento → 400 con un nombre fuera del catálogo', async () => {
+    const res = await request(app).post('/api/analitica/evento')
+      .send({ sessionId: '11111111-1111-4111-8111-111111111111', nombre: 'inventado' });
+    expect(res.status).toBe(400);
+    expect(analiticaService.registrarEvento).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/analitica/eventos-top y /tiempo-real → 401 sin token', async () => {
+    expect((await request(app).get('/api/analitica/eventos-top')).status).toBe(401);
+    expect((await request(app).get('/api/analitica/tiempo-real')).status).toBe(401);
+  });
+
+  it('GET /api/analitica/eventos-top y /tiempo-real → 200 con token admin_sig', async () => {
+    analiticaService.getEventosTop.mockResolvedValue({ eventos: [], recursos: [] });
+    analiticaService.getTiempoReal.mockResolvedValue({ ventanaMin: 5, visitantesActivos: 0, paginasActuales: [] });
+    const eventos = await request(app).get('/api/analitica/eventos-top').set('Authorization', `Bearer ${adminToken}`);
+    const vivo = await request(app).get('/api/analitica/tiempo-real').set('Authorization', `Bearer ${adminToken}`);
+    expect(eventos.status).toBe(200);
+    expect(vivo.status).toBe(200);
   });
 
   it('GET /api/analitica/fuentes-trafico → 401 sin token', async () => {
