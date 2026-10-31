@@ -13,12 +13,14 @@ import { query, getClient } from '../../src/config/database.js';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MIGRACION = readFileSync(join(RAIZ, 'db/migrations/062_biodiversidad_base.sql'), 'utf8');
 const REVERSION = readFileSync(join(RAIZ, 'db/rollback/062_biodiversidad_base.down.sql'), 'utf8');
+const MIGRACION_DETALLE = readFileSync(join(RAIZ, 'db/migrations/064_biodiversidad_detalle.sql'), 'utf8');
+const REVERSION_DETALLE = readFileSync(join(RAIZ, 'db/rollback/064_biodiversidad_detalle.down.sql'), 'utf8');
 
 const TABLAS = [
   'actualizacion', 'asignacion', 'clasificacion', 'conjunto', 'conservacion_afirmacion',
   'conservacion_fuente', 'conservacion_importacion', 'conservacion_vinculo', 'conteo_fuente',
   'entidad', 'faceta_municipal', 'inventario_especie', 'lote', 'municipio', 'registro',
-  'resumen_territorial', 'taxon_version', 'territorio_version',
+  'registro_detalle', 'resumen_territorial', 'taxon_version', 'territorio_version',
 ];
 
 /** Ejecuta `fn` dentro de una transacción que siempre se revierte: no deja datos. */
@@ -228,7 +230,10 @@ describe('vista pública — ocultamiento de coordenadas de especies amenazadas'
 describe('migración 062 — reejecución y reversión', () => {
   it('es idempotente: aplicarla otra vez no falla ni duplica nada', async () => {
     await enTransaccion(async (client) => {
+      // 064 amplía la vista de 062: para reaplicar 062 sola hay que quitar 064 antes (y reponerla después).
+      await client.query(REVERSION_DETALLE);
       await client.query(MIGRACION);
+      await client.query(MIGRACION_DETALLE);
       const { rows } = await client.query(
         `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'biodiversidad'`);
       expect(rows[0].n).toBe(TABLAS.length);

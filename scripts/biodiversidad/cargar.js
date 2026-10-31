@@ -40,12 +40,16 @@ const DE_LOTE = {
     'incertidumbre_m', 'tipo_evidencia', 'licencia', 'institution_code', 'collection_code', 'catalog_number',
     'nombre_original', 'last_interpreted', 'modified', 'marcas_revision', 'vista_1000m',
   ],
+  registro_detalle: ['lote_id', 'gbif_id', 'registrado_por', 'identificado_por', 'fotos'],
   asignacion: ['lote_id', 'gbif_id', 'territorio_huella', 'codigo'],
   resumen_territorial: ['lote_id', 'territorio_huella', 'codigo', 'registros', 'sin_especie'],
   inventario_especie: ['lote_id', 'codigo', 'taxon_huella', 'registros'],
   conteo_fuente: ['lote_id', 'codigo', 'dataset_key', 'registros'],
   faceta_municipal: ['lote_id', 'codigo', 'faceta', 'valor', 'registros'],
 };
+// Tablas que se completan SOBRE un corte ya cargado (lote «omitido»): los cortes publicados antes de
+// que existiera el detalle reciben sus filas nuevas sin repetir el resto; lo ya cargado no se pisa.
+const COMPLEMENTOS = new Set(['registro_detalle']);
 const COLUMNAS_LOTE = [
   'grupo', 'metodo', 'clasificacion_clave', 'territorio_huella', 'desde', 'hasta', 'huella_fuente', 'origen', 'doi',
   'creado_en', 'fecha_fuente', 'registros',
@@ -148,9 +152,10 @@ async function procesar(client, ruta) {
     } else if (t in DE_LOTE) {
       const lote = lotes.get(d.lote);
       if (!lote) throw new Error(`Línea ${numero}: ${t} apunta a un lote desconocido (${d.lote})`);
-      if (lote.omitido) continue;
+      const complemento = COMPLEMENTOS.has(t);
+      if (lote.omitido && !complemento) continue;
       const { lote: _ref, ...resto } = d;
-      await encolar(t, DE_LOTE[t], { ...resto, lote_id: lote.id }, false);
+      await encolar(t, DE_LOTE[t], { ...resto, lote_id: lote.id }, complemento);
     } else if (t === 'conservacion_importacion') {
       await vaciar();
       const { rows } = await client.query(
