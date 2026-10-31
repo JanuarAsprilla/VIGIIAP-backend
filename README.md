@@ -161,6 +161,7 @@ Se ejecutan dentro del propio servicio, con temporizadores que no impiden su cie
 | Retención de analítica | Cada 6 h | Elimina la IP de las sesiones antiguas (90 días por defecto) y los datos muy antiguos (730 días por defecto). |
 | Retención de auditoría | Cada 24 h | Purga el registro de actividad según el plazo configurado. |
 | Autoajuste de límites | Cada hora | Ajusta el límite de tráfico según el uso observado. |
+| Reintento de correos | Cada minuto | Reenvía con espera creciente (hasta 5 intentos) los correos cuyo primer envío falló; al terminar borra su contenido. |
 
 Los plazos de retención se configuran con variables de entorno (ver `.env.example`).
 
