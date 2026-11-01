@@ -292,6 +292,62 @@ export async function getEventosTop({ desde, hasta, limit = 20 }) {
 
 const porcentaje = (parte, total) => (total > 0 ? Math.round((parte / total) * 100) : 0);
 
+/** Misma convención que las tarjetas KPI: sin base anterior, crecer es 100 % y seguir en cero es 0 %. */
+function variacionPct(actual, anterior) {
+  if (anterior === 0) return actual > 0 ? 100 : 0;
+  return Math.round(((actual - anterior) / anterior) * 100);
+}
+
+async function metricasDelRango(desde, hasta) {
+  const { rows: [sitio] } = await query(
+    `SELECT COALESCE(SUM(n), 0)::int AS vistas, COUNT(*)::int AS sesiones, COUNT(*) FILTER (WHERE n = 1)::int AS rebotadas
+     FROM (
+       SELECT p.session_id, COUNT(*) AS n
+       FROM analytics_pageviews p
+       JOIN analytics_sessions s ON s.id = p.session_id
+       WHERE p.creado_en BETWEEN $1 AND $2 AND s.es_bot = false AND p.es_area_admin = false
+       GROUP BY p.session_id
+     ) por_sesion`,
+    [desde, hasta],
+  );
+  const { rows: [acciones] } = await query(
+    `SELECT COUNT(*)::int AS acciones
+     FROM analytics_eventos e
+     JOIN analytics_sessions s ON s.id = e.session_id
+     WHERE e.creado_en BETWEEN $1 AND $2 AND s.es_bot = false`,
+    [desde, hasta],
+  );
+  return {
+    desde: desde.toISOString(),
+    hasta: hasta.toISOString(),
+    vistas: sitio.vistas,
+    sesiones: sitio.sesiones,
+    acciones: acciones.acciones,
+    rebotePct: porcentaje(sitio.rebotadas, sitio.sesiones),
+  };
+}
+
+async function calcularComparativa({ desde, hasta }) {
+  const duracion = Math.max(hasta.getTime() - desde.getTime(), 1);
+  const anteriorHasta = new Date(desde.getTime() - 1);
+  const anteriorDesde = new Date(anteriorHasta.getTime() - duracion);
+  const actual = await metricasDelRango(desde, hasta);
+  const anterior = await metricasDelRango(anteriorDesde, anteriorHasta);
+  return {
+    actual,
+    anterior,
+    variacion: {
+      vistas: variacionPct(actual.vistas, anterior.vistas),
+      sesiones: variacionPct(actual.sesiones, anterior.sesiones),
+      acciones: variacionPct(actual.acciones, anterior.acciones),
+      rebotePuntos: actual.rebotePct - anterior.rebotePct,
+    },
+  };
+}
+
+/** Métricas del sitio público en el rango y en el período anterior de igual duración, con su variación. */
+export const getComparativa = memoizar(calcularComparativa, TTL_PANEL_MS);
+
 async function calcularEmbudos({ desde, hasta }) {
   const resultados = [];
   for (const [id, embudo] of Object.entries(EMBUDOS)) {
