@@ -9,6 +9,8 @@ name: Biodiversidad · datos
 #   estado            muestra cortes cargados, cruce de conservación y estado de la herramienta
 #   cargar            carga los datos sin publicarlos (las coordenadas siguen ocultas)
 #   cargar-y-activar  carga y publica los cortes y el cruce de conservación
+#   fotos             carga la foto representativa por especie de los grupos agregados desde
+#                     /root/vigiiap/cargas/fotos.ndjson (generado con buscar_fotos_especies.mjs; no hay coordenadas)
 #   encender|apagar   cambia la fila `biodiversidad` del catálogo de Herramientas
 
 on:
@@ -19,7 +21,7 @@ on:
         type: choice
         required: true
         default: estado
-        options: [estado, cargar, cargar-y-activar, encender, apagar]
+        options: [estado, cargar, cargar-y-activar, fotos, encender, apagar]
 
 permissions:
   contents: read
@@ -71,6 +73,18 @@ jobs:
                 # El archivo con coordenadas exactas no se deja en el servidor tras cargarlo.
                 rm -f "$ARCHIVO"
                 $CLI estado
+                ;;
+              fotos)
+                FOTOS=/root/vigiiap/cargas/fotos.ndjson
+                if [ ! -f "$FOTOS" ]; then
+                  echo "Falta $FOTOS: súbalo primero por scp."
+                  exit 1
+                fi
+                docker cp "$FOTOS" vigiiap_backend:/tmp/fotos.ndjson
+                docker exec -u root vigiiap_backend chmod 0644 /tmp/fotos.ndjson
+                docker exec vigiiap_backend node scripts/biodiversidad/cargar_fotos_especies.js /tmp/fotos.ndjson
+                docker exec -u root vigiiap_backend rm -f /tmp/fotos.ndjson || true
+                rm -f "$FOTOS"
                 ;;
               *) echo "Acción desconocida: $ACCION"; exit 1 ;;
             esac

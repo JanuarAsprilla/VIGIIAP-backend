@@ -11,7 +11,8 @@ import { fotosPublicas, PATRON_IMAGEN, PATRON_REFERENCIA } from './fotos.js';
  */
 export async function fotosPorEspecie(client, lote, filtros, claves) {
   const fotosPorClave = new Map();
-  if (lote.metodo !== 'individual' || claves.length === 0) return fotosPorClave;
+  if (claves.length === 0) return fotosPorClave;
+  if (lote.metodo !== 'individual') return fotosAgregadas(client, claves);
   const ctx = crearContexto();
   const f = alcance(ctx, lote, filtros, ['con_foto']);
   const imagen = ctx.p(PATRON_IMAGEN);
@@ -32,6 +33,22 @@ export async function fotosPorEspecie(client, lote, filtros, claves) {
        FROM reg GROUP BY especie_clave`,
     ctx.params);
   for (const r of rows) fotosPorClave.set(r.especie_clave, { foto: fotosPublicas([r.foto])[0] ?? null, fotos_total: r.fotos_total });
+  return fotosPorClave;
+}
+
+/**
+ * Grupos agregados (sin registros individuales): la foto representativa de la especie sale de `especie_foto`,
+ * cargada aparte por un proceso aislado. La API no consulta GBIF y la foto pasa por la misma validación de siempre.
+ */
+async function fotosAgregadas(client, claves) {
+  const { rows } = await client.query(
+    `SELECT especie_clave, imagen, autor, editor, licencia, referencia
+       FROM biodiversidad.especie_foto WHERE especie_clave = ANY($1::text[])`, [claves]);
+  const fotosPorClave = new Map();
+  for (const r of rows) {
+    const foto = fotosPublicas([r])[0] ?? null;
+    if (foto) fotosPorClave.set(r.especie_clave, { foto, fotos_total: 1 });
+  }
   return fotosPorClave;
 }
 
