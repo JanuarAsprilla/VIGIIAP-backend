@@ -19,6 +19,7 @@ vi.mock('../src/modules/analitica/analitica.service.js', () => ({
   getTiempoReal: vi.fn(),
   getEmbudos: vi.fn(),
   getFlujoNavegacion: vi.fn(),
+  getComparativa: vi.fn(),
 }));
 
 // query() aquí solo lo consume requireModulo (tienePermisoModulo) — el
@@ -153,6 +154,15 @@ describe('Rutas /api/analitica — auth guards', () => {
     const flujo = await request(app).get('/api/analitica/flujo-navegacion').set('Authorization', `Bearer ${adminToken}`);
     expect(embudos.status).toBe(200);
     expect(flujo.status).toBe(200);
+  });
+
+  it('GET /api/analitica/comparativa → 401 sin token, 403 sin ser admin_sig y 200 con acceso', async () => {
+    expect((await request(app).get('/api/analitica/comparativa')).status).toBe(401);
+    const token = jwt.sign({ id: 'u1', email: 'i@iiap.org.co', rol: 'investigador' }, process.env.JWT_SECRET);
+    expect((await request(app).get('/api/analitica/comparativa').set('Authorization', `Bearer ${token}`)).status).toBe(403);
+    analiticaService.getComparativa.mockResolvedValue({ actual: {}, anterior: {}, variacion: {} });
+    const ok = await request(app).get('/api/analitica/comparativa').set('Authorization', `Bearer ${adminToken}`);
+    expect(ok.status).toBe(200);
   });
 
   it('GET /api/analitica/fuentes-trafico → 401 sin token', async () => {
