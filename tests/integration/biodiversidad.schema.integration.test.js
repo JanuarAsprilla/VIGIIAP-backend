@@ -19,7 +19,7 @@ const REVERSION_DETALLE = readFileSync(join(RAIZ, 'db/rollback/064_biodiversidad
 const TABLAS = [
   'actualizacion', 'asignacion', 'clasificacion', 'conjunto', 'conservacion_afirmacion',
   'conservacion_fuente', 'conservacion_importacion', 'conservacion_vinculo', 'conteo_fuente',
-  'entidad', 'faceta_municipal', 'inventario_especie', 'lote', 'municipio', 'registro',
+  'entidad', 'especie_foto', 'faceta_municipal', 'inventario_especie', 'lote', 'municipio', 'registro',
   'registro_detalle', 'resumen_territorial', 'taxon_version', 'territorio_version',
 ];
 

@@ -1,11 +1,45 @@
 import { describe, it, expect } from 'vitest';
-import { fotosPublicas, fotoValida } from '../src/modules/biodiversidad/consultas/fotos.js';
+import { fotosPublicas, fotoValida, filaFotoEspecie } from '../src/modules/biodiversidad/consultas/fotos.js';
 import { codigosGbif } from '../src/modules/biodiversidad/consultas/marcas.js';
 import { patronBusqueda } from '../src/modules/biodiversidad/consultas/texto.js';
 
 const IMAGEN = `https://api.gbif.org/v1/image/cache/500x/occurrence/5036794008/media/${'a1'.repeat(16)}`;
 const buena = (extra = {}) => ({
   imagen: IMAGEN, autor: 'Ana', editor: 'iNaturalist', licencia: 'CC-BY', referencia: 'https://www.inaturalist.org/photos/1', ...extra,
+});
+
+describe('filaFotoEspecie() — lo único que el cargador deja entrar a especie_foto', () => {
+  const fila = (extra = {}) => ({ especie_clave: '2488439', ...buena(), ...extra });
+
+  it('acepta una fila válida y devuelve solo los seis campos', () => {
+    expect(filaFotoEspecie({ ...fila(), coordenadas: '1,2', otro: 'x' })).toEqual({
+      especie_clave: '2488439', imagen: IMAGEN, autor: 'Ana', editor: 'iNaturalist', licencia: 'CC-BY', referencia: 'https://www.inaturalist.org/photos/1',
+    });
+  });
+
+  it('autor, editor y licencia vacíos o ausentes quedan en null; se recortan a 300 caracteres', () => {
+    const r = filaFotoEspecie(fila({ autor: '   ', editor: undefined, licencia: 'L'.repeat(500) }));
+    expect(r.autor).toBeNull();
+    expect(r.editor).toBeNull();
+    expect(r.licencia).toHaveLength(300);
+  });
+
+  it.each([
+    ['no es un objeto', 'texto'],
+    ['arreglo', []],
+    ['clave con comillas', fila({ especie_clave: "1'; DROP TABLE x;--" })],
+    ['clave vacía', fila({ especie_clave: '' })],
+    ['clave demasiado larga', fila({ especie_clave: '1'.repeat(21) })],
+    ['clave numérica (debe ser texto)', fila({ especie_clave: 2488439 })],
+    ['imagen S3 del autor', fila({ imagen: 'https://inaturalist-open-data.s3.amazonaws.com/photos/1/original.jpeg' })],
+    ['imagen http', fila({ imagen: IMAGEN.replace('https', 'http') })],
+    ['referencia http', fila({ referencia: 'http://www.inaturalist.org/photos/1' })],
+    ['referencia javascript', fila({ referencia: 'javascript:alert(1)' })],
+    ['referencia demasiado larga', fila({ referencia: `https://x.org/${'a'.repeat(500)}` })],
+    ['sin referencia', fila({ referencia: undefined })],
+  ])('rechaza: %s', (_t, entrada) => {
+    expect(filaFotoEspecie(entrada)).toBeNull();
+  });
 });
 
 describe('fotoValida()', () => {
