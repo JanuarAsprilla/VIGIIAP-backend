@@ -19,6 +19,7 @@ const GBIF = 'https://api.gbif.org/v1/occurrence/search';
 const ANCHO = 400;
 const LICENCIA_CC = /^https?:\/\/creativecommons\.org\/(licenses\/by[a-z-]*|publicdomain\/zero)\//;
 const ES_HTTPS = /^https:\/\/\S+$/;
+const LICENCIAS = ['CC0_1_0', 'CC_BY_4_0', 'CC_BY_NC_4_0'].map((l) => `&license=${l}`).join('');
 
 function argumento(nombre, porDefecto) {
   const i = process.argv.indexOf(`--${nombre}`);
@@ -69,7 +70,8 @@ export function elegirFoto(clave, ocurrencias) {
 
 async function fotoDe(clave) {
   for (const pais of ['&country=CO', '']) {
-    const d = await pedirJson(`${GBIF}?taxonKey=${encodeURIComponent(clave)}&mediaType=StillImage${pais}&limit=20`);
+    // El filtro de licencia va en la consulta (GBIF responde mucho más rápido con pocas ocurrencias).
+    const d = await pedirJson(`${GBIF}?taxonKey=${encodeURIComponent(clave)}&mediaType=StillImage${LICENCIAS}${pais}&limit=3`);
     const foto = d ? elegirFoto(clave, d.results ?? []) : null;
     if (foto) return foto;
   }
@@ -81,7 +83,7 @@ async function main() {
   if (!salida) throw new Error('Falta --salida <archivo.ndjson>');
   const api = argumento('api', 'https://vigiiap.iiap.org.co').replace(/\/$/, '');
   const grupos = argumento('grupos', 'aves,insectos,plantas').split(',');
-  const concurrencia = Math.min(8, Math.max(1, Number(argumento('concurrencia', '4'))));
+  const concurrencia = Math.min(12, Math.max(1, Number(argumento('concurrencia', '4'))));
   const parcial = `${salida}.parcial`;
 
   const hechas = new Set();
