@@ -70,6 +70,12 @@ export async function embudos(req, res, next) {
   } catch (err) { next(err); }
 }
 
+export async function comparativa(req, res, next) {
+  try {
+    res.json(await analiticaService.getComparativa(rangoFechas(req)));
+  } catch (err) { next(err); }
+}
+
 export async function flujoNavegacion(req, res, next) {
   try {
     res.json(await analiticaService.getFlujoNavegacion(rangoFechas(req)));

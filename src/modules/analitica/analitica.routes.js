@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   pageview, evento, resumen, paginasTop, dispositivos, fuentesTrafico, entradaSalida, ubicaciones, sesionesRecientes,
-  eventosTop, tiempoReal, embudos, flujoNavegacion,
+  eventosTop, tiempoReal, embudos, flujoNavegacion, comparativa,
 } from './analitica.controller.js';
 import { authenticate, authorize } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
@@ -29,6 +29,7 @@ router.get('/entrada-salida',   authenticate, authorize('admin_sig'), requireMod
 router.get('/ubicaciones',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), ubicaciones);
 router.get('/eventos-top',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), eventosTop);
 router.get('/embudos',          authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), embudos);
+router.get('/comparativa',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), comparativa);
 router.get('/flujo-navegacion', authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), flujoNavegacion);
 router.get('/tiempo-real',      authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), tiempoReal);
 router.get('/sesiones-recientes', authenticate, authorize('admin_sig'), requireModulo('actividad', 'ver'), sesionesRecientes);
