@@ -16,7 +16,7 @@ const foto = (n, hash, autor = 'Ana') => ({ imagen: img(n, hash), autor, editor:
 
 async function limpiar() {
   await query(`TRUNCATE biodiversidad.clasificacion, biodiversidad.territorio_version,
-    biodiversidad.entidad, biodiversidad.conjunto, biodiversidad.conservacion_importacion
+    biodiversidad.entidad, biodiversidad.conjunto, biodiversidad.conservacion_importacion, biodiversidad.especie_foto
     RESTART IDENTITY CASCADE`);
 }
 
@@ -361,7 +361,7 @@ describe('especies() — foto representativa', () => {
     expect(con.municipios).toBe(sin.municipios);
   });
 
-  it('en grupos agregados foto=null y fotos_total=0; con_foto responde 422 «no aplica»', async () => {
+  it('en grupos agregados sin foto cargada foto=null y fotos_total=0; con_foto responde 422 «no aplica»', async () => {
     await sembrar();
     const r = await especies({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25 });
     expect(r.especies.every((e) => e.foto === null && e.fotos_total === 0)).toBe(true);
@@ -369,6 +369,29 @@ describe('especies() — foto representativa', () => {
       .rejects.toThrow(ConsultaInvalida);
     await expect(especies({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25, con_foto: true }))
       .rejects.toMatchObject({ status: 422, message: expect.stringMatching(/no aplica/) });
+  });
+
+  it('en grupos agregados entrega la foto representativa cargada en especie_foto, validada, y fotos_total=1', async () => {
+    await sembrar();
+    await query(
+      `INSERT INTO biodiversidad.especie_foto (especie_clave, imagen, autor, editor, licencia, referencia)
+       VALUES ('2', $1, 'Ana', 'iNaturalist', 'CC-BY', 'https://www.inaturalist.org/photos/2')`, [img(77, 'b')]);
+    const r = await especies({ grupo: 'aves', orden: 'registros', pagina: 1, tamano: 25 });
+    const conFoto = r.especies.find((e) => e.especie_clave === '2');
+    const sinFoto = r.especies.find((e) => e.especie_clave === '1');
+    expect(conFoto).toMatchObject({ fotos_total: 1, foto: { imagen: img(77, 'b'), autor: 'Ana', referencia: 'https://www.inaturalist.org/photos/2' } });
+    expect(Object.keys(conFoto.foto).sort()).toEqual(['autor', 'editor', 'imagen', 'licencia', 'referencia']);
+    expect(sinFoto).toMatchObject({ foto: null, fotos_total: 0 });
+  });
+
+  it('la tabla especie_foto rechaza una URL que no sea de la caché de GBIF o una referencia sin https', async () => {
+    await sembrar();
+    await expect(query(
+      `INSERT INTO biodiversidad.especie_foto (especie_clave, imagen, referencia) VALUES ('1', $1, 'https://x.org/')`, [FOTO_S3.imagen]))
+      .rejects.toThrow(/check/i);
+    await expect(query(
+      `INSERT INTO biodiversidad.especie_foto (especie_clave, imagen, referencia) VALUES ('1', $1, 'http://x.org/')`, [img(5, 'c')]))
+      .rejects.toThrow(/check/i);
   });
 
   it('mantiene intactos los campos previos y no expone coordenadas ni la lista cruda de fotos', async () => {

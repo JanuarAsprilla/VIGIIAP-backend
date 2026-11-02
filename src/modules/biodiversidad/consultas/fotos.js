@@ -28,6 +28,28 @@ export function fotosPublicas(fotos) {
   }));
 }
 
+const RE_CLAVE_ESPECIE = /^[A-Za-z0-9]{1,20}$/;
+const MAX_TEXTO = 300;
+const MAX_REFERENCIA = 500;
+const recortar = (valor) => (typeof valor === 'string' && valor.trim() !== '' ? valor.trim().slice(0, MAX_TEXTO) : null);
+
+/**
+ * Fila de `especie_foto` a partir de una línea del archivo del cargador, o null si no es válida. Lo único que
+ * entra a la tabla: seis campos, la imagen solo de la caché de GBIF y la referencia solo por https (el archivo
+ * no decide nada más, y la tabla repite estas reglas con CHECK).
+ */
+export function filaFotoEspecie(entrada) {
+  if (!esObjeto(entrada)) return null;
+  const { especie_clave: clave, imagen, referencia } = entrada;
+  if (typeof clave !== 'string' || !RE_CLAVE_ESPECIE.test(clave)) return null;
+  if (!coincide(RE_IMAGEN, imagen)) return null;
+  if (!coincide(RE_REFERENCIA, referencia) || referencia.length > MAX_REFERENCIA) return null;
+  return {
+    especie_clave: clave, imagen, autor: recortar(entrada.autor), editor: recortar(entrada.editor),
+    licencia: recortar(entrada.licencia), referencia,
+  };
+}
+
 /** Condición SQL: el registro tiene al menos una foto válida. Recibe los marcadores de los patrones. */
 export function sqlTieneFoto(columna, marcadorImagen, marcadorReferencia) {
   return `(${columna} <> '[]'::jsonb AND EXISTS (
