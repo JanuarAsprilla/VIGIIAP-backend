@@ -1,0 +1,89 @@
+name: Biodiversidad · actualización automática
+
+# Revisa cada día si toca refrescar algo (según los ajustes del Super Administrador) o si alguien lo pidió desde el
+# panel, y ejecuta lo pendiente. También se puede lanzar a mano. Reemplaza al antiguo workflow mensual de fotos.
+#   fotos     foto representativa por especie de los grupos agregados (aves, insectos, plantas)
+#   frescura  cuánto ha crecido GBIF desde el corte cargado (API pública, sin cuenta)
+#   datos     descarga completa con cuenta de GBIF: todavía no existe; si se pide, queda registrada como «omitida»
+#
+# Aislamiento: la API de consulta nunca sale a internet. Lo que se baja de GBIF lo hacen contenedores desechables
+# creados con la imagen del backend pero SIN credenciales ni acceso a la base de datos. Solo `actualizar.js` y el
+# cargador (dentro del contenedor del backend, rol aislado) escriben en la base. Si GBIF falla se registra el error
+# y se reintenta al día siguiente; el cargador nunca borra fotos.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: biodiversidad-datos
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    name: Ejecutar lo pendiente
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Atender pendientes en el servidor
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 170m
+          script_stop: true
+          script: |
+            set -u
+            CLI="docker exec vigiiap_backend node scripts/biodiversidad/actualizar.js"
+            DIR=/root/vigiiap/cargas/auto
+            limpiar() {
+              rm -rf "$DIR"
+              docker exec -u root vigiiap_backend rm -f /tmp/fotos.ndjson /tmp/frescura.json || true
+            }
+            trap limpiar EXIT
+            IMAGEN=$(docker inspect vigiiap_backend --format '{{.Config.Image}}')
+
+            # Contenedor desechable: sin variables de entorno del backend y sin red hacia la base de datos.
+            aislado() { docker run --rm --user root --entrypoint node -v "$DIR":/salida "$IMAGEN" "$@"; }
+
+            # Encadenadas con && a propósito: `set -e` no actúa dentro de una función llamada desde un `if`.
+            tarea_fotos() {
+              aislado scripts/biodiversidad/buscar_fotos_especies.mjs --salida /salida/fotos.ndjson --concurrencia 8 &&
+                docker cp "$DIR/fotos.ndjson" vigiiap_backend:/tmp/fotos.ndjson &&
+                docker exec -u root vigiiap_backend chmod 0644 /tmp/fotos.ndjson &&
+                docker exec vigiiap_backend node scripts/biodiversidad/cargar_fotos_especies.js /tmp/fotos.ndjson
+            }
+            tarea_frescura() {
+              aislado scripts/biodiversidad/frescura_gbif.mjs --salida /salida/frescura.json &&
+                docker cp "$DIR/frescura.json" vigiiap_backend:/tmp/frescura.json &&
+                docker exec -u root vigiiap_backend chmod 0644 /tmp/frescura.json
+            }
+            resumir() { tr -d '\n' | tr -s ' ' | tail -c 450; }
+
+            LISTA=$($CLI pendientes --lineas)
+            if [ -z "$LISTA" ]; then echo "Nada pendiente."; exit 0; fi
+            echo "Pendientes:"; echo "$LISTA"
+            FALLOS=0
+            while read -r ID TAREA; do
+              [ -n "${ID:-}" ] || continue
+              $CLI iniciar "$ID" > /dev/null || continue
+              rm -rf "$DIR"; mkdir -p "$DIR"
+              case "$TAREA" in
+                fotos)
+                  if SALIDA=$(tarea_fotos 2>&1); then $CLI registrar "$ID" ok "$(echo "$SALIDA" | resumir)" > /dev/null
+                  else FALLOS=$((FALLOS + 1)); $CLI registrar "$ID" error "$(echo "$SALIDA" | resumir)" > /dev/null; fi ;;
+                frescura)
+                  if SALIDA=$(tarea_frescura 2>&1) && SALIDA=$($CLI frescura "$ID" /tmp/frescura.json 2>&1); then echo "$SALIDA"
+                  else FALLOS=$((FALLOS + 1)); $CLI registrar "$ID" error "$(echo "$SALIDA" | resumir)" > /dev/null; fi ;;
+                *)
+                  $CLI registrar "$ID" omitida "La descarga completa con cuenta de GBIF todavía no está disponible" > /dev/null ;;
+              esac
+            done <<EOF
+            $LISTA
+            EOF
+            [ "$FALLOS" -eq 0 ] || { echo "Tareas con error: $FALLOS (quedan registradas en el panel)"; exit 1; }

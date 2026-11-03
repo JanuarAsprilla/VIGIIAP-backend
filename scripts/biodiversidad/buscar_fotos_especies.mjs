@@ -34,7 +34,8 @@ export const FALLO = Symbol('fallo');
 async function pedirJson(url, intentos = 4) {
   for (let i = 0; i < intentos; i += 1) {
     try {
-      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'vigiiap-fotos-especies' } });
+      // Con tiempo límite: una conexión colgada no debe dejar a un trabajador esperando para siempre.
+      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'vigiiap-fotos-especies' }, signal: globalThis.AbortSignal.timeout(30_000) });
       if (r.ok) return await r.json();
       if (r.status !== 429 && r.status < 500) return null;
     } catch { /* red: se reintenta */ }
