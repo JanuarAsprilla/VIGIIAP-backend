@@ -1,5 +1,6 @@
 import { getClient } from '../config/database.js';
 import logger from './logger.js';
+import { conBloqueo } from './bloqueoTareas.js';
 
 /**
  * Retención del registro de auditoría: se borran los eventos más antiguos pasados
@@ -38,7 +39,7 @@ export async function purgarAuditoria() {
 
 async function ejecutarSinFallar() {
   try {
-    await purgarAuditoria();
+    await conBloqueo('retencion_auditoria', purgarAuditoria);
   } catch (err) {
     logger.warn(`[retencionAuditoria] Error en la purga: ${err.message}`);
   }
