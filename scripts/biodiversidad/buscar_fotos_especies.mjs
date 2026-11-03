@@ -28,6 +28,9 @@ function argumento(nombre, porDefecto) {
 
 const dormir = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
+/** Respuesta cuando el servicio falla (red, 429, 5xx) tras varios intentos: distinta de «no hay datos» (null). */
+export const FALLO = Symbol('fallo');
+
 async function pedirJson(url, intentos = 4) {
   for (let i = 0; i < intentos; i += 1) {
     try {
@@ -37,13 +40,14 @@ async function pedirJson(url, intentos = 4) {
     } catch { /* red: se reintenta */ }
     await dormir(800 * (i + 1) ** 2);
   }
-  return null;
+  return FALLO;
 }
 
 async function especiesDe(api, grupo) {
   const claves = [];
   for (let pagina = 1; pagina <= 100; pagina += 1) {
     const d = await pedirJson(`${api}/api/v1/biodiversidad/especies?grupo=${grupo}&tamano=100&pagina=${pagina}`);
+    if (d === FALLO) throw new Error(`La API de Vigía no respondió al pedir las especies de ${grupo} (página ${pagina})`);
     if (!d || d.especies.length === 0) break;
     claves.push(...d.especies.map((e) => e.especie_clave));
     if (claves.length >= d.total) break;
@@ -72,6 +76,7 @@ async function fotoDe(clave) {
   for (const pais of ['&country=CO', '']) {
     // El filtro de licencia va en la consulta (GBIF responde mucho más rápido con pocas ocurrencias).
     const d = await pedirJson(`${GBIF}?taxonKey=${encodeURIComponent(clave)}&mediaType=StillImage${LICENCIAS}${pais}&limit=3`);
+    if (d === FALLO) return FALLO;
     const foto = d ? elegirFoto(clave, d.results ?? []) : null;
     if (foto) return foto;
   }
@@ -100,9 +105,19 @@ async function main() {
 
   let hechos = 0;
   let conFoto = 0;
+  let fallos = 0;
+  let seguidos = 0;
   async function trabajador() {
     for (let clave = pendientes.shift(); clave !== undefined; clave = pendientes.shift()) {
       const foto = await fotoDe(clave);
+      if (foto === FALLO) {
+        // GBIF falló: no se anota nada (se reintentará en la próxima ejecución) y, si es una caída, se espera.
+        fallos += 1;
+        seguidos += 1;
+        if (seguidos >= 10) { process.stdout.write('GBIF no responde: espero 60 s\n'); await dormir(60_000); seguidos = 0; }
+        continue;
+      }
+      seguidos = 0;
       appendFileSync(parcial, `${JSON.stringify(foto ?? { especie_clave: String(clave), sin_foto: true })}\n`);
       hechos += 1;
       if (foto) conFoto += 1;
@@ -114,7 +129,7 @@ async function main() {
 
   const lineas = readFileSync(parcial, 'utf8').split('\n').filter(Boolean).filter((l) => !JSON.parse(l).sin_foto);
   writeFileSync(salida, `${lineas.join('\n')}\n`);
-  process.stdout.write(`Listo: ${lineas.length} fotos en ${salida}\n`);
+  process.stdout.write(`Listo: ${lineas.length} fotos en ${salida}${fallos ? `; ${fallos} especies sin resolver por fallos de GBIF (se reintentan al repetir)` : ''}\n`);
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) {
