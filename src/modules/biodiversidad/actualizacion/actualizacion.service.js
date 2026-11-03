@@ -16,7 +16,9 @@ const MAX_RESUMEN_BYTES = 20_000;
 
 const fallo = (status, mensaje, codigo) => Object.assign(new Error(mensaje), { status, codigo });
 
+/** La fila única de ajustes la siembra la migración; si falta (p. ej. un TRUNCATE de usuarios en cascada) se recrea con los valores por defecto. */
 async function leerAjustes() {
+  await query('INSERT INTO bio_actualizacion_ajustes (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
   const { rows: [a] } = await query(
     `SELECT a.modo, a.activa, a.frecuencia_dias, a.credencial_usuario_id, a.actualizado_en,
             u.nombre AS credencial_nombre

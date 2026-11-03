@@ -21,6 +21,7 @@ let ana;
 let beto;
 beforeEach(async () => {
   await query('TRUNCATE bio_actualizacion_ejecuciones, bio_actualizacion_credenciales RESTART IDENTITY');
+  await query('TRUNCATE bio_actualizacion_ajustes'); // otras suites truncan usuarios en cascada: el servicio debe recrear la fila
   await query(`UPDATE bio_actualizacion_ajustes SET modo = 'publico', activa = true, frecuencia_dias = 30, credencial_usuario_id = NULL WHERE id = 1`);
   await query(`DELETE FROM usuarios WHERE email LIKE '${PREFIJO}%'`);
   ana = await crearUsuario('Ana');
