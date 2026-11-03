@@ -31,11 +31,13 @@ const dormir = (ms) => new Promise((r) => { setTimeout(r, ms); });
 /** Respuesta cuando el servicio falla (red, 429, 5xx) tras varios intentos: distinta de «no hay datos» (null). */
 export const FALLO = Symbol('fallo');
 
-async function pedirJson(url, intentos = 4) {
+// Pocos reintentos y tiempo límite corto: unas pocas especies hacen que GBIF tarde decenas de segundos; es mejor
+// saltarlas (quedan sin anotar y se reintentan en la próxima ejecución) que dejar a un trabajador esperándolas.
+async function pedirJson(url, intentos = 2) {
   for (let i = 0; i < intentos; i += 1) {
     try {
       // Con tiempo límite: una conexión colgada no debe dejar a un trabajador esperando para siempre.
-      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'vigiiap-fotos-especies' }, signal: globalThis.AbortSignal.timeout(30_000) });
+      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'vigiiap-fotos-especies' }, signal: globalThis.AbortSignal.timeout(15_000) });
       if (r.ok) return await r.json();
       if (r.status !== 429 && r.status < 500) return null;
     } catch { /* red: se reintenta */ }
