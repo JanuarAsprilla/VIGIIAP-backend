@@ -98,10 +98,10 @@ Todos los temporizadores usan `unref()` y el servidor cierra de forma ordenada c
 
 ### Riesgos conocidos al crecer
 
-Hoy el servicio corre como **una instancia**, y con una instancia todo lo anterior es correcto. Al añadir una segunda instancia aparecen estos puntos:
+Hoy el servicio corre como **una instancia**. Al añadir una segunda aparecen estos puntos; los dos primeros ya están resueltos:
 
-1. **Planificadores duplicados.** Cada instancia ejecutaría el informe semanal y las purgas. Solución prevista: un bloqueo de asesoría en PostgreSQL (`pg_try_advisory_lock`) al inicio de cada tarea, de modo que solo una instancia la ejecute. No requiere infraestructura nueva.
-2. **Lista de tokens revocados en memoria.** Un cierre de sesión atendido por la instancia A no lo vería la instancia B hasta reiniciarse. Solución prevista: consultar la tabla de revocados con una caché de pocos segundos, o publicar la revocación por Redis.
+1. **Planificadores duplicados (resuelto).** Cada tarea programada pasa por `conBloqueo` (`src/utils/bloqueoTareas.js`): un candado de asesoría de PostgreSQL (`pg_try_advisory_xact_lock`) ligado a una transacción de una conexión dedicada. Si otra instancia ya la ejecuta, esta la omite; el candado se libera solo al terminar y también si el proceso muere, así que no puede quedar tomado. Aplica al informe semanal, las dos purgas de retención y el autoajuste del límite de tráfico. En el informe semanal el estado del último envío se relee **dentro** del candado, de modo que una segunda instancia que llega después ve que ya se envió y no lo repite. No requiere infraestructura nueva. (La cola de correos ya era segura por sí sola, gracias a `SKIP LOCKED`.)
+2. **Lista de tokens revocados en memoria (resuelto).** Cada instancia sincroniza con la tabla `revoked_tokens` cada 15 s (`sincronizarRevocados`), pidiendo solo los revocados de los últimos 2 minutos, y olvida los que ya vencieron. Un cierre de sesión atendido por una instancia surte efecto en las demás en **hasta unos 15 segundos**; ese es el margen aceptado, a cambio de no consultar la base en cada petición. Si la base falla, cada instancia conserva lo que ya tenía.
 3. **Correo con reintentos (resuelto).** Antes cada envío creaba su transporte SMTP y, si fallaba, el correo se perdía. Ahora:
    - Se reutiliza una sola conexión con *pool* mientras la configuración no cambie.
    - `send` intenta enviar de inmediato (sin añadir latencia) y **solo si falla** por algo temporal deja el correo en `correos_pendientes`. Un envío correcto nunca se guarda.
@@ -139,5 +139,6 @@ Cuándo ejecutarlas: antes de cada release que toque consultas o caché, y tras 
 | Alta | Kit de pruebas de carga y línea base | Hecho |
 | Media | Analítica agregada en SQL + caché local de administración | Hecho |
 | Media | Transporte SMTP reutilizable y cola *outbox* de correos | Hecho |
-| Antes de escalar | Bloqueo de asesoría en planificadores y revocación compartida de tokens | Pendiente |
+| Antes de escalar | Bloqueo de asesoría en planificadores y revocación compartida de tokens | Hecho |
+| Antes de escalar | Contadores del limitador de tráfico compartidos entre instancias (hoy son en memoria por instancia, así que el límite efectivo se multiplicaría por el número de instancias, también el de intentos de inicio de sesión) | Pendiente |
 | Baja | Exportaciones por cursor | Pendiente |
