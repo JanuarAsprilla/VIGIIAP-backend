@@ -27,7 +27,7 @@ async function contar(filtro, intentos = 4) {
   const q = `${filtro}&country=CO&hasCoordinate=true&year=2000,${anio}&geometry=${encodeURIComponent(CAJA)}&limit=0`;
   for (let i = 0; i < intentos; i += 1) {
     try {
-      const r = await fetch(`${GBIF}?${q}`, { headers: { accept: 'application/json', 'user-agent': 'vigiiap-frescura' } });
+      const r = await fetch(`${GBIF}?${q}`, { headers: { accept: 'application/json', 'user-agent': 'vigiiap-frescura' }, signal: globalThis.AbortSignal.timeout(60_000) });
       if (r.ok) {
         const { count } = await r.json();
         if (Number.isInteger(count) && count >= 0) return count;
