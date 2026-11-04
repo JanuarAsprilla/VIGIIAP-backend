@@ -16,8 +16,7 @@ vi.mock('../src/config/database.js', () => ({
   getClient: vi.fn(),
 }));
 vi.mock('../src/modules/auth/twoFactorBloqueo.js', () => ({
-  exigirCuentaSinBloqueo:      vi.fn().mockResolvedValue(undefined),
-  registrarFalloSegundoFactor: vi.fn().mockResolvedValue({ bloqueada: false, intentos: 1 }),
+  reservarIntentoSegundoFactor: vi.fn().mockResolvedValue({ bloqueaAhora: false }),
   limpiarFallosSegundoFactor:  vi.fn().mockResolvedValue(undefined),
 }));
 

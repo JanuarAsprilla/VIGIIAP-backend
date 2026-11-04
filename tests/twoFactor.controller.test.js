@@ -19,8 +19,7 @@ vi.mock('../src/modules/auth/auth.service.js', () => ({
 }));
 
 vi.mock('../src/modules/auth/twoFactorBloqueo.js', () => ({
-  exigirCuentaSinBloqueo:       vi.fn().mockResolvedValue(undefined),
-  registrarFalloSegundoFactor:  vi.fn().mockResolvedValue({ bloqueada: false, intentos: 1 }),
+  reservarIntentoSegundoFactor: vi.fn().mockResolvedValue({ bloqueaAhora: false }),
   limpiarFallosSegundoFactor:   vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -35,7 +34,7 @@ vi.mock('../src/utils/logger.js', () => ({
 import { query } from '../src/config/database.js';
 import * as tfService from '../src/modules/auth/twoFactor.service.js';
 import { issueTokenPair } from '../src/modules/auth/auth.service.js';
-import { exigirCuentaSinBloqueo, registrarFalloSegundoFactor, limpiarFallosSegundoFactor } from '../src/modules/auth/twoFactorBloqueo.js';
+import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from '../src/modules/auth/twoFactorBloqueo.js';
 import { setup, verify, disable, confirm } from '../src/modules/auth/twoFactor.controller.js';
 
 process.env.JWT_SECRET = 'test-secret-2fa-ctrl';
@@ -270,44 +269,47 @@ describe('confirm() — bloqueo por cuenta del segundo factor', () => {
   const pedir = () => ({ cookies: { vigiiap_2fa_temp: make2faToken() }, body: { code: '123456' }, ip: '1.1.1.1', headers: {} });
   beforeEach(() => {
     vi.clearAllMocks();
-    exigirCuentaSinBloqueo.mockResolvedValue(undefined);
-    registrarFalloSegundoFactor.mockResolvedValue({ bloqueada: false, intentos: 1 });
+    reservarIntentoSegundoFactor.mockResolvedValue({ bloqueaAhora: false });
   });
 
-  it('una cuenta bloqueada no llega a probar el código', async () => {
+  it('una cuenta bloqueada o desactivada no llega a probar el código', async () => {
     const err = Object.assign(new Error('bloqueada'), { status: 429, code: 'ACCOUNT_LOCKED' });
-    exigirCuentaSinBloqueo.mockRejectedValueOnce(err);
+    reservarIntentoSegundoFactor.mockRejectedValueOnce(err);
     const next = vi.fn();
     await confirm(pedir(), mockRes(), next);
     expect(next).toHaveBeenCalledWith(err);
     expect(tfService.verifyTotpOrBackup).not.toHaveBeenCalled();
   });
 
-  it('un código incorrecto cuenta como intento fallido y responde 401', async () => {
+  it('el intento se reserva ANTES de verificar el código', async () => {
+    const orden = [];
+    reservarIntentoSegundoFactor.mockImplementationOnce(async () => { orden.push('reserva'); return { bloqueaAhora: false }; });
+    tfService.verifyTotpOrBackup.mockImplementationOnce(async () => { orden.push('verifica'); return true; });
+    vi.mocked(query).mockResolvedValueOnce({ rows: [{ id: 'user-uuid', nombre: 'U', email: 'u@x.co', rol: 'investigador', totp_enabled: true }] });
+    issueTokenPair.mockResolvedValueOnce({ accessToken: 'a', refreshToken: 'r' });
+    await confirm(pedir(), mockRes(), vi.fn());
+    expect(orden).toEqual(['reserva', 'verifica']);
+  });
+
+  it('un código incorrecto responde 401 y no emite sesión', async () => {
     const err = Object.assign(new Error('inválido'), { status: 401 });
     tfService.verifyTotpOrBackup.mockRejectedValueOnce(err);
     const next = vi.fn();
     await confirm(pedir(), mockRes(), next);
-    expect(registrarFalloSegundoFactor).toHaveBeenCalledWith('user-uuid');
     expect(next).toHaveBeenCalledWith(err);
     expect(issueTokenPair).not.toHaveBeenCalled();
+    expect(limpiarFallosSegundoFactor).not.toHaveBeenCalled();
   });
 
-  it('al alcanzar el umbral responde 429, borra el token temporal y no emite sesión', async () => {
+  it('si el intento fallido agota el cupo responde 429, borra el token temporal y no emite sesión', async () => {
+    reservarIntentoSegundoFactor.mockResolvedValueOnce({ bloqueaAhora: true });
     tfService.verifyTotpOrBackup.mockRejectedValueOnce(Object.assign(new Error('inválido'), { status: 401 }));
-    registrarFalloSegundoFactor.mockResolvedValueOnce({ bloqueada: true, intentos: 0 });
     const res = mockRes();
     await confirm(pedir(), res, vi.fn());
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ACCOUNT_LOCKED' }));
     expect(res.clearCookie).toHaveBeenCalledWith('vigiiap_2fa_temp', expect.anything());
     expect(issueTokenPair).not.toHaveBeenCalled();
-  });
-
-  it('un error que no es de código incorrecto no cuenta como intento', async () => {
-    tfService.verifyTotpOrBackup.mockRejectedValueOnce(new Error('BD caída'));
-    await confirm(pedir(), mockRes(), vi.fn());
-    expect(registrarFalloSegundoFactor).not.toHaveBeenCalled();
   });
 
   it('un código correcto limpia el contador', async () => {
