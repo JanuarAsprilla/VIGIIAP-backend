@@ -223,7 +223,7 @@ real, auditoría de dependencias y verificación de la imagen Docker.
 - **Migraciones:** son consecutivas, idempotentes y nunca se editan una vez fusionadas. Se aplican en orden alfabético por nombre.
 - **Cierre ordenado:** ante `SIGTERM`/`SIGINT` el servicio termina las peticiones en vuelo y cierra el pool de conexiones.
 - **Registro:** los eventos relevantes quedan en la trazabilidad (administración) y los errores en el registro de errores del panel.
-- **Varias instancias:** las tareas programadas se ejecutan en una sola instancia a la vez (candado en PostgreSQL) y los cierres de sesión se propagan entre instancias en unos 15 segundos. Antes de desplegar más de una instancia falta compartir los contadores del limitador de tráfico, que hoy son por instancia (ver el documento de rendimiento).
+- **Varias instancias:** las tareas programadas se ejecutan en una sola instancia a la vez (candado en PostgreSQL) y los cierres de sesión se propagan entre instancias en unos 15 segundos. Los contadores del limitador de tráfico se comparten entre instancias a través de Redis (si Redis no está disponible, cada instancia cuenta por su cuenta y sigue limitando). Más detalle en el documento de rendimiento.
 
 ---
 
