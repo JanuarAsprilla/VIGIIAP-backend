@@ -31,6 +31,7 @@ function escHtml(value) {
 // definidas, anulan la config de BD por completo — vía de escape operativa
 // para una emergencia sin tocar el panel. ────────────────────────────────────
 import { query as dbQuery } from '../config/database.js';
+import { cifrarSecretoSmtp, descifrarSecretoSmtp, estaCifradaLaClaveSmtp, cifradoSmtpDisponible } from './smtpSecret.js';
 
 let _smtpCache = null;
 let _smtpCacheAt = 0;
@@ -69,9 +70,14 @@ async function getSmtpConfig() {
           port:   Number(cfg.mail_port) || 587,
           secure: cfg.mail_secure === 'true',
           user:   cfg.mail_user,
-          pass:   cfg.mail_pass,
+          pass:   descifrarSecretoSmtp(cfg.mail_pass),
         }
       : null;
+    // Contraseña antigua en claro y ya hay clave de cifrado: se re-cifra sola, sin intervención.
+    if (cfg.mail_pass && !estaCifradaLaClaveSmtp(cfg.mail_pass) && cifradoSmtpDisponible()) {
+      dbQuery("UPDATE configuracion SET valor = $1 WHERE clave = 'mail_pass' AND valor = $2", [cifrarSecretoSmtp(cfg.mail_pass), cfg.mail_pass])
+        .catch((err) => logger.warn(`[mailer] No se pudo cifrar la contraseña SMTP guardada: ${err.message}`));
+    }
   } catch {
     _smtpCache = null; // BD no disponible — no se envía, pero tampoco rompe el flujo
   }
