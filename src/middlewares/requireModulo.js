@@ -7,6 +7,11 @@ import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
  * @param {string} clave - una clave de MODULOS (admin/modulos.service.js)
  * @param {'ver'|'editar'} accion
  */
+export function requireModuloSiAdmin(clave, accion = 'ver') {
+  const guarda = requireModulo(clave, accion);
+  return (req, res, next) => (req.user?.rol === 'admin_sig' ? guarda(req, res, next) : next());
+}
+
 export function requireModulo(clave, accion = 'ver') {
   return async (req, res, next) => {
     try {
