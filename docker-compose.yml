@@ -23,7 +23,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     env_file: .env
     depends_on:
       db:
@@ -63,7 +63,7 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"       # API S3
+      - "127.0.0.1:9000:9000"       # API S3
       - "127.0.0.1:9001:9001" # consola web — solo localhost, usar túnel SSH para administrar
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]

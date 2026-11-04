@@ -250,3 +250,43 @@ describe('consultarCapaDeGeovisor — popup por capa', () => {
     expect(adjuntarFichasAFeatures).not.toHaveBeenCalled();
   });
 });
+
+describe('proxyWmsDeGeovisor — los parámetros se leen sin distinguir mayúsculas (como GeoServer)', () => {
+  const permitida = 't_15_geologia:unidades';
+  const prohibida = 't_32_areas_reglamentacion_especial:resguardos';
+  const geovisor = () => vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisor()] });
+
+  it.each(['LAYERS', 'Layers', 'lAyErS'])('REGRESIÓN: «%s» con una capa prohibida no evita la lista de capas permitidas', async (clave) => {
+    geovisor();
+    const params = new URLSearchParams({ [clave]: prohibida });
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 403 });
+    expect(geoserver.proxyWms).not.toHaveBeenCalled();
+  });
+
+  it('rechaza claves repetidas o con variantes de mayúsculas (layers=ok&LAYERS=prohibida)', async () => {
+    geovisor();
+    const params = new URLSearchParams(`layers=${permitida}&LAYERS=${prohibida}`);
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 400, code: 'PARAMETRO_REPETIDO' });
+    expect(geoserver.proxyWms).not.toHaveBeenCalled();
+  });
+
+  it('al conector solo llegan claves en minúscula', async () => {
+    geovisor();
+    vi.mocked(geoserver.proxyWms).mockResolvedValueOnce({ status: 200 });
+    await proxyWmsDeGeovisor('geologia-choco', new URLSearchParams({ LAYERS: permitida, FORMAT: 'image/png' }), undefined, null);
+    const enviado = vi.mocked(geoserver.proxyWms).mock.calls[0][1];
+    expect([...enviado.keys()]).toEqual(['layers', 'format']);
+  });
+
+  it('limita el tamaño del mapa pedido y exige un bbox de cuatro números', async () => {
+    for (const extra of [{ width: '99999' }, { height: '5000' }, { width: 'abc' }, { bbox: '1,2,3' }, { bbox: 'a,b,c,d' }]) {
+      geovisor();
+      const params = new URLSearchParams({ layers: permitida, ...extra });
+      await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 400 });
+    }
+    expect(geoserver.proxyWms).not.toHaveBeenCalled();
+    geovisor();
+    vi.mocked(geoserver.proxyWms).mockResolvedValueOnce({ status: 200 });
+    await expect(proxyWmsDeGeovisor('geologia-choco', new URLSearchParams({ layers: permitida, width: '1024', height: '768', bbox: '-77.5,5.1,-76.2,6.0' }), undefined, null)).resolves.toBeDefined();
+  });
+});

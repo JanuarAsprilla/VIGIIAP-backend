@@ -430,9 +430,38 @@ export async function listarWorkspacesDeConexion(conexionId) {
   return [...workspacesPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
+const MAX_LADO_WMS_PX = 2048;
+const parametroInvalido = (mensaje, code) => Object.assign(new Error(mensaje), { status: 400, code });
+
+/**
+ * GeoServer lee las claves KVP sin distinguir mayúsculas (LAYERS == layers), pero URLSearchParams sí las
+ * distingue: validar `layers` y reenviar `LAYERS` permitía saltarse la lista de capas. Aquí se unifica a
+ * minúsculas UNA vez, se rechazan claves repetidas y se acota el tamaño del mapa; la misma consulta
+ * normalizada es la que se valida y la que se reenvía.
+ */
+function normalizarQueryWms(queryParams) {
+  const normalizada = new URLSearchParams();
+  for (const [clave, valor] of queryParams.entries()) {
+    const minuscula = clave.toLowerCase();
+    if (normalizada.has(minuscula)) throw parametroInvalido(`El parámetro "${minuscula}" está repetido`, 'PARAMETRO_REPETIDO');
+    normalizada.set(minuscula, valor);
+  }
+  for (const lado of ['width', 'height']) {
+    if (!normalizada.has(lado)) continue;
+    const px = Number(normalizada.get(lado));
+    if (!Number.isInteger(px) || px < 1 || px > MAX_LADO_WMS_PX) throw parametroInvalido(`"${lado}" debe ser un entero entre 1 y ${MAX_LADO_WMS_PX}`, 'TAMANO_INVALIDO');
+  }
+  if (normalizada.has('bbox')) {
+    const partes = normalizada.get('bbox').split(',');
+    if (partes.length !== 4 || partes.some((n) => n.trim() === '' || !Number.isFinite(Number(n)))) throw parametroInvalido('"bbox" debe tener cuatro números', 'BBOX_INVALIDO');
+  }
+  return normalizada;
+}
+
 /** Proxy WMS GetMap de un geovisor -- resuelve su conexión, valida la(s) capa(s) pedidas y delega al conector. */
-export async function proxyWmsDeGeovisor(slug, queryParams, geometriaFiltro, user) {
+export async function proxyWmsDeGeovisor(slug, consultaCruda, geometriaFiltro, user) {
   const geovisor = await getBySlug(slug, user);
+  const queryParams = normalizarQueryWms(consultaCruda);
   const capasPedidas = (queryParams.get('layers') ?? '').split(',').map((c) => c.trim()).filter(Boolean);
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
   capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId, restricciones));
