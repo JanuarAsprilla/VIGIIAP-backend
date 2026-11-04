@@ -113,7 +113,7 @@ Hoy el servicio corre como **una instancia**. Al añadir una segunda aparecen es
 
    Garantía: «al menos una vez» sin añadir un servicio externo. Un SMTP caído ya no pierde correos ni demora el registro, la recuperación de contraseña o las alertas.
 5. **Trabajo pesado en el hilo del servidor.** El procesamiento de imágenes y el cifrado de contraseñas usan el pool de hilos de libuv (4 por defecto). Si la carga de subidas crece, subir `UV_THREADPOOL_SIZE` o mover el trabajo a un proceso aparte.
-6. **Exportaciones en memoria.** Las exportaciones cargan hasta 10 000 filas. Para volúmenes mayores, transmitirlas por bloques (cursor) en lugar de armarlas completas.
+6. **Exportaciones en memoria.** *(Resuelto para el CSV de actividad y descargas.)* Se transmiten por bloques de 2 000 filas con paginación por llave `(fecha, id)` y contrapresión, hasta 500 000 filas, sin armar el archivo en memoria. El JSON y las tablas pequeñas (usuarios, solicitudes) siguen limitados a 10 000 filas.
 
 Con los puntos 1 a 4 resueltos, el servicio ya puede desplegarse en varias instancias. Los puntos 5 y 6 se atienden cuando el volumen lo pida.
 
@@ -142,4 +142,4 @@ Cuándo ejecutarlas: antes de cada release que toque consultas o caché, y tras 
 | Media | Transporte SMTP reutilizable y cola *outbox* de correos | Hecho |
 | Antes de escalar | Bloqueo de asesoría en planificadores y revocación compartida de tokens | Hecho |
 | Antes de escalar | Contadores del limitador de tráfico compartidos entre instancias (Redis, con caída a memoria si no está disponible) | Hecho |
-| Baja | Exportaciones por cursor | Pendiente |
+| Baja | Exportaciones por cursor | Hecho |
