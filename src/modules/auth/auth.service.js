@@ -405,12 +405,20 @@ function perfilToRol(perfil) {
   return 'publico';
 }
 
+/**
+ * Cuando el correo ya existe el registro no crea nada, pero debe tardar lo mismo que uno real (el hash de la
+ * contraseña domina el tiempo): así la respuesta no delata si el correo estaba registrado.
+ */
+export async function igualarTiempoDeRegistro(password) {
+  await bcrypt.hash(password, SALT_ROUNDS);
+}
+
 export async function register(data, { ip, userAgent } = {}) {
   const { nombre, email, password, institucion, motivo, tipoAcceso, perfil } = data;
 
   const existing = await query('SELECT id, email_verified, creado_en FROM usuarios WHERE email = $1', [email.toLowerCase()]);
   if (existing.rows[0]?.email_verified) {
-    throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
+    throw Object.assign(new Error('El email ya está registrado'), { status: 409, code: 'EMAIL_ALREADY_REGISTERED' });
   }
   // REGRESIÓN (account takeover / carrera de reclamo, hallazgo de la
   // revisión automática sobre el primer intento de este mismo fix): no
