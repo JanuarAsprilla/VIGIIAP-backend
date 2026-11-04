@@ -4,9 +4,21 @@ import { ConsultaInvalida } from '../biodiversidad.errores.js';
 const LIMITE_CONSULTA_MS = 5000;
 export const LOTE_ACTIVO = `activo AND estado = 'completo'`;
 
+/** Pool aislado del Observatorio; si está saturado responde 503 en vez de colgar o dejar sin BD al resto. */
+async function conectar() {
+  try {
+    return await getClient('biodiversidad');
+  } catch (err) {
+    if (/timeout exceeded when trying to connect/i.test(err.message)) {
+      throw new ConsultaInvalida('El Observatorio está muy solicitado. Intenta de nuevo en unos segundos.', 503);
+    }
+    throw err;
+  }
+}
+
 /** Ejecuta `fn` en una transacción de solo lectura con tope de tiempo: una consulta pesada no acapara la BD. */
 export async function conLimite(fn) {
-  const client = await getClient();
+  const client = await conectar();
   try {
     await client.query('BEGIN READ ONLY');
     await client.query(`SET LOCAL statement_timeout = ${LIMITE_CONSULTA_MS}`);
