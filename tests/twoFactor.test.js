@@ -15,6 +15,11 @@ vi.mock('../src/config/database.js', () => ({
   query: vi.fn().mockResolvedValue({ rows: [] }),
   getClient: vi.fn(),
 }));
+vi.mock('../src/modules/auth/twoFactorBloqueo.js', () => ({
+  reservarIntentoSegundoFactor: vi.fn().mockResolvedValue({ bloqueaAhora: false }),
+  limpiarFallosSegundoFactor:  vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('qrcode', () => ({
   default: { toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,fake') },
 }));

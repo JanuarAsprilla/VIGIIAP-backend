@@ -247,10 +247,15 @@ export async function login(email, password, ip, userAgent) {
     throw Object.assign(new Error(msg), { status: 401 });
   }
 
-  // Login exitoso — resetear contador de intentos y registrar último acceso
+  // Login exitoso — resetear contador de intentos y registrar último acceso. Con 2FA activo el contador NO se
+  // reinicia aquí (si no, quien conoce la contraseña lo borraría entre intentos de código): lo limpia el 2FA.
   await query(
-    'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL, last_login_at = NOW() WHERE id = $1',
-    [user.id]
+    `UPDATE usuarios
+     SET intentos_fallidos = CASE WHEN $2 THEN intentos_fallidos ELSE 0 END,
+         bloqueado_hasta   = CASE WHEN $2 THEN bloqueado_hasta ELSE NULL END,
+         last_login_at = NOW()
+     WHERE id = $1`,
+    [user.id, Boolean(user.totp_enabled)]
   );
 
   if (!user.email_verified) {
