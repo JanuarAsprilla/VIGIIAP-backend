@@ -14,7 +14,7 @@ export const updatePerfilSchema = z.object({
 
 export const updateRolSchema = z.object({
   rol:    z.enum(ROLES, { message: `Rol debe ser uno de: ${ROLES.join(', ')}` }),
-  activo: z.boolean().optional().default(true),
+  activo: z.boolean().optional(), // sin valor por defecto: cambiar solo el rol no debe reactivar una cuenta desactivada
 });
 
 import { strongPassword } from '../../utils/passwordPolicy.js';

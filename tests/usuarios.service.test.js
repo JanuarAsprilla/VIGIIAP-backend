@@ -131,6 +131,26 @@ describe('usuarios.service → getAll()', () => {
 describe('usuarios.service → updateRol()', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('si no se envía `activo`, el UPDATE conserva el estado actual (no reactiva una cuenta desactivada)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'publico' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'investigador', activo: false }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await updateRol('usr-uuid-1', 'investigador', undefined);
+    const [sql, params] = query.mock.calls[1];
+    expect(sql).toMatch(/activo=COALESCE\(\$2, activo\)/);
+    expect(params).toEqual(['investigador', null, 'usr-uuid-1']);
+  });
+
+  it('desactivar una cuenta revoca sus sesiones de renovación', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'investigador', activo: false }] })
+      .mockResolvedValue({ rows: [] });
+    await updateRol('usr-uuid-1', 'investigador', false);
+    expect(query.mock.calls.some(([sql]) => /refresh_tokens/.test(String(sql)))).toBe(true);
+  });
+
   it('actualiza el rol cuando es válido', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ ...USER, rol: 'publico' }] })   // SELECT: target check (no super_admin)

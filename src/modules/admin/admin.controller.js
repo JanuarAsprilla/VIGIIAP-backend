@@ -445,8 +445,8 @@ export async function batchUsuarios(req, res, next) {
     if (targets.some((u) => u.rol === 'super_admin')) {
       return res.status(403).json({ error: 'No se puede operar sobre cuentas super_admin en batch' });
     }
-    // admin_sig no puede desactivar ni cambiar rol de otros admin_sig
-    if (req.user.rol !== 'super_admin' && ['desactivar', 'cambiar-rol'].includes(accion)) {
+    // admin_sig no puede activar, desactivar ni cambiar rol de otros admin_sig
+    if (req.user.rol !== 'super_admin' && ['activar', 'desactivar', 'cambiar-rol'].includes(accion)) {
       if (targets.some((u) => u.rol === 'admin_sig')) {
         return res.status(403).json({ error: 'No puedes operar sobre otros admin_sig' });
       }
@@ -463,8 +463,8 @@ export async function batchUsuarios(req, res, next) {
 
     const result = await query(sql, params);
 
-    // Revocar refresh tokens cuando cambia el rol
-    if (accion === 'cambiar-rol') {
+    // Revocar refresh tokens cuando cambia el rol o se desactiva la cuenta
+    if (accion === 'cambiar-rol' || accion === 'desactivar') {
       const { revokeAllRefreshTokens } = await import('../auth/auth.service.js');
       await Promise.allSettled(ids.map((id) => revokeAllRefreshTokens(id)));
     }

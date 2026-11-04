@@ -298,6 +298,23 @@ describe('admin.service → actualizarUsuario()', () => {
     expect(result.rol).toBe('tecnico');
   });
 
+  it('desactivar la cuenta (sin cambiar el rol) revoca sus sesiones de renovación; activarla no', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'investigador', activo: false }] })
+      .mockResolvedValue({ rows: [] });
+    await actualizarUsuario({ id: 'usr-uuid-1', activo: false, ...ADMIN_CTX });
+    expect(query.mock.calls.some(([sql]) => /refresh_tokens/.test(String(sql)))).toBe(true);
+
+    query.mockClear();
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USR, rol: 'investigador', activo: true }] })
+      .mockResolvedValue({ rows: [] });
+    await actualizarUsuario({ id: 'usr-uuid-1', activo: true, ...ADMIN_CTX });
+    expect(query.mock.calls.some(([sql]) => /refresh_tokens/.test(String(sql)))).toBe(false);
+  });
+
   it('al cambiar el rol, limpia rol_solicitado — resuelve cualquier solicitud pendiente de la cuenta', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ rol: 'publico' }] })

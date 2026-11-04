@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { Readable } from 'node:stream';
 import app from '../src/app.js';
+import * as db from '../src/config/database.js';
 
 vi.mock('../src/modules/solicitudes/solicitudes.service.js', () => ({
   getAll:         vi.fn(),
@@ -325,6 +326,31 @@ describe('GET /api/solicitudes/:id/archivos', () => {
       .set('Authorization', `Bearer ${invToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('lectura de una solicitud y sus archivos — admin_sig sin el módulo', () => {
+  beforeEach(() => vi.clearAllMocks());
+  // El resto del archivo da permiso total al admin; aquí no tiene ningún módulo y luego se restaura.
+  const sinModulo = () => vi.mocked(db.query).mockImplementation(() => Promise.resolve({ rows: [] }));
+  afterEach(() => vi.mocked(db.query).mockImplementation((sql) => (
+    /admin_permisos_modulo/.test(sql) ? Promise.resolve({ rows: [{ puede_ver: true, puede_editar: true }] }) : Promise.resolve({ rows: [] })
+  )));
+
+  it('403 en los archivos de una solicitud ajena si el admin no tiene el módulo «solicitudes»', async () => {
+    sinModulo();
+    const res = await request(app).get('/api/solicitudes/uuid-sol-1/archivos').set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(403);
+    const dl = await request(app).get('/api/solicitudes/uuid-sol-1/archivos/uuid-archivo-1/download').set('Authorization', `Bearer ${adminToken}`);
+    expect(dl.status).toBe(403);
+  });
+
+  it('el dueño (rol no administrador) sigue accediendo sin depender de módulos', async () => {
+    sinModulo();
+    const { getArchivos } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    getArchivos.mockResolvedValue([]);
+    const res = await request(app).get('/api/solicitudes/uuid-sol-1/archivos').set('Authorization', `Bearer ${invToken}`);
+    expect(res.status).toBe(200);
   });
 });
 
