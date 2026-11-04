@@ -20,6 +20,7 @@ import { snapshotAndReset } from './trafficMonitor.js';
 import { clearDynamicConfigCache } from '../config/dynamicConfig.js';
 import { registrarAuditoria } from './auditLog.js';
 import logger from './logger.js';
+import { conBloqueo } from './bloqueoTareas.js';
 
 const CHECK_INTERVAL_MS      = 60 * 60 * 1000; // 1 hora
 const MIN_SAMPLE_SIZE        = 500;   // menos que esto en la ventana: no hay señal confiable, no se decide nada
@@ -77,10 +78,22 @@ export async function runRateLimitAutoScaleCheck() {
   }
 }
 
+/**
+ * Con varias instancias solo una ajusta el límite en cada ciclo; si no, cada una subiría un 20 %.
+ * Las que no lo tienen conservan su muestra de tráfico y la entregarán si les toca decidir.
+ */
+async function ajustarConBloqueo() {
+  try {
+    await conBloqueo('autoajuste_limite', () => runRateLimitAutoScaleCheck());
+  } catch (err) {
+    logger.warn(`[rateLimitAutoScaler] No se pudo revisar el límite: ${err.message}`);
+  }
+}
+
 /** Inicia el poll periódico. Llamar una vez al arrancar el servidor. */
 export function startRateLimitAutoScaler(intervalMs = CHECK_INTERVAL_MS) {
   stopRateLimitAutoScaler();
-  pollHandle = setInterval(() => runRateLimitAutoScaleCheck(), intervalMs);
+  pollHandle = setInterval(ajustarConBloqueo, intervalMs);
   pollHandle.unref?.();
   return pollHandle;
 }

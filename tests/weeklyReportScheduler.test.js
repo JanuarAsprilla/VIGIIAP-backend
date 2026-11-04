@@ -17,6 +17,11 @@ vi.mock('../src/utils/mailer.js', () => ({
   notifyReporteSemanal: vi.fn(),
 }));
 
+// El candado entre instancias se prueba en bloqueoTareas.test.js; aquí siempre se obtiene.
+vi.mock('../src/utils/bloqueoTareas.js', () => ({
+  conBloqueo: async (_nombre, tarea) => ({ ejecutada: true, resultado: await tarea() }),
+}));
+
 import { query } from '../src/config/database.js';
 import { getReporte, getAdminEmails } from '../src/modules/admin/admin.service.js';
 import { notifyReporteSemanal } from '../src/utils/mailer.js';

@@ -12,6 +12,7 @@ import { query } from '../config/database.js';
 import { getReporte, getAdminEmails } from '../modules/admin/admin.service.js';
 import { notifyReporteSemanal } from './mailer.js';
 import logger from './logger.js';
+import { conBloqueo } from './bloqueoTareas.js';
 
 const CHECK_INTERVAL_MS   = 60 * 60 * 1000;
 const ENVIO_DIA_SEMANA    = 1; // lunes — Date#getUTCDay(): 0=domingo
@@ -77,10 +78,22 @@ export async function runWeeklyReportCheck(now = new Date()) {
   }
 }
 
+/**
+ * Con varias instancias solo una revisa a la vez. El estado (último envío) se relee dentro del
+ * candado, así la que llega segunda ve que la primera ya envió y no repite el informe.
+ */
+async function revisarConBloqueo() {
+  try {
+    await conBloqueo('reporte_semanal', () => runWeeklyReportCheck());
+  } catch (err) {
+    logger.warn(`[weeklyReportScheduler] No se pudo revisar el reporte semanal: ${err.message}`);
+  }
+}
+
 /** Inicia el poll periódico. Llamar una vez al arrancar el servidor. */
 export function startWeeklyReportScheduler(intervalMs = CHECK_INTERVAL_MS) {
   stopWeeklyReportScheduler();
-  pollHandle = setInterval(() => runWeeklyReportCheck(), intervalMs);
+  pollHandle = setInterval(revisarConBloqueo, intervalMs);
   pollHandle.unref?.();
   return pollHandle;
 }

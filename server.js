@@ -3,7 +3,7 @@ import app from './src/app.js';
 import { connectDB } from './src/config/database.js';
 import pool from './src/config/database.js';
 import { runMigrations } from './db/migrate.js';
-import { loadBlacklist } from './src/utils/tokenBlacklist.js';
+import { loadBlacklist, startSincronizacionRevocados, stopSincronizacionRevocados } from './src/utils/tokenBlacklist.js';
 import { loadMaintenanceState, startMaintenanceStatePolling, stopMaintenanceStatePolling } from './src/middlewares/maintenanceMode.js';
 import { startRetencionScheduler, stopRetencionScheduler } from './src/utils/retencionDatos.js';
 import { startRetencionAuditoria, stopRetencionAuditoria } from './src/utils/retencionAuditoria.js';
@@ -135,6 +135,7 @@ async function start() {
   await connectDB();
   await runMigrations();
   await loadBlacklist();
+  startSincronizacionRevocados();
   await loadMaintenanceState();
   startMaintenanceStatePolling();
   await loadWeeklyReportState();
@@ -166,6 +167,7 @@ async function start() {
     stopRateLimitAutoScaler();
     stopRetencionAuditoria();
     stopOutboxCorreos();
+    stopSincronizacionRevocados();
     server.close(async () => {
       try {
         await pool.end();

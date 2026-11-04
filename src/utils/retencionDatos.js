@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import logger from './logger.js';
+import { conBloqueo } from './bloqueoTareas.js';
 
 /**
  * Retención de los datos personales de la analítica: la IP de cada sesión se borra pasado un
@@ -33,7 +34,7 @@ export async function purgarAnalitica() {
 
 async function ejecutarSinFallar() {
   try {
-    await purgarAnalitica();
+    await conBloqueo('retencion_analitica', purgarAnalitica);
   } catch (err) {
     logger.warn(`[retencionDatos] Error en la purga: ${err.message}`);
   }

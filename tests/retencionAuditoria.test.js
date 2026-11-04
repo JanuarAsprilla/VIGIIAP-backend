@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/config/database.js', () => ({ getClient: vi.fn() }));
+// El candado entre instancias se prueba en bloqueoTareas.test.js; aquí siempre se obtiene.
+vi.mock('../src/utils/bloqueoTareas.js', () => ({
+  conBloqueo: async (_nombre, tarea) => ({ ejecutada: true, resultado: await tarea() }),
+}));
 vi.mock('../src/utils/logger.js', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 import { getClient } from '../src/config/database.js';
