@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { loginSchema, registerSchema, recoverSchema, resetPasswordSchema, completarPerfilSchema } from './auth.schema.js';
 import * as authService from './auth.service.js';
 import {
@@ -7,6 +8,7 @@ import {
   notifyAdminUsuarioVerificado,
   notifyRecuperarPassword,
   notifyAdminSolicitudRolOAuth,
+  notifyIntentoRegistroExistente,
 } from '../../utils/mailer.js';
 import { getAdminEmails } from '../admin/admin.service.js';
 import { notificacionHabilitada } from '../../utils/configFlags.js';
@@ -142,9 +144,39 @@ export async function visitante(req, res, next) {
   }
 }
 
+const MENSAJE_REGISTRO = 'Revisa tu correo electrónico para verificar tu cuenta.';
+const CONFLICTOS_DE_CORREO = new Set(['EMAIL_ALREADY_REGISTERED', 'EMAIL_VERIFICATION_PENDING']);
+const AVISO_CADA_MS = 60 * 60 * 1000;
+const avisosEnviados = new Map();
+
+const esConflictoDeCorreo = (err) => err?.status === 409 && CONFLICTOS_DE_CORREO.has(err.code);
+
+/** Un aviso por dirección y hora como máximo: que el registro no sirva para llenar de correos a un tercero. */
+function puedeAvisar(email, ahora = Date.now()) {
+  for (const [clave, cuando] of avisosEnviados) if (ahora - cuando > AVISO_CADA_MS) avisosEnviados.delete(clave);
+  if (avisosEnviados.has(email)) return false;
+  avisosEnviados.set(email, ahora);
+  return true;
+}
+
+/**
+ * Correo ya registrado (o con registro en curso): se responde exactamente igual que un registro nuevo, para que
+ * el formulario no sirva para averiguar qué correos existen. A quien es dueño del correo se le avisa por correo.
+ */
+async function responderRegistroGenerico(res, data, err) {
+  await authService.igualarTiempoDeRegistro(data.password);
+  const email = data.email.toLowerCase();
+  res.status(201).json({ message: MENSAJE_REGISTRO, user: { id: crypto.randomUUID(), nombre: data.nombre, email } });
+  if (err.code === 'EMAIL_ALREADY_REGISTERED' && puedeAvisar(email)) {
+    notifyIntentoRegistroExistente({ email })
+      .catch((e) => logger.error('[auth] Error email intento de registro a un correo existente:', e.message));
+  }
+}
+
 export async function register(req, res, next) {
+  let data;
   try {
-    const data      = registerSchema.parse(req.body);
+    data = registerSchema.parse(req.body);
     await validarLongitudMinima(data.password);
     const ip        = req.ip;
     const userAgent = req.headers?.['user-agent'];
@@ -152,7 +184,7 @@ export async function register(req, res, next) {
 
     // Responder al cliente antes de los emails (no bloquear la respuesta)
     res.status(201).json({
-      message: 'Revisa tu correo electrónico para verificar tu cuenta.',
+      message: MENSAJE_REGISTRO,
       user: { id: user.id, nombre: user.nombre, email: user.email },
     });
 
@@ -181,6 +213,10 @@ export async function register(req, res, next) {
     }).catch((err) => logger.error(`[auth] Error obteniendo emails admin:`, err.message));
 
   } catch (err) {
+    if (data && esConflictoDeCorreo(err)) {
+      try { await responderRegistroGenerico(res, data, err); } catch (e) { next(e); }
+      return;
+    }
     next(err);
   }
 }

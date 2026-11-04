@@ -575,6 +575,20 @@ export async function notifyRolCambiado({ email, nombre, rolAnterior, rolNuevo }
   });
 }
 
+/** Aviso al dueño de un correo ya registrado cuando alguien intenta registrarse con él (sin revelarlo a quien lo intenta). */
+export async function notifyIntentoRegistroExistente({ email }) {
+  return send({
+    to: email,
+    subject: '[VIGI-IIAP] Alguien intentó registrarse con tu correo',
+    html: baseTemplate({
+      eyebrow: 'Aviso de seguridad',
+      title: 'Ya tienes una cuenta en VIGÍA',
+      body: bodyText('Alguien intentó crear una cuenta en VIGÍA usando este correo, pero ya existe una cuenta con él.')
+        + bodyText('Si fuiste tú, inicia sesión; si olvidaste tu contraseña, usa «¿Olvidaste tu contraseña?» en la pantalla de acceso. Si no fuiste tú, puedes ignorar este mensaje: tu cuenta no cambió.'),
+    }),
+  });
+}
+
 /** Alerta de seguridad al propio usuario cuando su cuenta inicia sesión. */
 export async function notifyNuevoInicioSesion({ email, nombre, ip, userAgent, fecha }) {
   await send({
