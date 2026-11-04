@@ -6,8 +6,16 @@
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { EXCLUIR_SUPER_ADMIN, SEVERIDADES, condicionSeveridad } from './auditoriaCatalogo.js';
+import { lineaCsv, transmitirCsv } from './exportCsv.js';
 
+// Tope de las exportaciones que se arman en memoria (JSON y las tablas pequeñas). El CSV de los
+// registros que crecen sin límite (actividad y descargas) se transmite por bloques y no lo usa.
 const MAX_ROWS = 10_000;
+const AVISO_TOPE_JSON = `Más de ${MAX_ROWS} registros en JSON. Descarga el CSV (formato=csv), que no tiene ese límite, o reduce el rango de fechas.`;
+
+const COLUMNAS_AUDITORIA = 'id, accion, modulo, entidad_id, descripcion, usuario_email, ip, resultado, request_id, creado_en';
+// archivo_url se omite a propósito: es la ubicación interna del archivo, no un dato de la descarga.
+const COLUMNAS_DESCARGAS = 'id, tipo_recurso, recurso_id, recurso_titulo, usuario_id, usuario_email, ip, created_at';
 
 // Campos sensibles que NUNCA se exportan
 const EXCLUDED = new Set([
@@ -28,16 +36,7 @@ function sanitize(rows) {
 function toCSV(rows) {
   if (!rows.length) return '';
   const headers = Object.keys(rows[0]);
-  const escape  = (v) => {
-    if (v === null || v === undefined) return '';
-    let s = String(v);
-    // Prevenir CSV formula injection: prefijo ' neutraliza =,+,-,@,TAB,CR en Excel/Sheets
-    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-    return s.includes(',') || s.includes('"') || s.includes('\n') || s.startsWith("'")
-      ? `"${s.replace(/"/g, '""')}"`
-      : s;
-  };
-  const lines = rows.map((r) => headers.map((h) => escape(r[h])).join(','));
+  const lines = rows.map((r) => lineaCsv(headers.map((h) => r[h])));
   return [headers.join(','), ...lines].join('\r\n');
 }
 
@@ -143,21 +142,29 @@ export async function exportAudit(req, res, next) {
     const params = [], conditions = req.user?.rol === 'super_admin' ? [] : [EXCLUIR_SUPER_ADMIN];
     dateFilter(req.query.desde, req.query.hasta, 'creado_en', params, conditions);
     filtrosAuditoria(req.query, params, conditions);
+    const auditar = (total) => registrarAuditoria({
+      accion: 'export_audit', modulo: 'admin',
+      descripcion: `Export audit log (${total} registros, ${formato})`,
+      usuarioId: req.user.id, usuarioEmail: req.user.email, ip: req.ip,
+    });
+    if (formato === 'csv') {
+      await transmitirCsv({
+        res, nombreArchivo: 'audit-log', tabla: 'audit_log', columnas: COLUMNAS_AUDITORIA, columnaFecha: 'creado_en',
+        condiciones: conditions, params, excluir: EXCLUDED, alIniciar: auditar,
+      });
+      return;
+    }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(MAX_ROWS);
     const { rows } = await query(
-      `SELECT id, accion, modulo, entidad_id, descripcion, usuario_email, ip, resultado, request_id, creado_en
+      `SELECT ${COLUMNAS_AUDITORIA}
        FROM audit_log ${where} ORDER BY creado_en DESC LIMIT $${params.length}`,
       params
     );
     if (rows.length === MAX_ROWS) {
-      return res.status(400).json({ error: `Más de ${MAX_ROWS} registros. Reduce el rango de fechas.` });
+      return res.status(400).json({ error: AVISO_TOPE_JSON });
     }
-    registrarAuditoria({
-      accion: 'export_audit', modulo: 'admin',
-      descripcion: `Export audit log (${rows.length} registros, ${formato})`,
-      usuarioId: req.user.id, usuarioEmail: req.user.email, ip: req.ip,
-    });
+    auditar(rows.length);
     sendExport(res, rows, 'audit-log', formato);
   } catch (err) { next(err); }
 }
@@ -166,13 +173,25 @@ export async function exportAudit(req, res, next) {
 export async function exportDescargas(req, res, next) {
   try {
     const formato = req.query.formato === 'json' ? 'json' : 'csv';
+    if (formato === 'csv') {
+      await transmitirCsv({
+        res, nombreArchivo: 'descargas', tabla: 'descarga_log', columnas: COLUMNAS_DESCARGAS, columnaFecha: 'created_at',
+        excluir: EXCLUDED,
+        alIniciar: (total) => registrarAuditoria({
+          accion: 'export_descargas', modulo: 'admin',
+          descripcion: `Export descargas (${total} registros, csv)`,
+          usuarioId: req.user.id, usuarioEmail: req.user.email, ip: req.ip,
+        }),
+      });
+      return;
+    }
     const { rows } = await query(
-      `SELECT id, archivo_key, usuario_id, ip_origen, descargado_en
-       FROM descarga_log ORDER BY descargado_en DESC LIMIT $1`,
+      `SELECT ${COLUMNAS_DESCARGAS}
+       FROM descarga_log ORDER BY created_at DESC LIMIT $1`,
       [MAX_ROWS]
     );
     if (rows.length === MAX_ROWS) {
-      return res.status(400).json({ error: `Más de ${MAX_ROWS} registros. Usa filtros de fecha para reducir el rango.` });
+      return res.status(400).json({ error: AVISO_TOPE_JSON });
     }
     registrarAuditoria({
       accion: 'export_descargas', modulo: 'admin',
