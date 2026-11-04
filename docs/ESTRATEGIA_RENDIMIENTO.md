@@ -98,11 +98,12 @@ Todos los temporizadores usan `unref()` y el servidor cierra de forma ordenada c
 
 ### Riesgos conocidos al crecer
 
-Hoy el servicio corre como **una instancia**. Al añadir una segunda aparecen estos puntos; los dos primeros ya están resueltos:
+Hoy el servicio corre como **una instancia**. Al añadir una segunda aparecen estos puntos; los tres primeros ya están resueltos:
 
 1. **Planificadores duplicados (resuelto).** Cada tarea programada pasa por `conBloqueo` (`src/utils/bloqueoTareas.js`): un candado de asesoría de PostgreSQL (`pg_try_advisory_xact_lock`) ligado a una transacción de una conexión dedicada. Si otra instancia ya la ejecuta, esta la omite; el candado se libera solo al terminar y también si el proceso muere, así que no puede quedar tomado. Aplica al informe semanal, las dos purgas de retención y el autoajuste del límite de tráfico. En el informe semanal el estado del último envío se relee **dentro** del candado, de modo que una segunda instancia que llega después ve que ya se envió y no lo repite. No requiere infraestructura nueva. (La cola de correos ya era segura por sí sola, gracias a `SKIP LOCKED`.)
 2. **Lista de tokens revocados en memoria (resuelto).** Cada instancia sincroniza con la tabla `revoked_tokens` cada 15 s (`sincronizarRevocados`), pidiendo solo los revocados de los últimos 2 minutos, y olvida los que ya vencieron. Un cierre de sesión atendido por una instancia surte efecto en las demás en **hasta unos 15 segundos**; ese es el margen aceptado, a cambio de no consultar la base en cada petición. Si la base falla, cada instancia conserva lo que ya tenía.
-3. **Correo con reintentos (resuelto).** Antes cada envío creaba su transporte SMTP y, si fallaba, el correo se perdía. Ahora:
+3. **Contadores del limitador de tráfico (resuelto).** Cada instancia contaba en su memoria, así que con N instancias el límite efectivo se multiplicaba por N (también el de intentos de inicio de sesión). Ahora los once limitadores cuentan en Redis (`src/middlewares/almacenLimitador.js`) con un solo comando atómico (`INCR` + `PEXPIRE`, que repone el vencimiento si faltara), cada uno con su prefijo `rl:<nombre>:`. Es el mismo Redis que usa la caché, sin dependencia nueva. Si Redis no está configurado, no está conectado, falla o no responde en 250 ms, esa petición se cuenta en la memoria de la instancia y se deja de intentar Redis durante 5 s: el limitador nunca deja de proteger ni bloquea a todo el mundo por una caída. Costo medido en un Redis local: ~0,3 ms por petición (p50), ~1,6 ms en p95 y 23 000 operaciones por segundo con 50 conexiones simultáneas. Mientras Redis esté caído y haya varias instancias, el límite vuelve a ser por instancia (degradación aceptada y avisada en el registro).
+4. **Correo con reintentos (resuelto).** Antes cada envío creaba su transporte SMTP y, si fallaba, el correo se perdía. Ahora:
    - Se reutiliza una sola conexión con *pool* mientras la configuración no cambie.
    - `send` intenta enviar de inmediato (sin añadir latencia) y **solo si falla** por algo temporal deja el correo en `correos_pendientes`. Un envío correcto nunca se guarda.
    - Un trabajador revisa la cola cada minuto, reclama lotes con `FOR UPDATE SKIP LOCKED` y un arrendamiento de 5 min (seguro con varias instancias, y si un proceso muere el correo vuelve a estar disponible) y reintenta con esperas de 1, 5, 30, 120 y 360 minutos, hasta 5 intentos.
@@ -111,10 +112,10 @@ Hoy el servicio corre como **una instancia**. Al añadir una segunda aparecen es
    - Los correos con **contraseña temporal nunca se encolan**. Los enlaces de restablecimiento (válidos 30 min) y de verificación (24 h) sí pueden esperar en la cola, como máximo unas 8 horas. Efecto práctico: un correo de verificación reintentado llega a tiempo, pero uno de restablecimiento reintentado pasados los 30 min llega con el enlace ya vencido y la persona debe pedir otro. A cambio, el enlace guardado en la cola deja de servir a los 30 min, así que conservarlo temporalmente tiene poco riesgo.
 
    Garantía: «al menos una vez» sin añadir un servicio externo. Un SMTP caído ya no pierde correos ni demora el registro, la recuperación de contraseña o las alertas.
-4. **Trabajo pesado en el hilo del servidor.** El procesamiento de imágenes y el cifrado de contraseñas usan el pool de hilos de libuv (4 por defecto). Si la carga de subidas crece, subir `UV_THREADPOOL_SIZE` o mover el trabajo a un proceso aparte.
-5. **Exportaciones en memoria.** Las exportaciones cargan hasta 10 000 filas. Para volúmenes mayores, transmitirlas por bloques (cursor) en lugar de armarlas completas.
+5. **Trabajo pesado en el hilo del servidor.** El procesamiento de imágenes y el cifrado de contraseñas usan el pool de hilos de libuv (4 por defecto). Si la carga de subidas crece, subir `UV_THREADPOOL_SIZE` o mover el trabajo a un proceso aparte.
+6. **Exportaciones en memoria.** Las exportaciones cargan hasta 10 000 filas. Para volúmenes mayores, transmitirlas por bloques (cursor) en lugar de armarlas completas.
 
-Ninguno exige actuar hoy; todos se vuelven necesarios si se despliegan varias instancias. Conviene resolver 1 y 2 antes de ese día, y 3 cuando el correo sea crítico para el negocio.
+Con los puntos 1 a 4 resueltos, el servicio ya puede desplegarse en varias instancias. Los puntos 5 y 6 se atienden cuando el volumen lo pida.
 
 ## 5. Pruebas de carga
 
@@ -140,5 +141,5 @@ Cuándo ejecutarlas: antes de cada release que toque consultas o caché, y tras 
 | Media | Analítica agregada en SQL + caché local de administración | Hecho |
 | Media | Transporte SMTP reutilizable y cola *outbox* de correos | Hecho |
 | Antes de escalar | Bloqueo de asesoría en planificadores y revocación compartida de tokens | Hecho |
-| Antes de escalar | Contadores del limitador de tráfico compartidos entre instancias (hoy son en memoria por instancia, así que el límite efectivo se multiplicaría por el número de instancias, también el de intentos de inicio de sesión) | Pendiente |
+| Antes de escalar | Contadores del limitador de tráfico compartidos entre instancias (Redis, con caída a memoria si no está disponible) | Hecho |
 | Baja | Exportaciones por cursor | Pendiente |

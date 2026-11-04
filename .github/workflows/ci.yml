@@ -71,6 +71,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Redis real para probar el limitador de tráfico compartido entre instancias
+      # (tests/integration/limitadorCompartido.integration.test.js).
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -109,6 +120,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres_ci_test
           DB_SSL: false
+          TEST_REDIS_URL: redis://localhost:6379
           JWT_SECRET: ${{ secrets.JWT_SECRET_TEST || 'ci_test_secret_key_min_32_chars!!' }}
 
   docker-build:
