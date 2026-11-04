@@ -67,12 +67,15 @@ export async function updateRol(id, rol, activo, caller = {}) {
     throw Object.assign(new Error('Solo el Super Administrador puede gestionar cuentas de administrador'), { status: 403 });
   }
   const { rows } = await query(
-    'UPDATE usuarios SET rol=$1, activo=$2, actualizado_en=NOW() WHERE id=$3 RETURNING id,nombre,email,rol,activo',
-    [rol, activo, id]
+    'UPDATE usuarios SET rol=$1, activo=COALESCE($2, activo), actualizado_en=NOW() WHERE id=$3 RETURNING id,nombre,email,rol,activo',
+    [rol, activo ?? null, id]
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
   const usuario = rows[0];
+
+  // Desactivar una cuenta corta su sesión de renovación: sin esto seguía renovando el acceso.
+  if (activo === false) await revokeAllRefreshTokens(id).catch(() => {});
 
   // Revocar sesiones activas y notificar por email si el rol realmente cambió —
   // mismo comportamiento que admin.service.js#actualizarUsuario: el access token

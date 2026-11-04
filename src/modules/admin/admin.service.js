@@ -174,6 +174,9 @@ export async function actualizarUsuario({ id, rol, activo, adminId, adminRol, ad
 
   // Revocar sesiones activas si el rol cambia — el access token lleva el rol en el claim
   // y quedaría stale hasta su expiración (hasta 15min de ventana de privilegio incorrecto)
+  if (activo === false && !(rol !== undefined && rol !== target[0].rol)) {
+    await revokeAllRefreshTokens(id).catch(() => {});
+  }
   if (rol !== undefined && rol !== target[0].rol) {
     await revokeAllRefreshTokens(id).catch(() => {});
     notifyRolCambiado({

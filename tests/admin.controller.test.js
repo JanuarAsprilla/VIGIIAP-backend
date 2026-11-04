@@ -904,6 +904,23 @@ describe('admin.controller → batchUsuarios()', () => {
     expect(r.json.mock.calls[0][0].error).toMatch(/otros admin_sig/);
   });
 
+  it('retorna 403 si admin_sig intenta REACTIVAR a otro admin_sig', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'admin_sig' }] });
+    const r = res();
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'activar' }, user: ADMIN }, r, mockNext);
+    expect(r.status).toHaveBeenCalledWith(403);
+  });
+
+  it('desactivar en lote revoca las sesiones de renovación de cada cuenta', async () => {
+    revokeAllRefreshTokens.mockClear();
+    query
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ email: 't1@iiap.org.co', nombre: 'T1', rol: 'investigador', activo: false }] });
+    await batchUsuarios({ body: { ids: [TARGET_1], accion: 'desactivar' }, user: ADMIN }, res(), mockNext);
+    expect(revokeAllRefreshTokens).toHaveBeenCalledWith(TARGET_1);
+  });
+
   it('permite a super_admin desactivar a un admin_sig', async () => {
     query
       .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'admin_sig' }] })
