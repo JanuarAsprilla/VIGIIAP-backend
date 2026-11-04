@@ -100,6 +100,31 @@ describe('login()', () => {
     );
   });
 
+  it('con 2FA activo, acertar la contraseña NO reinicia el contador de intentos (lo limpia el segundo factor)', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, totp_enabled: true }] })  // SELECT usuario
+      .mockResolvedValueOnce({ rows: [] })                                      // UPDATE (contador/last_login)
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: true }] });               // SELECT totp_enabled
+    bcrypt.compare.mockResolvedValueOnce(true);
+
+    await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest').catch(() => {});
+
+    const [sql, params] = query.mock.calls[1];
+    expect(sql).toMatch(/CASE WHEN \$2 THEN intentos_fallidos ELSE 0 END/);
+    expect(params).toEqual([mockUser.id, true]);
+  });
+
+  it('sin 2FA, acertar la contraseña sí reinicia el contador', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, totp_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'rt-uuid-1' }] });
+    bcrypt.compare.mockResolvedValueOnce(true);
+    await login('admin@iiap.gob.pe', 'Segura123!', '127.0.0.1', 'jest');
+    expect(query.mock.calls[1][1]).toEqual([mockUser.id, false]);
+  });
+
   it('el user devuelto incluye avatar_url, institucion y twoFactorEnabled — mismo shape que /auth/me', async () => {
     const fullUser = {
       ...mockUser,
