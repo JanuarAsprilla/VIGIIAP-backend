@@ -171,6 +171,38 @@ describe('GET /registros — filtros nuevos', () => {
   });
 });
 
+describe('privacidad de identificadores (registros con la ubicación reservada)', () => {
+  const OPACO = /^o[A-Za-z0-9_-]{20,120}$/;
+
+  it('el listado entrega el gbif_id real si la ubicación es pública y uno opaco si está reservada', async () => {
+    servicio.registros.mockResolvedValue({ total: 2, registros: [
+      { gbif_id: '111', coordenadas_ocultas: false, latitud: 5.1 },
+      { gbif_id: '5282328258', coordenadas_ocultas: true, latitud: null },
+    ] });
+    const res = await request(app).get('/api/biodiversidad/registros?grupo=mamiferos');
+    expect(res.status).toBe(200);
+    expect(res.body.registros[0].gbif_id).toBe('111');
+    expect(res.body.registros[1].gbif_id).toMatch(OPACO);
+    expect(JSON.stringify(res.body)).not.toContain('5282328258');
+  });
+
+  it('el detalle por id opaco se resuelve al id real en el servicio y la respuesta vuelve a ocultarlo', async () => {
+    servicio.registros.mockResolvedValue({ total: 1, registros: [{ gbif_id: '5282328258', coordenadas_ocultas: true }] });
+    const opaco = (await request(app).get('/api/biodiversidad/registros?grupo=mamiferos')).body.registros[0].gbif_id;
+    servicio.registro.mockResolvedValue({ gbif_id: '5282328258', coordenadas_ocultas: true, fotos: [] });
+    const res = await request(app).get(`/api/biodiversidad/registros/${opaco}?grupo=mamiferos`);
+    expect(res.status).toBe(200);
+    expect(servicio.registro).toHaveBeenCalledWith('5282328258', 'mamiferos');
+    expect(res.body.gbif_id).toBe(opaco);
+  });
+
+  it('un id opaco inválido o manipulado responde 404 sin consultar el servicio', async () => {
+    const res = await request(app).get('/api/biodiversidad/registros/oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA?grupo=mamiferos');
+    expect(res.status).toBe(404);
+    expect(servicio.registro).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET /registros/:gbif_id', () => {
   it('devuelve el detalle', async () => {
     servicio.registro.mockResolvedValue({ gbif_id: '123', fotos: [] });

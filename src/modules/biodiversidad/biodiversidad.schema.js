@@ -119,7 +119,7 @@ export const opcionesQuerySchema = conOrdenTaxonomico({
 });
 
 export const registroParamsSchema = z.strictObject({
-  gbif_id: z.string().regex(/^[0-9]{1,20}$/, 'Identificador de registro inválido'),
+  gbif_id: z.string().regex(/^([0-9]{1,20}|o[A-Za-z0-9_-]{20,120})$/, 'Identificador de registro inválido'),
 });
 
 export const detalleQuerySchema = z.strictObject({ grupo });
