@@ -517,6 +517,23 @@ describe('admin.service → setConfiguracion()', () => {
     expect(firstSql).toMatch(/ON CONFLICT/i);
   });
 
+  it('mail_pass se guarda cifrado cuando hay SMTP_ENCRYPTION_KEY y en claro (como antes) cuando no', async () => {
+    query.mockImplementation(() => Promise.resolve({ rows: [] }));
+    const original = process.env.SMTP_ENCRYPTION_KEY;
+    process.env.SMTP_ENCRYPTION_KEY = 'ef'.repeat(32);
+    await setConfiguracion({ mail_pass: 'secreta-smtp' }, 'admin-uuid', 'admin@iiap.org.co');
+    const guardado = query.mock.calls.find(([sql]) => /INSERT INTO configuracion/i.test(sql))[1];
+    expect(guardado[0]).toBe('mail_pass');
+    expect(guardado[1]).toMatch(/^enc1:/);
+    expect(guardado[1]).not.toContain('secreta-smtp');
+
+    query.mockClear();
+    delete process.env.SMTP_ENCRYPTION_KEY;
+    await setConfiguracion({ mail_pass: 'secreta-smtp' }, 'admin-uuid', 'admin@iiap.org.co');
+    expect(query.mock.calls.find(([sql]) => /INSERT INTO configuracion/i.test(sql))[1][1]).toBe('secreta-smtp');
+    if (original !== undefined) process.env.SMTP_ENCRYPTION_KEY = original;
+  });
+
   it('avisa a cada super_admin activo cuando se cambia una clave crítica (modoMantenimiento)', async () => {
     query.mockImplementation((sql) => {
       if (/SELECT email FROM usuarios WHERE rol = 'super_admin'/.test(sql)) {

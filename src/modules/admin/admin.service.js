@@ -3,6 +3,7 @@
  * Gestión de usuarios desde el panel de administración.
  * Toda acción aquí queda en Supabase (PostgreSQL) y se notifica por email.
  */
+import { cifrarSecretoSmtp } from '../../utils/smtpSecret.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
@@ -252,7 +253,7 @@ export async function setConfiguracion(config, adminId, adminEmail) {
       `INSERT INTO configuracion (clave, valor, actualizado_en)
        VALUES ($1, $2, NOW())
        ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_en = NOW()`,
-      [clave, String(valor)]
+      [clave, clave === 'mail_pass' ? cifrarSecretoSmtp(String(valor)) : String(valor)]
     );
   }
 

@@ -666,6 +666,30 @@ describe('SMTP dinámico — config desde la tabla configuracion', () => {
     );
   });
 
+  it('con SMTP_ENCRYPTION_KEY, descifra la contraseña guardada cifrada antes de usarla', async () => {
+    delete process.env.MAIL_HOST; delete process.env.MAIL_USER; delete process.env.MAIL_PASS;
+    process.env.SMTP_ENCRYPTION_KEY = 'cd'.repeat(32);
+    const { cifrarSecretoSmtp } = await import('../src/utils/smtpSecret.js');
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: SMTP_ROWS.map((r) => (r.clave === 'mail_pass' ? { ...r, valor: cifrarSecretoSmtp('clave-real') } : r)) });
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({ auth: { user: 'panel@iiap.org.co', pass: 'clave-real' } }));
+    delete process.env.SMTP_ENCRYPTION_KEY;
+  });
+
+  it('con clave y una contraseña antigua en claro, la usa y la re-cifra en la BD', async () => {
+    delete process.env.MAIL_HOST; delete process.env.MAIL_USER; delete process.env.MAIL_PASS;
+    process.env.SMTP_ENCRYPTION_KEY = 'cd'.repeat(32);
+    const { query: freshQuery, mailer } = await loadMailerFresh();
+    freshQuery.mockResolvedValue({ rows: SMTP_ROWS });
+    await mailer.notifySolicitudRecibida({ email: 'u@test.co', nombre: 'U', tipo: 'otro' });
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({ auth: { user: 'panel@iiap.org.co', pass: 'clave-guardada-desde-el-panel' } }));
+    const update = freshQuery.mock.calls.find(([sql]) => /UPDATE configuracion SET valor/.test(sql));
+    expect(update[1][0]).toMatch(/^enc1:/);
+    expect(update[1][1]).toBe('clave-guardada-desde-el-panel');
+    delete process.env.SMTP_ENCRYPTION_KEY;
+  });
+
   it('si en BD falta mail_pass (config a medias), no envía en vez de fallar con credenciales incompletas', async () => {
     delete process.env.MAIL_HOST;
     delete process.env.MAIL_USER;
