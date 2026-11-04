@@ -8,6 +8,7 @@ import {
 } from '../../utils/cookieOptions.js';
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { exigirCuentaSinBloqueo, registrarFalloSegundoFactor, limpiarFallosSegundoFactor } from './twoFactorBloqueo.js';
 
 /** POST /api/auth/2fa/setup — genera secret + QR */
 export async function setup(req, res, next) {
@@ -80,7 +81,27 @@ export async function confirm(req, res, next) {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Código TOTP requerido' });
 
-    await tfService.verifyTotpOrBackup(payload.id, code);
+    await exigirCuentaSinBloqueo(payload.id);
+    try {
+      await tfService.verifyTotpOrBackup(payload.id, code);
+    } catch (err) {
+      if (err.status !== 401) throw err;
+      const { bloqueada, intentos } = await registrarFalloSegundoFactor(payload.id);
+      registrarAuditoria({
+        accion: bloqueada ? '2fa_bloqueo' : '2fa_fallido',
+        modulo: 'auth',
+        resultado: 'fallo',
+        entidadId: payload.id,
+        descripcion: bloqueada ? 'Cuenta bloqueada por códigos 2FA incorrectos' : `Código 2FA incorrecto (intento ${intentos})`,
+        usuarioId: payload.id,
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      });
+      if (!bloqueada) throw err;
+      res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'Lax' });
+      return res.status(429).json({ error: 'Cuenta bloqueada temporalmente por demasiados códigos incorrectos.', code: 'ACCOUNT_LOCKED' });
+    }
+    await limpiarFallosSegundoFactor(payload.id);
 
     const { rows } = await query(
       `SELECT id, nombre, email, rol, institucion, tipo_acceso, avatar_url, totp_enabled
