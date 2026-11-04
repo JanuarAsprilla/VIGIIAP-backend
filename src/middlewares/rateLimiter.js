@@ -1,6 +1,15 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { getRateLimitMax } from '../config/dynamicConfig.js';
 import { recordRequest, recordBlocked } from '../utils/trafficMonitor.js';
+import { crearAlmacen } from './almacenLimitador.js';
+
+/**
+ * Crea un limitador con sus contadores compartidos entre instancias (Redis, con caída a memoria
+ * si no está disponible). Cada limitador necesita su propio almacén y prefijo.
+ */
+function limitador(nombre, opciones) {
+  return rateLimit({ ...opciones, store: crearAlmacen(nombre) });
+}
 
 /**
  * Normaliza IP usando el helper oficial de express-rate-limit (IPv4 e IPv6).
@@ -46,7 +55,7 @@ const esRutaDeTiles = (req) => req.path.includes('/wms') || req.path.includes('/
 // estricto (prefijo de la API): un documento con «biodiversidad» en su título no escapa del cupo general.
 const esRutaDeBiodiversidad = (req) => /^\/api(\/v1)?\/biodiversidad(\/|$)/.test(req.path);
 
-const _rateLimiter = rateLimit({
+const _rateLimiter = limitador('general', {
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: async (req) => {
     if (req.user) return 500;
@@ -86,7 +95,7 @@ export function rateLimiter(req, res, next) {
  * mantener el límite bajo sin importar cuánta gente comparta la IP, porque
  * cada intento es una adivinanza directa de un código TOTP de 6 dígitos.
  */
-export const authRateLimiter = rateLimit({
+export const authRateLimiter = limitador('auth', {
   windowMs: 15 * 60 * 1000,
   max: 30,
   keyGenerator: normalizeIp,
@@ -104,7 +113,7 @@ export const authRateLimiter = rateLimit({
  * subir authRateLimiter no aplica aquí: una persona legítima necesita 1-2
  * intentos, nunca decenas, así que no hay razón para relajarlo.
  */
-export const twoFactorRateLimiter = rateLimit({
+export const twoFactorRateLimiter = limitador('dos_factores', {
   windowMs: 15 * 60 * 1000,
   max: 10,
   keyGenerator: normalizeIp,
@@ -121,7 +130,7 @@ export const twoFactorRateLimiter = rateLimit({
  * aquí porque la key es la cuenta atacada, no el origen de la petición.
  * Se aplica ADEMÁS del límite por IP existente, nunca en su lugar.
  */
-export const loginAccountRateLimiter = rateLimit({
+export const loginAccountRateLimiter = limitador('login_cuenta', {
   windowMs: 15 * 60 * 1000,
   max: 15,
   keyGenerator: (req) => {
@@ -134,7 +143,7 @@ export const loginAccountRateLimiter = rateLimit({
 });
 
 /** Subida de archivos: máximo 10 por hora por usuario. */
-export const uploadRateLimiter = rateLimit({
+export const uploadRateLimiter = limitador('subidas', {
   windowMs: 60 * 60 * 1000,
   max: 10,
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
@@ -144,7 +153,7 @@ export const uploadRateLimiter = rateLimit({
 });
 
 /** Descargas: máximo 60 en 5 minutos por IP. */
-export const downloadRateLimiter = rateLimit({
+export const downloadRateLimiter = limitador('descargas', {
   windowMs: 5 * 60 * 1000,
   max: 60,
   keyGenerator: normalizeIp,
@@ -157,7 +166,7 @@ export const downloadRateLimiter = rateLimit({
  * API de biodiversidad (pública): máximo 600 en 5 minutos por IP. Una oficina entera sale por una IP y cada
  * cambio de filtro dispara varias consultas; cada una está acotada por el tope de 5 s y la profundidad de paginación.
  */
-export const biodiversidadRateLimiter = rateLimit({
+export const biodiversidadRateLimiter = limitador('biodiversidad', {
   windowMs: 5 * 60 * 1000,
   max: 600,
   keyGenerator: normalizeIp,
@@ -173,7 +182,7 @@ export const biodiversidadRateLimiter = rateLimit({
  * agotaban el cupo de todas y el panel respondía 429. Este limitador va después de authenticate,
  * así que solo cuenta peticiones de administradores con sesión válida.
  */
-export const adminRateLimiter = rateLimit({
+export const adminRateLimiter = limitador('admin', {
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.ADMIN_RATE_LIMIT_MAX) || 600,
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
@@ -190,7 +199,7 @@ export const adminRateLimiter = rateLimit({
  * quedan excluidas del rate limiter general para no compartir su cupo (mucho
  * más bajo) con el resto de la API.
  */
-export const tileRateLimiter = rateLimit({
+export const tileRateLimiter = limitador('tiles', {
   windowMs: 60 * 1000,
   max: 600,
   keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
@@ -200,7 +209,7 @@ export const tileRateLimiter = rateLimit({
 });
 
 /** Recuperación de contraseña: máximo 3 solicitudes por hora por email. */
-export const passwordResetLimiter = rateLimit({
+export const passwordResetLimiter = limitador('recuperar_password', {
   windowMs: 60 * 60 * 1000,
   max: 3,
   keyGenerator: (req) => {
@@ -218,7 +227,7 @@ export const passwordResetLimiter = rateLimit({
  * un atacante con varias IPs puede "mail bombing" la bandeja de un usuario
  * específico repitiendo envíos de verificación con el mismo correo.
  */
-export const emailActionRateLimiter = rateLimit({
+export const emailActionRateLimiter = limitador('accion_email', {
   windowMs: 60 * 60 * 1000,
   max: 5,
   keyGenerator: (req) => {
