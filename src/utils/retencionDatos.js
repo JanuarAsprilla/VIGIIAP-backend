@@ -32,11 +32,59 @@ export async function purgarAnalitica() {
   return resultado;
 }
 
+/**
+ * Retención del resto de registros con datos personales (principio de temporalidad, Ley 1581 art. 4).
+ * Sesiones vencidas, accesos de visitante y errores se purgan por omisión. Los registros de custodia
+ * (descargas, archivos escaneados) solo se purgan si se configura un plazo: borrarlos es irreversible y el
+ * plazo debe aprobarlo el IIAP (docs/cumplimiento/INVENTARIO_RNBD.md). 0 o ausente = no purgar.
+ */
+function dias(variable, porOmision) {
+  const crudo = process.env[variable];
+  const valor = Number(crudo);
+  return crudo !== undefined && crudo !== '' && Number.isFinite(valor) && valor >= 0 ? valor : porOmision;
+}
+
+export async function purgarRegistros() {
+  const resultado = {};
+  const borrar = async (clave, sql, plazo) => {
+    if (!plazo) return;
+    const r = await query(sql, [plazo]);
+    resultado[clave] = r.rowCount ?? 0;
+  };
+
+  await borrar('sesiones',
+    `DELETE FROM refresh_tokens
+     WHERE expira_en < NOW() - make_interval(days => $1)
+        OR (revocado AND creado_en < NOW() - make_interval(days => $1))`,
+    dias('SESIONES_RETENCION_DIAS', 30));
+  await borrar('visitantes',
+    'DELETE FROM visitantes WHERE creado_en < NOW() - make_interval(days => $1)',
+    dias('VISITANTES_RETENCION_DIAS', 90));
+  await borrar('errores',
+    'DELETE FROM error_log WHERE ultima_vez < NOW() - make_interval(days => $1)',
+    dias('ERROR_LOG_RETENCION_DIAS', 180));
+  await borrar('descargas',
+    'DELETE FROM descarga_log WHERE created_at < NOW() - make_interval(days => $1)',
+    dias('DESCARGAS_RETENCION_DIAS', 0));
+  await borrar('custodia',
+    'DELETE FROM geo_custodia WHERE created_at < NOW() - make_interval(days => $1)',
+    dias('DESCARGAS_RETENCION_DIAS', 0));
+  await borrar('escaneos',
+    'DELETE FROM file_scan_log WHERE created_at < NOW() - make_interval(days => $1)',
+    dias('ESCANEOS_RETENCION_DIAS', 0));
+
+  const total = Object.values(resultado).reduce((suma, n) => suma + n, 0);
+  if (total > 0) logger.info(`[retencionDatos] Registros purgados: ${JSON.stringify(resultado)}`);
+  return resultado;
+}
+
 async function ejecutarSinFallar() {
-  try {
-    await conBloqueo('retencion_analitica', purgarAnalitica);
-  } catch (err) {
-    logger.warn(`[retencionDatos] Error en la purga: ${err.message}`);
+  for (const [nombre, tarea] of [['retencion_analitica', purgarAnalitica], ['retencion_registros', purgarRegistros]]) {
+    try {
+      await conBloqueo(nombre, tarea);
+    } catch (err) {
+      logger.warn(`[retencionDatos] Error en la purga (${nombre}): ${err.message}`);
+    }
   }
 }
 
