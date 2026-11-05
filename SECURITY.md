@@ -18,8 +18,14 @@ Incluye, si puedes:
 ## Qué esperar
 
 - Acuse de recibo en un plazo de 5 días hábiles.
-- Evaluación de la severidad y plan de corrección; te mantendremos informado.
+- Evaluación inicial de severidad en 10 días hábiles; te mantendremos informado del avance.
+- Corrección: las vulnerabilidades críticas y altas se priorizan sobre cualquier otro trabajo.
+- Divulgación coordinada: te pedimos no hacer público el hallazgo hasta que esté corregido o hasta
+  pasados 90 días desde el reporte, lo que ocurra primero.
 - Reconocimiento público al reportante una vez corregido, si lo deseas.
+
+Si lo que encontraste expone datos personales, lo tratamos como incidente de seguridad según el
+[plan de respuesta a incidentes](docs/cumplimiento/PLAN_RESPUESTA_INCIDENTES.md).
 
 ## Alcance
 
