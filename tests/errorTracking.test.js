@@ -19,11 +19,12 @@ vi.mock('../src/utils/mailer.js', () => ({
 import { query } from '../src/config/database.js';
 import { getAdminEmails } from '../src/modules/admin/admin.service.js';
 import { notifyErrorCritico } from '../src/utils/mailer.js';
-import { registrarError } from '../src/utils/errorTracking.js';
+import { registrarError, _reiniciarTopeAlertas, MAX_ALERTAS_POR_HORA } from '../src/utils/errorTracking.js';
 
 describe('registrarError()', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _reiniciarTopeAlertas();
     getAdminEmails.mockResolvedValue(['admin@iiap.gov.co']);
     notifyErrorCritico.mockResolvedValue(undefined);
   });
@@ -245,5 +246,47 @@ describe('registrarError() — agrupación tolerante a valores dinámicos', () =
     const fp2 = query.mock.calls[0][1][0];
 
     expect(fp1).not.toBe(fp2);
+  });
+});
+
+
+describe('registrarError() — tope global de alertas por correo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _reiniciarTopeAlertas();
+    getAdminEmails.mockResolvedValue(['admin@iiap.gov.co']);
+    notifyErrorCritico.mockResolvedValue(undefined);
+  });
+
+  const nuevoError = () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ ocurrencias: 1, notificado_en: null }] })
+      .mockResolvedValueOnce({ rows: [] });
+  };
+
+  it('tras el tope, errores distintos se siguen registrando pero ya no mandan correo', async () => {
+    for (let i = 0; i < MAX_ALERTAS_POR_HORA + 3; i += 1) {
+      nuevoError();
+      await registrarError({ err: new Error(`fallo distinto ${i}`), metodo: 'GET', ruta: `/api/v1/x/${i}` });
+    }
+    expect(notifyErrorCritico).toHaveBeenCalledTimes(MAX_ALERTAS_POR_HORA);
+    const inserts = query.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO error_log'));
+    expect(inserts).toHaveLength(MAX_ALERTAS_POR_HORA + 3);
+  });
+
+  it('el tope se libera pasada una hora', async () => {
+    vi.useFakeTimers();
+    try {
+      for (let i = 0; i < MAX_ALERTAS_POR_HORA; i += 1) {
+        nuevoError();
+        await registrarError({ err: new Error(`a${i}`), metodo: 'GET', ruta: '/r' });
+      }
+      vi.advanceTimersByTime(61 * 60 * 1000);
+      nuevoError();
+      await registrarError({ err: new Error('después'), metodo: 'GET', ruta: '/r' });
+      expect(notifyErrorCritico).toHaveBeenCalledTimes(MAX_ALERTAS_POR_HORA + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
