@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   obtenerCapacidadesWfs, proxyWms, consultarWfs,
   obtenerAtributosCapa, contarFeaturesCapa, listarFeaturesCapa,
+  MAX_FEATURES_CONSULTA, MAX_BYTES_CONSULTA,
 } from '../src/modules/geovisores/geoserver.connector.js';
 
 const conexion = {
@@ -209,6 +210,39 @@ describe('consultarWfs', () => {
     const url = new URL(fetchMock.mock.calls.at(-1)[0]);
     expect(url.searchParams.get('CQL_FILTER')).toContain('SRID=4326;POLYGON');
     expect(url.searchParams.get('srsName')).toBe('EPSG:4326');
+  });
+
+  it('limita la cantidad de features devueltas: una consulta pública no puede volcar la capa entera', async () => {
+    const fetchMock = stubFetchPorOperacion({
+      DescribeFeatureType: () => `<?xml version="1.0"?><xsd:schema>
+        <xsd:element name="the_geom" type="gml:MultiSurfacePropertyType"/>
+      </xsd:schema>`,
+      GetFeature: () => ({ type: 'FeatureCollection', features: [] }),
+    });
+
+    await consultarWfs(conexion, 't_19_clima:Capa', poligono);
+
+    const url = new URL(fetchMock.mock.calls.at(-1)[0]);
+    expect(url.searchParams.get('count')).toBe(String(MAX_FEATURES_CONSULTA));
+  });
+
+  it('rechaza con 413 una respuesta que declara más bytes que el tope', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (entrada) => {
+      const operacion = new URL(entrada).searchParams.get('request');
+      const cuerpo = operacion === 'DescribeFeatureType'
+        ? '<xsd:schema><xsd:element name="the_geom" type="gml:MultiSurfacePropertyType"/></xsd:schema>'
+        : { type: 'FeatureCollection', features: [] };
+      return {
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(String(cuerpo)),
+        json: () => Promise.resolve(cuerpo),
+        headers: { get: (h) => (h === 'content-length' && operacion === 'GetFeature' ? String(MAX_BYTES_CONSULTA + 1) : 'application/json') },
+      };
+    }));
+
+    await expect(consultarWfs(conexion, 't_19_clima:Capa', poligono))
+      .rejects.toMatchObject({ status: 413, code: 'CONSULTA_DEMASIADO_GRANDE' });
   });
 });
 

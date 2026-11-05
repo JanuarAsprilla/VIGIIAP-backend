@@ -45,6 +45,33 @@ describe('authenticate middleware', () => {
     expect(r.status).toHaveBeenCalledWith(401);
   });
 
+  it('retorna 401 con un JWT del servidor que no es de sesión (p.ej. el state de OAuth, sin scope ni id/rol)', () => {
+    const oauthState = jwt.sign({ provider: 'google', nonce: 'n', csrf: 'c' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    const next = vi.fn();
+    const r = res();
+    authenticate({ cookies: { vigiiap_token: oauthState }, headers: {} }, r, next);
+    expect(r.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('acepta el token de visitante (sin scope) y uno de sesión anterior al scope (id + rol)', () => {
+    const visitante = jwt.sign({ visitanteId: 'v1', rol: 'visitante', tipo: 'visitante' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    for (const token of [visitante, ADMIN_TOKEN]) {
+      const next = vi.fn();
+      authenticate({ cookies: { vigiiap_token: token }, headers: {} }, res(), next);
+      expect(next).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('optionalAuthenticate tampoco toma el state de OAuth como usuario', () => {
+    const oauthState = jwt.sign({ provider: 'google', nonce: 'n', csrf: 'c' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    const req = { cookies: { vigiiap_token: oauthState }, headers: {} };
+    const next = vi.fn();
+    optionalAuthenticate(req, res(), next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(req.user).toBeUndefined();
+  });
+
   it('retorna 401 con token inválido', () => {
     const next = vi.fn();
     const r = res();

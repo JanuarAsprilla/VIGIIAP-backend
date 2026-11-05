@@ -17,6 +17,24 @@ import { notifyErrorCritico } from './mailer.js';
 import logger from './logger.js';
 
 const ALERTA_COOLDOWN_MS = 60 * 60 * 1000; // no repetir alerta del mismo error antes de 1h
+
+// Tope global: el cooldown es por error, así que una ráfaga de errores DISTINTOS (p.ej. URLs con basura
+// diferente en cada petición) mandaría un correo por cada uno. Pasado el tope los errores se siguen
+// registrando en BD, pero ya no se notifican hasta que pase la ventana.
+export const MAX_ALERTAS_POR_HORA = 5;
+let marcasAlertas = [];
+
+function reservarAlerta(ahora = Date.now()) {
+  marcasAlertas = marcasAlertas.filter((t) => ahora - t < ALERTA_COOLDOWN_MS);
+  if (marcasAlertas.length >= MAX_ALERTAS_POR_HORA) return false;
+  marcasAlertas.push(ahora);
+  return true;
+}
+
+/** Solo para pruebas. */
+export function _reiniciarTopeAlertas() {
+  marcasAlertas = [];
+}
 const MAX_LEN = 5000; // evita blobs enormes en BD/email (stacks recursivos, etc.)
 
 // ─── Redacción de datos sensibles ──────────────────────────────────────────
@@ -99,7 +117,7 @@ export async function registrarError({ err, metodo, ruta }) {
 
     const { ocurrencias, notificado_en: notificadoEn } = rows[0];
     const yaAlertado = notificadoEn && (Date.now() - new Date(notificadoEn).getTime()) < ALERTA_COOLDOWN_MS;
-    if (!yaAlertado) {
+    if (!yaAlertado && reservarAlerta()) {
       await alertarAdmins({ fingerprint, mensaje, metodo, ruta, ocurrencias });
     }
   } catch (dbErr) {

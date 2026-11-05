@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import morgan from 'morgan';
+import { redactarUrl } from './utils/redactarUrl.js';
 import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import { readFileSync } from 'fs';
@@ -123,7 +124,14 @@ app.use((_req, res, next) => {
 // ─── Health check (antes del CORS — Render y monitores no envían Origin) ─────
 // Registrado aquí para que Render y los load balancers no sean bloqueados por
 // el CORS estricto de producción. El endpoint no devuelve datos sensibles.
-app.get('/health', async (_req, res) => {
+// Cada llamada pública ejecutaba SELECT 1 + ping a Redis + HeadBucket a S3 sin límite: un amplificador
+// barato de carga. El resultado se reutiliza unos segundos (y las llamadas simultáneas comparten una sola
+// comprobación). En pruebas no se cachea para que cada caso vea su propio estado.
+const healthCacheMs = () => Number(process.env.HEALTH_CACHE_MS ?? (process.env.NODE_ENV === 'test' ? 0 : 5000));
+let saludEnCurso = null;
+let saludReciente = null;
+
+async function comprobarSalud() {
   const checks = { db: 'ok', redis: 'ok', storage: 'ok' };
   let critical = false;
 
@@ -143,6 +151,23 @@ app.get('/health', async (_req, res) => {
     await r2.send(new HeadBucketCommand({ Bucket: process.env.R2_BUCKET_NAME }));
   } catch { checks.storage = 'unreachable'; }
 
+  return { critical, checks };
+}
+
+function saludActual() {
+  if (healthCacheMs() > 0 && saludReciente && Date.now() - saludReciente.en < healthCacheMs()) {
+    return Promise.resolve(saludReciente.valor);
+  }
+  if (!saludEnCurso) {
+    saludEnCurso = comprobarSalud()
+      .then((valor) => { saludReciente = { en: Date.now(), valor }; return valor; })
+      .finally(() => { saludEnCurso = null; });
+  }
+  return saludEnCurso;
+}
+
+app.get('/health', async (_req, res) => {
+  const { critical, checks } = await saludActual();
   res.status(critical ? 503 : 200).json({
     status:    critical ? 'degraded' : 'ok',
     version:   APP_VERSION,
@@ -186,12 +211,7 @@ app.use(
 app.use(compression());
 // Token personalizado que redacta tokens sensibles de la URL antes de loguear.
 // Previene que tokens de reset/verificación (64 chars hex) aparezcan en los logs de Render.
-morgan.token('safe-url', (req) =>
-  req.originalUrl.replace(
-    /(\/(?:reset-password|verificar-email)\/)[A-Fa-f0-9]{32,}/g,
-    '$1[REDACTED]',
-  ),
-);
+morgan.token('safe-url', (req) => redactarUrl(req.originalUrl));
 
 const morganFormat = process.env.NODE_ENV === 'production'
   ? ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'
