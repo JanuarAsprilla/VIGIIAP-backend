@@ -6,7 +6,7 @@ import { verifyTotpOrBackup } from './twoFactor.service.js';
 import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from './twoFactorBloqueo.js';
 import { resetPasswordSchema } from './auth.schema.js';
 import {
-  COOKIE_NAME, REFRESH_COOKIE_NAME,
+  COOKIE_NAME, REFRESH_COOKIE_NAME, RUTA_COOKIES_TEMPORALES,
   authCookieOptions, refreshCookieOptions,
 } from '../../utils/cookieOptions.js';
 import { validarLongitudMinima } from '../../utils/passwordPolicy.js';
@@ -79,7 +79,7 @@ export async function changeExpiredPassword(req, res, next) {
     const user   = rows[0];
     const tokens = await issueTokenPair(user, { ip: req.ip, userAgent: req.headers['user-agent'] });
 
-    res.clearCookie('vigiiap_expired_temp', { httpOnly: true, secure: true, sameSite: 'Lax' });
+    res.clearCookie('vigiiap_expired_temp', { httpOnly: true, secure: true, sameSite: 'Lax', path: RUTA_COOKIES_TEMPORALES });
     res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
     res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, refreshCookieOptions());
     res.json({
