@@ -11,8 +11,18 @@ import { createGeovisorSchema, updateGeovisorSchema } from '../src/modules/geovi
 
 const baseRegister = {
   nombre: 'Juan Pérez', email: 'juan@iiap.gob.co',
-  password: 'Segura123!', tipoAcceso: 'externo',
+  password: 'Segura123!', tipoAcceso: 'externo', terminos: true,
 };
+
+describe('registerSchema — autorización de tratamiento de datos', () => {
+  it('exige terminos: true explícito (ni ausente, ni false, ni un texto)', () => {
+    const { terminos: _t, ...sinTerminos } = baseRegister;
+    expect(() => registerSchema.parse(sinTerminos)).toThrow(/términos|tratamiento/i);
+    expect(() => registerSchema.parse({ ...baseRegister, terminos: false })).toThrow();
+    expect(() => registerSchema.parse({ ...baseRegister, terminos: 'true' })).toThrow();
+    expect(() => registerSchema.parse(baseRegister)).not.toThrow();
+  });
+});
 
 describe('registerSchema — max lengths', () => {
   it('rechaza nombre > 150 chars', () => {

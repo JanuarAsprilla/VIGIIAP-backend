@@ -25,7 +25,7 @@ import * as authService from '../src/modules/auth/auth.service.js';
 import * as mailer from '../src/utils/mailer.js';
 import { register } from '../src/modules/auth/auth.controller.js';
 
-const cuerpo = (email) => ({ nombre: 'Ana Pérez', email, password: 'Clave-Segura-123!', institucion: 'IIAP' });
+const cuerpo = (email) => ({ nombre: 'Ana Pérez', email, password: 'Clave-Segura-123!', institucion: 'IIAP', terminos: true });
 const res = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() });
 const conflicto = (code) => Object.assign(new Error('conflicto'), { status: 409, code });
 const MENSAJE = 'Revisa tu correo electrónico para verificar tu cuenta.';
