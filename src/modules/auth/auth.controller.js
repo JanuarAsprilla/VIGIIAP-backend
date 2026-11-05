@@ -15,7 +15,7 @@ import { notificacionHabilitada } from '../../utils/configFlags.js';
 import { notificarAdmins } from '../notificaciones/notificaciones.service.js';
 import { revokeToken } from '../../utils/tokenBlacklist.js';
 import {
-  COOKIE_NAME, authCookieOptions, clearCookieOptions,
+  COOKIE_NAME, authCookieOptions, clearCookieOptions, RUTA_COOKIES_TEMPORALES,
   REFRESH_COOKIE_NAME, refreshCookieOptions, clearRefreshCookieOptions,
 } from '../../utils/cookieOptions.js';
 import { generateCsrfToken } from '../../utils/csrf.js';
@@ -97,7 +97,7 @@ export async function login(req, res, next) {
     if (result.passwordExpired) {
       res.cookie('vigiiap_expired_temp', result.expiredToken, {
         httpOnly: true, secure: true, sameSite: 'Lax',
-        maxAge: 15 * 60 * 1000, path: '/api/auth/change-expired-password',
+        maxAge: 15 * 60 * 1000, path: RUTA_COOKIES_TEMPORALES,
       });
       return res.status(403).json({ passwordExpired: true, code: 'PASSWORD_EXPIRED' });
     }
@@ -106,7 +106,7 @@ export async function login(req, res, next) {
     if (result.requiresTwoFactor) {
       res.cookie('vigiiap_2fa_temp', result.twoFactorToken, {
         httpOnly: true, secure: true, sameSite: 'Lax',
-        maxAge: 15 * 60 * 1000, path: '/api/auth/2fa/confirm',
+        maxAge: 15 * 60 * 1000, path: RUTA_COOKIES_TEMPORALES,
       });
       return res.json({ requiresTwoFactor: true });
     }

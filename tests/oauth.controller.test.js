@@ -128,7 +128,7 @@ describe('oauth.controller → callback()', () => {
 
     expect(r.cookie).toHaveBeenCalledTimes(1);
     expect(r.cookie).toHaveBeenCalledWith('vigiiap_2fa_temp', 'temp-2fa-tok', expect.objectContaining({
-      httpOnly: true, path: '/api/auth/2fa/confirm',
+      httpOnly: true, path: '/api',
     }));
     expect(r.redirect).toHaveBeenCalledWith('https://vigiiap.iiap.org.co/login?requiresTwoFactor=1');
   });
