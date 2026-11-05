@@ -21,6 +21,10 @@ const LIMITS = {
   fichaImagen: { maxWidth: 2000, quality: 82 },
 };
 
+// Tope de píxeles de ENTRADA: un PNG de pocos KB puede declarar decenas de miles de píxeles por lado y
+// ocupar gigas de RAM al decodificarse. 100 Mpx cubre un mapa escaneado grande (p.ej. 12000x8300).
+export const MAX_PIXELES_ENTRADA = 100_000_000;
+
 /**
  * @param {Buffer} buffer     - bytes originales, ya validados por fileGuard.js
  * @param {'thumbnail'|'image'|'fichaImagen'} category
@@ -30,7 +34,7 @@ export async function optimizeImage(buffer, category) {
   const { maxWidth, quality } = LIMITS[category] ?? LIMITS.image;
   // resolveWithObject: además de los bytes finales, da el ancho/alto YA redimensionado
   // -- las fichas por punto lo necesitan para dimensionar la galería sin otra pasada.
-  const { data, info } = await sharp(buffer)
+  const { data, info } = await sharp(buffer, { limitInputPixels: MAX_PIXELES_ENTRADA })
     // withoutEnlargement -- nunca agranda una imagen ya más chica que el máximo.
     .resize({ width: maxWidth, withoutEnlargement: true })
     .webp({ quality })
