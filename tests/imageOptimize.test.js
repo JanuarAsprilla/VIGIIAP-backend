@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import sharp from 'sharp';
-import { optimizeImage } from '../src/utils/imageOptimize.js';
+import { optimizeImage, MAX_PIXELES_ENTRADA } from '../src/utils/imageOptimize.js';
 
 async function makePng(width, height) {
   return sharp({
@@ -63,5 +63,39 @@ describe('optimizeImage()', () => {
 
     const meta = await sharp(buffer).metadata();
     expect(meta.width).toBe(1600);
+  });
+});
+
+describe('optimizeImage() — tope de píxeles de entrada', () => {
+  /** PNG diminuto cuya cabecera declara width x height: antes de decodificar pide RAM proporcional a esas dimensiones. */
+  function pngQueDeclara(width, height) {
+    const tabla = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+    const crc32 = (buf) => {
+      let c = 0xffffffff;
+      for (const b of buf) c = tabla[(c ^ b) & 0xff] ^ (c >>> 8);
+      return (c ^ 0xffffffff) >>> 0;
+    };
+    const trozo = (tipo, datos) => {
+      const cuerpo = Buffer.concat([Buffer.from(tipo, 'ascii'), datos]);
+      const largo = Buffer.alloc(4); largo.writeUInt32BE(datos.length);
+      const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(cuerpo));
+      return Buffer.concat([largo, cuerpo, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+    ihdr[8] = 8; ihdr[9] = 2; // 8 bits, RGB
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      trozo('IHDR', ihdr), trozo('IDAT', Buffer.from([0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01])), trozo('IEND', Buffer.alloc(0)),
+    ]);
+  }
+
+  it('rechaza una imagen que declara más píxeles que el tope, sin llegar a decodificarla', async () => {
+    const lado = Math.ceil(Math.sqrt(MAX_PIXELES_ENTRADA)) + 10;
+    await expect(optimizeImage(pngQueDeclara(lado, lado), 'image')).rejects.toThrow(/pixel limit/i);
   });
 });

@@ -37,6 +37,22 @@ describe('errorHandler middleware', () => {
     expect(r.status).toHaveBeenCalledWith(400);
   });
 
+  it('un dato mal formado que rechaza Postgres (22P02, p.ej. un UUID inválido en la URL) es 400, no 500, y no se registra como error', () => {
+    const err = Object.assign(new Error('invalid input syntax for type uuid: "abc"'), { code: '22P02' });
+    const r = res();
+    errorHandler(err, { requestId: 'r1', path: '/api/v1/descargar/mapa/abc', method: 'GET' }, r, next);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json).toHaveBeenCalledWith({ error: 'Parámetro con formato inválido' });
+    expect(registrarError).not.toHaveBeenCalled();
+  });
+
+  it('el rango entero fuera de límites (22003) también es 400', () => {
+    const err = Object.assign(new Error('value out of range'), { code: '22003' });
+    const r = res();
+    errorHandler(err, req, r, next);
+    expect(r.status).toHaveBeenCalledWith(400);
+  });
+
   it('retorna 500 para error interno sin status', () => {
     const internalErr = new Error('algo salió mal');
     const r = res();

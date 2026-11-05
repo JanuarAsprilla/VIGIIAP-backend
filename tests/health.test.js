@@ -58,4 +58,18 @@ describe('GET /health', () => {
     expect(res.body.status).toBe('degraded');
     expect(res.body.db).toBe('unreachable');
   });
+
+  it('con caché activa, llamadas seguidas comparten una sola comprobación de dependencias', async () => {
+    process.env.HEALTH_CACHE_MS = '60000';
+    try {
+      query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+      // La primera llamada puede reutilizar un estado previo; se mide el delta de las siguientes.
+      await request(app).get('/health');
+      const antes = query.mock.calls.length;
+      await Promise.all([request(app).get('/health'), request(app).get('/health'), request(app).get('/health')]);
+      expect(query.mock.calls.length).toBe(antes);
+    } finally {
+      delete process.env.HEALTH_CACHE_MS;
+    }
+  });
 });

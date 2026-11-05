@@ -283,7 +283,7 @@ export async function verifyEmail(req, res, next) {
 export async function reenviarVerificacion(req, res, next) {
   try {
     const { email } = req.body ?? {};
-    if (!email) return res.status(400).json({ error: 'Email requerido' });
+    if (!email || typeof email !== 'string') return res.status(400).json({ error: 'Email requerido' });
 
     const result = await authService.reenviarVerificacion(email);
 

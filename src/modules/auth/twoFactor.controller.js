@@ -44,7 +44,9 @@ export async function disable(req, res, next) {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Código TOTP requerido para desactivar' });
+    await reservarIntentoSegundoFactor(req.user.id);
     await tfService.disableTotp(req.user.id, code);
+    await limpiarFallosSegundoFactor(req.user.id);
     // Desactivar 2FA es un evento de seguridad de alto valor -- un atacante
     // con la sesión ya comprometida suele apagar el segundo factor antes de
     // moverse; que quede en el log permite correlacionarlo con lo que sigue.
