@@ -16,6 +16,11 @@ vi.mock('../src/modules/auth/twoFactor.service.js', () => ({
   verifyTotpOrBackup: vi.fn(),
 }));
 
+vi.mock('../src/modules/auth/twoFactorBloqueo.js', () => ({
+  reservarIntentoSegundoFactor: vi.fn().mockResolvedValue({ bloqueaAhora: false }),
+  limpiarFallosSegundoFactor:   vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
@@ -33,6 +38,7 @@ vi.mock('../src/utils/passwordPolicy.js', async (importOriginal) => ({
 import { query } from '../src/config/database.js';
 import { issueTokenPair, revokeAllRefreshTokens } from '../src/modules/auth/auth.service.js';
 import { verifyTotpOrBackup } from '../src/modules/auth/twoFactor.service.js';
+import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from '../src/modules/auth/twoFactorBloqueo.js';
 import { changeExpiredPassword } from '../src/modules/auth/expiredPassword.controller.js';
 
 process.env.JWT_SECRET = 'test-secret-for-expired-password';
@@ -255,5 +261,45 @@ describe('changeExpiredPassword()', () => {
     const res = mockRes();
     await changeExpiredPassword(req, res, mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('changeExpiredPassword() — bloqueo por cuenta del segundo factor', () => {
+  const pedir = () => ({
+    cookies: { vigiiap_expired_temp: makeToken({ id: 'user-uuid', scope: 'password-change' }) },
+    body: { password: 'NuevaPassword123!', totpCode: '123456' },
+    ip: '127.0.0.1',
+    headers: {},
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    reservarIntentoSegundoFactor.mockResolvedValue({ bloqueaAhora: false });
+    limpiarFallosSegundoFactor.mockResolvedValue(undefined);
+  });
+
+  it('una cuenta bloqueada no llega a probar el código TOTP ni a cambiar la contraseña', async () => {
+    query.mockResolvedValueOnce({ rows: [{ totp_enabled: true }] });
+    const err = Object.assign(new Error('bloqueada'), { status: 429, code: 'ACCOUNT_LOCKED' });
+    reservarIntentoSegundoFactor.mockRejectedValueOnce(err);
+    const next = vi.fn();
+
+    await changeExpiredPassword(pedir(), mockRes(), next);
+
+    expect(next).toHaveBeenCalledWith(err);
+    expect(verifyTotpOrBackup).not.toHaveBeenCalled();
+    expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
+  });
+
+  it('el intento se reserva ANTES de verificar el código', async () => {
+    const orden = [];
+    query.mockResolvedValueOnce({ rows: [{ totp_enabled: true }] });
+    reservarIntentoSegundoFactor.mockImplementationOnce(async () => { orden.push('reserva'); return { bloqueaAhora: false }; });
+    verifyTotpOrBackup.mockImplementationOnce(async () => { orden.push('verifica'); throw Object.assign(new Error('inválido'), { status: 401 }); });
+
+    await changeExpiredPassword(pedir(), mockRes(), vi.fn());
+
+    expect(orden).toEqual(['reserva', 'verifica']);
+    expect(limpiarFallosSegundoFactor).not.toHaveBeenCalled();
   });
 });
