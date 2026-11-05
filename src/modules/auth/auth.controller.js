@@ -21,6 +21,7 @@ import {
 import { generateCsrfToken } from '../../utils/csrf.js';
 import logger from '../../utils/logger.js';
 import { validarLongitudMinima } from '../../utils/passwordPolicy.js';
+import { registrarConsentimiento } from './consentimiento.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 
 /**
@@ -144,7 +145,16 @@ export async function visitante(req, res, next) {
   }
 }
 
-const MENSAJE_REGISTRO = 'Revisa tu correo electrónico para verificar tu cuenta.';
+/** La prueba de aceptación no debe tumbar un alta ya hecha, pero un fallo queda registrado para corregirlo. */
+async function guardarConsentimiento(usuarioId, origen) {
+  try {
+    await registrarConsentimiento(usuarioId);
+  } catch (err) {
+    logger.error(`[auth] No se pudo guardar el consentimiento (${origen}) de ${usuarioId}:`, err.message);
+  }
+}
+
+const MENSAJE_REGISTRO ='Revisa tu correo electrónico para verificar tu cuenta.';
 const CONFLICTOS_DE_CORREO = new Set(['EMAIL_ALREADY_REGISTERED', 'EMAIL_VERIFICATION_PENDING']);
 const AVISO_CADA_MS = 60 * 60 * 1000;
 const avisosEnviados = new Map();
@@ -181,6 +191,7 @@ export async function register(req, res, next) {
     const ip        = req.ip;
     const userAgent = req.headers?.['user-agent'];
     const user      = await authService.register(data, { ip, userAgent });
+    await guardarConsentimiento(user.id, 'registro');
 
     // Responder al cliente antes de los emails (no bloquear la respuesta)
     res.status(201).json({
@@ -350,6 +361,7 @@ export async function completarPerfil(req, res, next) {
   try {
     const data = completarPerfilSchema.parse(req.body);
     const user = await authService.completarPerfil(req.user.id, data);
+    await guardarConsentimiento(req.user.id, 'completar-perfil');
     res.json(user);
 
     // Notificar a los admins de la solicitud de rol — fuera del response,
