@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { issueTokenPair, revokeAllRefreshTokens } from './auth.service.js';
 import { verifyTotpOrBackup } from './twoFactor.service.js';
+import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from './twoFactorBloqueo.js';
 import { resetPasswordSchema } from './auth.schema.js';
 import {
   COOKIE_NAME, REFRESH_COOKIE_NAME,
@@ -37,7 +38,11 @@ export async function changeExpiredPassword(req, res, next) {
       if (!totpCode) {
         return res.status(401).json({ error: 'Código TOTP requerido (2FA activo)' });
       }
+      // Mismo bloqueo por cuenta que /2fa/confirm: el limitador por IP no frena a quien rota de IP
+      // durante los 15 min de vida del token temporal.
+      await reservarIntentoSegundoFactor(payload.id);
       await verifyTotpOrBackup(payload.id, totpCode);
+      await limpiarFallosSegundoFactor(payload.id);
     }
 
     const { password } = resetPasswordSchema.pick({ password: true }).parse(req.body);

@@ -148,6 +148,21 @@ describe('disable()', () => {
     );
   });
 
+  it('una cuenta bloqueada no llega a probar el código ni desactiva el 2FA', async () => {
+    const err = Object.assign(new Error('bloqueada'), { status: 429, code: 'ACCOUNT_LOCKED' });
+    reservarIntentoSegundoFactor.mockRejectedValueOnce(err);
+    const next = vi.fn();
+    await disable({ user: USER, body: { code: '654321' } }, mockRes(), next);
+    expect(next).toHaveBeenCalledWith(err);
+    expect(tfService.disableTotp).not.toHaveBeenCalled();
+  });
+
+  it('un código correcto limpia el contador de intentos', async () => {
+    tfService.disableTotp.mockResolvedValueOnce(undefined);
+    await disable({ user: USER, body: { code: '654321' } }, mockRes(), mockNext);
+    expect(limpiarFallosSegundoFactor).toHaveBeenCalledWith(USER.id);
+  });
+
   it('llama next(err) si disableTotp lanza', async () => {
     tfService.disableTotp.mockRejectedValueOnce(Object.assign(new Error('Código inválido'), { status: 401 }));
 

@@ -14,6 +14,11 @@ import { dnsLookupSeguro } from '../../utils/ssrfGuard.js';
 
 const MAX_REINTENTOS = 1;
 
+// La consulta por geometría es pública: sin tope, un polígono sobre todo el territorio vuelca la capa
+// entera (con todos sus atributos) y la respuesta se bufferiza en memoria.
+export const MAX_FEATURES_CONSULTA = 200;
+export const MAX_BYTES_CONSULTA = 5 * 1024 * 1024;
+
 function credencialesBasicAuth(conexion) {
   const credenciales = `${conexion.usuarioLectura}:${conexion.passwordDescifrada}`;
   return Buffer.from(credenciales).toString('base64');
@@ -141,6 +146,7 @@ export async function consultarWfs(conexion, capaId, geometria) {
   url.searchParams.set('typeNames', capaId);
   url.searchParams.set('outputFormat', 'application/json');
   url.searchParams.set('srsName', 'EPSG:4326');
+  url.searchParams.set('count', String(MAX_FEATURES_CONSULTA));
   url.searchParams.set('CQL_FILTER', `INTERSECTS(${propiedadGeometria}, ${wkt})`);
 
   const respuesta = await solicitarConTimeout(conexion, url);
@@ -148,6 +154,13 @@ export async function consultarWfs(conexion, capaId, geometria) {
     throw Object.assign(
       new Error(`GeoServer respondió ${respuesta.status} al consultar la capa ${capaId}`),
       { status: 502, code: 'GEOSERVER_NO_DISPONIBLE' },
+    );
+  }
+  const bytes = Number(respuesta.headers?.get?.('content-length'));
+  if (Number.isFinite(bytes) && bytes > MAX_BYTES_CONSULTA) {
+    throw Object.assign(
+      new Error('La consulta devuelve demasiados datos. Reduce el área consultada.'),
+      { status: 413, code: 'CONSULTA_DEMASIADO_GRANDE' },
     );
   }
   return respuesta.json();

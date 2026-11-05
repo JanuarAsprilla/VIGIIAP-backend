@@ -23,8 +23,13 @@ function extractToken(req) {
 // que apenas completó el primer factor como si ya tuviera sesión real.
 // authenticate() y optionalAuthenticate() deben compartir esta misma regla;
 // que difirieran fue justo el hallazgo que esto corrige.
+//
+// Un token SIN scope (anterior a que existiera, o el de visitante) solo vale si trae una identidad de
+// sesión real. Los demás JWT que firma el servidor con la misma clave —p.ej. el `state` del flujo OAuth,
+// que lleva provider/nonce/csrf— no pueden pasar por una sesión.
 function hasValidAccessScope(payload) {
-  return !payload.scope || payload.scope === 'access';
+  if (payload.scope) return payload.scope === 'access';
+  return Boolean(payload.id && payload.rol) || (payload.tipo === 'visitante' && Boolean(payload.visitanteId));
 }
 
 /**

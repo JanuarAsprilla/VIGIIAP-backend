@@ -43,6 +43,13 @@ export function errorHandler(err, _req, res, _next) {
     }
   }
 
+  // Clase 22 de Postgres ("data exception": UUID mal formado 22P02, entero fuera de rango 22003, fecha
+  // inválida 22007/22008...): el cliente mandó un valor imposible, no falló el servidor. Como 500 cada
+  // cadena distinta se registraba y alertaba por correo a los administradores.
+  if (typeof err.code === 'string' && /^22[0-9A-Z]{3}$/.test(err.code)) {
+    return res.status(400).json({ error: 'Parámetro con formato inválido' });
+  }
+
   const status = err.status || err.statusCode || 500;
 
   if (status >= 500) {

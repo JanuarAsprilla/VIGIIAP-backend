@@ -4,7 +4,8 @@ import { authenticate, authorize } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadSingle } from '../../middlewares/upload.js';
-import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
+import { uploadRateLimiter, authRateLimiter } from '../../middlewares/rateLimiter.js';
+import { exportar as exportarMisDatos, eliminar as eliminarMiCuenta } from '../privacidad/cuenta.controller.js';
 
 const router = Router();
 
@@ -24,5 +25,9 @@ router.patch('/me', authenticate, authorize(...VERIFICADOS), csrfProtection, upd
 // csrfProtection ANTES de avatarUpload: rechaza la petición forjada antes de parsear el multipart.
 router.patch('/me/avatar', authenticate, authorize(...VERIFICADOS), csrfProtection, uploadRateLimiter, avatarUpload, updateAvatar);
 router.patch('/me/password', authenticate, authorize(...VERIFICADOS), csrfProtection, changePassword);
+
+// Derechos del titular (Ley 1581, art. 8): valen para TODA cuenta, no solo las de roles verificados.
+router.get('/me/datos', authenticate, authRateLimiter, exportarMisDatos);
+router.delete('/me', authenticate, csrfProtection, authRateLimiter, eliminarMiCuenta);
 
 export default router;

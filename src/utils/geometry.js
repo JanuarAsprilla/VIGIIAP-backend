@@ -2,6 +2,9 @@ import * as turf from '@turf/turf';
 
 const HECTAREA_EN_M2 = 10000;
 
+/** Tope de vértices de una geometría de consulta: un polígono dibujado a mano rara vez pasa de unas decenas. */
+export const MAX_VERTICES_GEOMETRIA = 1000;
+
 function esCoordenadaValida(punto) {
   return (
     Array.isArray(punto) &&
@@ -27,14 +30,18 @@ function esAnilloValido(anillo) {
 
 /**
  * Validación estructural de GeoJSON: tipo, anillos cerrados, coordenadas numéricas dentro de
- * rango válido. No es validación topológica completa (auto-intersección, etc.), pero rechaza
+ * rango válido y un máximo de vértices (MAX_VERTICES_GEOMETRIA). No es validación topológica completa (auto-intersección, etc.), pero rechaza
  * cualquier payload malformado antes de que llegue a construir una consulta contra GeoServer.
  */
 export function esGeometriaValida(geometria) {
   if (typeof geometria !== 'object' || geometria === null) return false;
 
   if (geometria.type === 'Polygon') {
-    return Array.isArray(geometria.coordinates) && geometria.coordinates.every(esAnilloValido);
+    return (
+      Array.isArray(geometria.coordinates) &&
+      geometria.coordinates.every(esAnilloValido) &&
+      contarVertices(geometria.coordinates, 2) <= MAX_VERTICES_GEOMETRIA
+    );
   }
 
   if (geometria.type === 'MultiPolygon') {
@@ -42,11 +49,18 @@ export function esGeometriaValida(geometria) {
       Array.isArray(geometria.coordinates) &&
       geometria.coordinates.every(
         (poligono) => Array.isArray(poligono) && poligono.every(esAnilloValido),
-      )
+      ) &&
+      contarVertices(geometria.coordinates, 3) <= MAX_VERTICES_GEOMETRIA
     );
   }
 
   return false;
+}
+
+/** Cuenta los vértices de una estructura de anillos con `nivel` capas de anidación (2: Polygon, 3: MultiPolygon). */
+function contarVertices(estructura, nivel) {
+  if (nivel === 0) return 1;
+  return estructura.reduce((total, hijo) => total + contarVertices(hijo, nivel - 1), 0);
 }
 
 /** Área geodésica (turf usa una aproximación esférica sobre WGS84). */
