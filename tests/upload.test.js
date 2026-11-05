@@ -73,6 +73,61 @@ function buildApp(fields, { authenticated = false } = {}) {
 
 beforeEach(() => vi.clearAllMocks());
 
+// ─── Seguridad: URLs de archivos que manda el cliente ───────────────────────────
+
+describe('uploadFields() — nunca acepta `<campo>_url` del cliente', () => {
+  it('REGRESIÓN: una petición sin archivo con avatar_url NO lo deja pasar (antes permitía guardar una URL ajena y luego borrarla)', async () => {
+    const app = buildApp([{ name: 'avatar', folder: 'avatars', category: 'image' }], { authenticated: true });
+    const res = await request(app)
+      .post('/upload')
+      .field('avatar_url', 'https://files.test.local/documentos/oficial.pdf')
+      .field('avatar_tamano_bytes', '1')
+      .field('nombre', 'Ana');
+
+    expect(res.status).toBe(200);
+    expect(res.body.body).toEqual({ nombre: 'Ana' });
+    expect(uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('también lo descarta cuando la petición es JSON', async () => {
+    const app = express();
+    app.use(express.json());
+    app.post('/upload', ...uploadFields([{ name: 'avatar', folder: 'avatars', category: 'image' }]), (req, res) => res.json({ body: req.body }));
+    const res = await request(app).post('/upload').send({ avatar_url: 'https://evil.example/x', nombre: 'Ana' });
+
+    expect(res.body.body).toEqual({ nombre: 'Ana' });
+  });
+
+  it('con un archivo real, la URL que llega es la que fijó el servidor, no la que mandó el cliente', async () => {
+    const app = buildApp([{ name: 'documento', folder: 'docs', category: 'document' }], { authenticated: true });
+    const res = await request(app)
+      .post('/upload')
+      .field('documento_url', 'https://evil.example/otra')
+      .attach('documento', pdfBuffer(), { filename: 'a.pdf', contentType: 'application/pdf' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.body.documento_url).toBe('https://files.test.local/docs/archivo.pdf');
+  });
+});
+
+describe('uploadFields() — límites de multipart', () => {
+  it('rechaza una petición con más campos de texto de los permitidos (evita agotar la memoria)', async () => {
+    const app = buildApp([{ name: 'documento', folder: 'docs', category: 'document' }], { authenticated: true });
+    let peticion = request(app).post('/upload');
+    for (let i = 0; i < 80; i += 1) peticion = peticion.field(`campo${i}`, 'x');
+    const res = await peticion;
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rechaza un campo de texto desmesurado', async () => {
+    const app = buildApp([{ name: 'documento', folder: 'docs', category: 'document' }], { authenticated: true });
+    const res = await request(app).post('/upload').field('descripcion', 'a'.repeat(200 * 1024));
+
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── Paso 0 — Guardia de Content-Length ────────────────────────────────────────
 
 describe('uploadFields() — guardia de Content-Length', () => {
