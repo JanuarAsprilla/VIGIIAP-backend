@@ -74,6 +74,7 @@ describe('POST /api/auth/registro', () => {
         email: 'nuevo@iiap.gob.pe',
         password: 'Segura123!',   // strongPassword: mayúscula + minúscula + número/símbolo
         motivo: 'Investigación sobre flora amazónica',
+        terminos: true,
       });
 
     expect(res.status).toBe(201);
