@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import * as oauthService from './oauth.service.js';
 import {
-  COOKIE_NAME, authCookieOptions,
+  COOKIE_NAME, authCookieOptions, RUTA_COOKIES_TEMPORALES,
   REFRESH_COOKIE_NAME, refreshCookieOptions,
 } from '../../utils/cookieOptions.js';
 import { notifyVerificacionEmail } from '../../utils/mailer.js';
@@ -106,7 +106,7 @@ export async function callback(req, res) {
       // POST /api/auth/2fa/confirm antes de obtener sesión real.
       res.cookie('vigiiap_2fa_temp', result.twoFactorToken, {
         httpOnly: true, secure: true, sameSite: 'Lax',
-        maxAge: 15 * 60 * 1000, path: '/api/auth/2fa/confirm',
+        maxAge: 15 * 60 * 1000, path: RUTA_COOKIES_TEMPORALES,
       });
       return res.redirect(`${FRONTEND_URL}/login?requiresTwoFactor=1`);
     }

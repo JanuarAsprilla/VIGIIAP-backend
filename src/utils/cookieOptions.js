@@ -30,6 +30,13 @@
 export const COOKIE_NAME = 'vigiiap_token';
 
 /**
+ * Ruta de las cookies temporales de un paso intermedio del login (segundo factor, contraseña vencida). La API se
+ * sirve en /api/v1 (y en /api como alias): una cookie con path '/api/auth/...' NO coincide con '/api/v1/auth/...', así
+ * que el navegador nunca la devolvía y esos pasos no se podían completar. '/api' cubre los dos prefijos.
+ */
+export const RUTA_COOKIES_TEMPORALES = '/api';
+
+/**
  * Devuelve las opciones de res.cookie() para el token de sesión.
  * @param {number} [maxAgeMs] - Duración en milisegundos. Por defecto 15 minutos.
  */
