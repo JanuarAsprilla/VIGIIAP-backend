@@ -8,10 +8,6 @@ export const loginSchema = z.object({
 
 import { strongPassword } from '../../utils/passwordPolicy.js';
 
-// Autorización previa, expresa e informada (Ley 1581 de 2012): debe llegar explícita desde el cliente; el servidor
-// no la presume y la deja registrada (consentimiento.js).
-const aceptaTerminos = z.literal(true, { message: 'Debe aceptar los términos y el tratamiento de sus datos personales' });
-
 export const registerSchema = z.object({
   nombre:      z.string().min(2, 'Nombre requerido').max(150),
   email:       z.string().email('Email inválido').max(254),
@@ -20,7 +16,10 @@ export const registerSchema = z.object({
   motivo:      z.string().max(500).optional(),
   perfil:      z.enum(['investigador', 'tecnico', 'institucional', 'publico']).optional(),
   tipoAcceso:  z.enum(['institucional', 'externo']).optional().default('externo'),
-  terminos:    aceptaTerminos,
+  // Prueba de la autorización (Ley 1581, art. 9). Opcional hasta que el frontend nuevo esté desplegado;
+  // después se vuelve obligatoria (z.literal(true)).
+  aceptaTratamiento: z.boolean().optional(),
+  aceptaTerminos:    z.boolean().optional(),
 });
 
 export const recoverSchema = z.object({
@@ -44,5 +43,4 @@ export const completarPerfilSchema = z.object({
   institucion:      z.string().min(2, 'Institución requerida').max(300),
   perfilSolicitado: z.enum(['investigador', 'tecnico', 'institucional']).optional(),
   motivo:           z.string().max(500).optional(),
-  terminos:         aceptaTerminos,
 });
