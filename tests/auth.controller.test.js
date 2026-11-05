@@ -59,9 +59,13 @@ vi.mock('../src/utils/logger.js', () => ({
 vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
+vi.mock('../src/modules/privacidad/consentimientos.service.js', () => ({
+  registrarConsentimiento: vi.fn().mockResolvedValue({ id: 'c1' }),
+}));
 
 import * as authService from '../src/modules/auth/auth.service.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
+import { registrarConsentimiento } from '../src/modules/privacidad/consentimientos.service.js';
 import { query } from '../src/config/database.js';
 import { revokeToken } from '../src/utils/tokenBlacklist.js';
 import { logout, refresh, me, login, completarPerfil } from '../src/modules/auth/auth.controller.js';
@@ -407,6 +411,39 @@ describe('auth.controller → register()', () => {
       body: { nombre: 'Juan', email: 'j@j.co', password: 'Pass1234!', institucion: 'IIAP' },
     }, r, mockNext);
     expect(r.status).toHaveBeenCalledWith(201);
+  });
+
+  describe('prueba de la autorización (Ley 1581, art. 9)', () => {
+    const cuerpo = { nombre: 'Juan', email: 'j@j.co', password: 'Pass1234!', institucion: 'IIAP' };
+    const pedir = (extra) => ({ body: { ...cuerpo, ...extra }, ip: '10.0.0.7', headers: { 'user-agent': 'Mozilla/5.0' } });
+    beforeEach(() => {
+      authService.register.mockResolvedValue({ id: 'u1', nombre: 'Juan', email: 'j@j.co', verificationToken: 'tok' });
+      registrarConsentimiento.mockResolvedValue({ id: 'c1' });
+    });
+
+    it('guarda un registro por cada aceptación que viaja en el cuerpo, con IP y navegador', async () => {
+      await register(pedir({ aceptaTratamiento: true, aceptaTerminos: true }), res(), mockNext);
+
+      expect(registrarConsentimiento).toHaveBeenCalledTimes(2);
+      expect(registrarConsentimiento).toHaveBeenCalledWith({
+        usuarioId: 'u1', tipo: 'tratamiento_datos', origen: 'registro', ip: '10.0.0.7', userAgent: 'Mozilla/5.0',
+      });
+      expect(registrarConsentimiento).toHaveBeenCalledWith(expect.objectContaining({ tipo: 'terminos' }));
+    });
+
+    it('no inventa una autorización: sin aceptación en el cuerpo no se guarda nada', async () => {
+      await register(pedir({}), res(), mockNext);
+      await register(pedir({ aceptaTratamiento: false }), res(), mockNext);
+      expect(registrarConsentimiento).not.toHaveBeenCalled();
+    });
+
+    it('si guardar la prueba falla, el registro igual se completa', async () => {
+      registrarConsentimiento.mockRejectedValue(new Error('BD caída'));
+      const r = res();
+      await register(pedir({ aceptaTratamiento: true }), r, mockNext);
+      await Promise.resolve();
+      expect(r.status).toHaveBeenCalledWith(201);
+    });
   });
 
   it('llama next(err) si register lanza', async () => {
