@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import * as tfService from './twoFactor.service.js';
 import * as authService from './auth.service.js';
 import {
-  COOKIE_NAME, REFRESH_COOKIE_NAME,
+  COOKIE_NAME, REFRESH_COOKIE_NAME, RUTA_COOKIES_TEMPORALES,
   authCookieOptions, refreshCookieOptions,
 } from '../../utils/cookieOptions.js';
 import { query } from '../../config/database.js';
@@ -99,7 +99,7 @@ export async function confirm(req, res, next) {
         userAgent: req.headers?.['user-agent'],
       });
       if (!bloqueaAhora) throw err;
-      res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'Lax' });
+      res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'Lax', path: RUTA_COOKIES_TEMPORALES });
       return res.status(429).json({ error: 'Cuenta bloqueada temporalmente por demasiados códigos incorrectos.', code: 'ACCOUNT_LOCKED' });
     }
     await limpiarFallosSegundoFactor(payload.id);
@@ -113,7 +113,7 @@ export async function confirm(req, res, next) {
       ip: req.ip, userAgent: req.headers['user-agent'],
     });
 
-    res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'Lax' });
+    res.clearCookie('vigiiap_2fa_temp', { httpOnly: true, secure: true, sameSite: 'Lax', path: RUTA_COOKIES_TEMPORALES });
     res.cookie(COOKIE_NAME, tokens.accessToken, authCookieOptions());
     res.cookie(REFRESH_COOKIE_NAME, tokens.refreshToken, refreshCookieOptions());
     // Mismo shape que /auth/me — el frontend igual pide el perfil completo tras
