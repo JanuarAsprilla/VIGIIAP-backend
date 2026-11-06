@@ -3,7 +3,7 @@ import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
 import { notifyRolCambiado } from '../../utils/mailer.js';
-import { deleteFileByUrl } from '../../config/r2.js';
+import { deleteFileByUrl, extractKey } from '../../config/r2.js';
 
 // super_admin excluido: solo el propio super_admin puede asignarlo vía admin.service
 const ROLES = ['admin_sig', 'investigador', 'tecnico', 'institucional', 'publico'];
@@ -123,8 +123,9 @@ export async function updateAvatar(userId, avatarUrl) {
   );
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
-  // Borra la foto anterior de R2 tras confirmar el UPDATE — evita huérfanos en el bucket
-  if (previousUrl && previousUrl !== avatarUrl) {
+  // Borra la foto anterior de R2 tras confirmar el UPDATE — evita huérfanos en el bucket.
+  // Solo se borran objetos de la carpeta de avatares: un avatar_url ajeno (p. ej. un documento) nunca se elimina.
+  if (previousUrl && previousUrl !== avatarUrl && extractKey(previousUrl)?.startsWith('avatars/')) {
     await deleteFileByUrl(previousUrl).catch(() => {});
   }
 

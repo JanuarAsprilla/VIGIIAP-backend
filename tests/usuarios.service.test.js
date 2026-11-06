@@ -28,6 +28,7 @@ vi.mock('../src/utils/mailer.js', () => ({
 
 vi.mock('../src/config/r2.js', () => ({
   deleteFileByUrl: vi.fn().mockResolvedValue(undefined),
+  extractKey: vi.fn((url) => (url?.startsWith('https://files.test.local/') ? url.slice('https://files.test.local/'.length) : null)),
 }));
 
 import { query } from '../src/config/database.js';
@@ -364,6 +365,15 @@ describe('usuarios.service → updateAvatar()', () => {
       .mockResolvedValueOnce({ rows: [{ ...USER, avatar_url: 'https://files.test.local/avatars/nueva.jpg' }] });
     await updateAvatar('usr-uuid-1', 'https://files.test.local/avatars/nueva.jpg');
     expect(deleteFileByUrl).toHaveBeenCalledWith('https://files.test.local/avatars/vieja.jpg');
+  });
+
+  it('REGRESIÓN: no borra del bucket un objeto que no sea un avatar (p. ej. un documento guardado como avatar_url)', async () => {
+    deleteFileByUrl.mockClear();
+    query
+      .mockResolvedValueOnce({ rows: [{ avatar_url: 'https://files.test.local/documentos/oficial.pdf' }] })
+      .mockResolvedValueOnce({ rows: [{ ...USER, avatar_url: 'https://files.test.local/avatars/nueva.jpg' }] });
+    await updateAvatar('usr-uuid-1', 'https://files.test.local/avatars/nueva.jpg');
+    expect(deleteFileByUrl).not.toHaveBeenCalled();
   });
 
   it('lanza 404 si el usuario no existe', async () => {
