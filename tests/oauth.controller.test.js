@@ -72,6 +72,19 @@ describe('oauth.controller → redirectToProvider()', () => {
     expect(r.cookie).toHaveBeenCalledWith('vigiiap_oauth_cv', 'el-verifier', expect.objectContaining({ httpOnly: true }));
   });
 
+  it('las cookies del flujo viajan de vuelta al callback del proveedor: su path cubre /api/v1/auth/oauth/<proveedor>/callback', async () => {
+    oauthService.buildAuthorizationUrl.mockResolvedValue({ url: 'https://accounts.google.com/authorize?mock=1', codeVerifierCookie: 'el-verifier' });
+    const r = res();
+    await redirectToProvider(req({ params: { provider: 'google' } }), r, mockNext);
+
+    // Regla del navegador (RFC 6265 §5.1.4): la cookie se envía si su path es prefijo de la ruta pedida.
+    const rutaCallback = '/api/v1/auth/oauth/google/callback';
+    for (const nombre of ['vigiiap_oauth_csrf', 'vigiiap_oauth_cv']) {
+      const [, , opciones] = r.cookie.mock.calls.find(([n]) => n === nombre);
+      expect(rutaCallback.startsWith(`${opciones.path}/`), `${nombre} (path ${opciones.path}) no se enviaría al callback`).toBe(true);
+    }
+  });
+
   it('llama next(err) si el proveedor no está configurado', async () => {
     oauthService.buildAuthorizationUrl.mockRejectedValue(
       Object.assign(new Error('no configurado'), { status: 501 }),
