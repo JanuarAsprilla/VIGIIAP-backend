@@ -8,7 +8,9 @@ import { notifyVerificacionEmail } from '../../utils/mailer.js';
 import logger from '../../utils/logger.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co';
-const OAUTH_FLOW_PATH = '/api/auth/oauth';
+// Debe cubrir el retorno del proveedor (/api/v1/auth/oauth/<proveedor>/callback): con '/api/auth/oauth' el navegador no
+// devolvía estas cookies y el login con Google/Microsoft siempre se rechazaba. Ver RUTA_COOKIES_TEMPORALES.
+const OAUTH_FLOW_PATH = RUTA_COOKIES_TEMPORALES;
 const OAUTH_FLOW_MAX_AGE_MS = 10 * 60 * 1000; // igual a la vida del state JWT
 
 function redirectUriFor(req, providerId) {
