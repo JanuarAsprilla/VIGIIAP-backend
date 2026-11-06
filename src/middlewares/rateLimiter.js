@@ -47,7 +47,8 @@ function normalizeIp(req) {
 // y de paso bloquean con el mismo 429 cualquier otra petición de esa
 // IP/usuario (ej. la lista de geovisores dejaba de refrescar después de
 // crear uno). Se excluyen de acá para que caigan solo bajo tileRateLimiter.
-const esRutaDeTiles = (req) => req.path.includes('/wms') || req.path.includes('/leyenda');
+// Patrón estricto (rutas exactas): con «includes» cualquier ruta con «/wms» o «/leyenda» en el nombre escapaba del cupo general.
+const esRutaDeTiles = (req) => /^\/api(\/v1)?\/(geovisores\/[^/]+\/(wms|capas\/[^/]+\/leyenda)|admin\/conexiones-geoserver\/[^/]+\/(wms|leyenda\/[^/]+))\/?$/.test(req.path);
 
 // Cada cambio de filtro del Observatorio de Biodiversidad dispara varias consultas (mapa, indicadores,
 // serie, listados, opciones, puntos): bajo el cupo general se agotaría en minutos y bloquearía el resto

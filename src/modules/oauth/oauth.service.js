@@ -160,6 +160,14 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
           { status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' },
         );
       }
+      // Cuenta ya vinculada a ESTE proveedor con otra identidad: nunca se re-vincula (caso nOAuth: quien controla su
+      // propio tenant de Entra ID puede declarar el correo de otra persona). Vincular solo si no tenía vínculo.
+      if (existing.oauth_provider === providerId) {
+        throw Object.assign(
+          new Error('Ya existe una cuenta con este correo vinculada a otra identidad de este proveedor.'),
+          { status: 409, code: 'EMAIL_LINKED_TO_OTHER_IDENTITY' },
+        );
+      }
       await query(
         `UPDATE usuarios SET oauth_provider = $1, oauth_id = $2, actualizado_en = NOW() WHERE id = $3`,
         [providerId, profile.providerId, existing.id],

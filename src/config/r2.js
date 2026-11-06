@@ -94,11 +94,13 @@ export async function getFileStream(key) {
  */
 export function extractKey(url) {
   if (!url) return null;
-  if (PRIVATE_URL && url.startsWith(PRIVATE_URL)) {
-    return url.slice(PRIVATE_URL.length).replace(/^\//, '');
+  // Frontera de carpeta («…/bucket/»): sin ella «…/bucketX/…» o «…/bucket-otro» pasaba por clave del bucket.
+  const enBucket = (base) => base && url.startsWith(`${base.replace(/\/+$/, '')}/`);
+  if (enBucket(PRIVATE_URL)) {
+    return url.slice(PRIVATE_URL.replace(/\/+$/, '').length + 1);
   }
-  if (PUBLIC_URL && url.startsWith(PUBLIC_URL)) {
-    return url.slice(PUBLIC_URL.length).replace(/^\//, '');
+  if (enBucket(PUBLIC_URL)) {
+    return url.slice(PUBLIC_URL.replace(/\/+$/, '').length + 1);
   }
   // No aceptar URLs de otros dominios como keys R2 — podría causar borrado arbitrario de objetos.
   return null;
