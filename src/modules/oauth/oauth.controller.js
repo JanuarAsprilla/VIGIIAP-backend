@@ -8,7 +8,7 @@ import { notifyVerificacionEmail } from '../../utils/mailer.js';
 import logger from '../../utils/logger.js';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vigiiap.iiap.org.co';
-const OAUTH_FLOW_PATH = '/api/auth/oauth';
+const OAUTH_FLOW_PATH = RUTA_COOKIES_TEMPORALES;
 const OAUTH_FLOW_MAX_AGE_MS = 10 * 60 * 1000; // igual a la vida del state JWT
 
 function redirectUriFor(req, providerId) {

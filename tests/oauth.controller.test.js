@@ -72,6 +72,17 @@ describe('oauth.controller → redirectToProvider()', () => {
     expect(r.cookie).toHaveBeenCalledWith('vigiiap_oauth_cv', 'el-verifier', expect.objectContaining({ httpOnly: true }));
   });
 
+  it('REGRESIÓN: las cookies del flujo se guardan con una ruta que cubre /api/v1/auth/oauth/*; si no, el navegador no las devuelve y todo inicio de sesión falla con OAUTH_CSRF_MISMATCH', async () => {
+    oauthService.buildAuthorizationUrl.mockResolvedValue({ url: 'https://accounts.google.com/authorize?mock=1', codeVerifierCookie: 'el-verifier' });
+    const r = res();
+    await redirectToProvider(req({ params: { provider: 'google' } }), r, mockNext);
+
+    const rutaCallback = '/api/v1/auth/oauth/google/callback';
+    for (const [nombre, , opciones] of r.cookie.mock.calls) {
+      expect(rutaCallback.startsWith(`${opciones.path}/`), `${nombre} con path ${opciones.path}`).toBe(true);
+    }
+  });
+
   it('llama next(err) si el proveedor no está configurado', async () => {
     oauthService.buildAuthorizationUrl.mockRejectedValue(
       Object.assign(new Error('no configurado'), { status: 501 }),
