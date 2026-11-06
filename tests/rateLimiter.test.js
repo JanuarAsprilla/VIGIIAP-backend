@@ -230,15 +230,18 @@ describe('rateLimiter — excluye rutas de tiles WMS/leyenda de su propio cupo',
   function buildTileApp() {
     const app = express();
     app.use(rateLimiter);
-    app.get('/geovisores/:slug/wms', (_req, res) => res.status(200).json({ ok: true }));
-    app.get('/geovisores/:slug/capas/:capaId/leyenda', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/v1/geovisores/:slug/wms', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/v1/geovisores/:slug/capas/:capaId/leyenda', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/v1/admin/conexiones-geoserver/:id/wms', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/v1/admin/conexiones-geoserver/:id/leyenda/:capaId', (_req, res) => res.status(200).json({ ok: true }));
+    app.get('/api/v1/mapas/:slug', (_req, res) => res.status(200).json({ ok: true }));
     app.get('/ping', (_req, res) => res.status(200).json({ ok: true }));
     return app;
   }
 
   it('no aplica cabeceras de rate limit (ni cuenta contra el cupo) en /wms', async () => {
     const app = buildTileApp();
-    const res = await request(app).get('/geovisores/mapa-de-prueba/wms');
+    const res = await request(app).get('/api/v1/geovisores/mapa-de-prueba/wms');
 
     expect(res.status).toBe(200);
     expect(res.headers['ratelimit-limit']).toBeUndefined();
@@ -246,10 +249,24 @@ describe('rateLimiter — excluye rutas de tiles WMS/leyenda de su propio cupo',
 
   it('no aplica cabeceras de rate limit (ni cuenta contra el cupo) en /leyenda', async () => {
     const app = buildTileApp();
-    const res = await request(app).get('/geovisores/mapa-de-prueba/capas/3/leyenda');
+    const res = await request(app).get('/api/v1/geovisores/mapa-de-prueba/capas/3/leyenda');
 
     expect(res.status).toBe(200);
     expect(res.headers['ratelimit-limit']).toBeUndefined();
+  });
+
+  it('también excluye la vista previa de administración (wms y leyenda de una conexión)', async () => {
+    const app = buildTileApp();
+    expect((await request(app).get('/api/v1/admin/conexiones-geoserver/c1/wms')).headers['ratelimit-limit']).toBeUndefined();
+    expect((await request(app).get('/api/v1/admin/conexiones-geoserver/c1/leyenda/capa')).headers['ratelimit-limit']).toBeUndefined();
+  });
+
+  it('REGRESIÓN: una ruta cualquiera con «wms» o «leyenda» en el nombre NO escapa del cupo general', async () => {
+    const app = buildTileApp();
+    const res = await request(app).get('/api/v1/mapas/wms-leyenda-falso');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('300');
   });
 
   it('una ruta que no es de tiles sigue quedando sujeta al cupo general', async () => {

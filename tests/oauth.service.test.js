@@ -167,6 +167,20 @@ describe('handleCallback()', () => {
     );
   });
 
+  it('REGRESIÓN (nOAuth): una cuenta ya vinculada a este proveedor con otra identidad NO se re-vincula en silencio', async () => {
+    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
+      providerId: 'identidad-del-atacante', email: 'funcionario@iiap.gov.co', emailVerified: true, nombre: 'Atacante', avatarUrl: null,
+    });
+    query
+      .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id): esa identidad no existe
+      .mockResolvedValueOnce({ rows: [{ id: 'cuenta-real', nombre: 'Funcionario', email: 'funcionario@iiap.gov.co', rol: 'admin_sig', activo: true, email_verified: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: null, oauth_provider: 'google', oauth_id: 'identidad-real' }] });
+
+    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
+      .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_OTHER_IDENTITY' });
+    expect(query).toHaveBeenCalledTimes(2); // no hubo UPDATE que reescribiera oauth_id
+    expect(issueTokenPair).not.toHaveBeenCalled();
+  });
+
   it('REGRESIÓN (account takeover): rechaza vincular por email si la cuenta existente tiene contraseña propia', async () => {
     mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
       providerId: 'atacante-oauth-id', email: 'victima-admin@iiap.gov.co', emailVerified: true, nombre: 'Atacante', avatarUrl: null,

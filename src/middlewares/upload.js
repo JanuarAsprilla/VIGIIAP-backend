@@ -23,7 +23,16 @@ export function uploadFields(fields) {
 
   const upload = multer({
     storage,
-    limits: { fileSize: maxFieldBytes },
+    // Además del tamaño por archivo: sin tope de campos/partes un multipart con miles de campos de texto
+    // se acumula en memoria y tumba el proceso (el límite de Content-Length no cubre Transfer-Encoding: chunked).
+    limits: {
+      fileSize: maxFieldBytes,
+      files: fields.length,
+      fields: 60,
+      fieldSize: 128 * 1024,
+      parts: fields.length + 60,
+      headerPairs: 100,
+    },
   }).fields(multerFields);
 
   return [
@@ -90,6 +99,15 @@ export function uploadFields(fields) {
     // 3. Subir archivos a R2 y registrar scan clean
     async (req, res, next) => {
       try {
+        // `<campo>_url` y `<campo>_tamano_bytes` solo los fija este middleware tras subir el archivo. Se descartan
+        // SIEMPRE los que mande el cliente: si no, una petición sin archivo podía guardar una URL ajena
+        // (p. ej. la de un documento) y luego provocar su borrado al reemplazarla.
+        for (const field of fields) {
+          if (req.body) {
+            delete req.body[`${field.name}_url`];
+            delete req.body[`${field.name}_tamano_bytes`];
+          }
+        }
         if (!req.files) return next();
 
         const userId = req.user?.id ?? null;

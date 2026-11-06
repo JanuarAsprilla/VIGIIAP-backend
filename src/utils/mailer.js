@@ -455,6 +455,7 @@ export async function notifyVerificacionEmail({ email, nombre, verificationToken
         + `<p style="margin:0;font-size:12px;color:${MUTED};">Este enlace expira en <strong>24 horas</strong>. Si no fuiste tú, ignora este correo.</p>`,
       cta: { url: verifyUrl, label: 'Verificar mi correo', bg: GREEN, textColor: SURFACE },
     }),
+    reintentable: false, // lleva un token vigente: no se guarda en claro en la cola de reintentos (la persona puede pedir otro)
   });
 }
 
@@ -473,6 +474,7 @@ export async function notifyRecuperarPassword({ email, nombre, resetToken }) {
         + `<p style="margin:0;font-size:12px;color:${MUTED};">Expira en <strong>30 minutos</strong>. Si no fuiste tú, ignora este correo — tu contraseña sigue igual.</p>`,
       cta: { url: resetUrl, label: 'Restablecer contraseña', bg: GREEN, textColor: SURFACE },
     }),
+    reintentable: false, // lleva un token vigente: no se guarda en claro en la cola de reintentos
   });
 }
 
