@@ -117,6 +117,12 @@ export async function buildAuthorizationUrl(providerId, redirectUri, csrfCookieV
 // cuenta con contraseña propia y ahora entra por primera vez con OAuth queda
 // vinculado a la misma cuenta en vez de crear un duplicado. Solo si ninguna
 // de las dos coincide se crea un usuario nuevo.
+/**
+ * Proveedores cuyo correo verificado prueba que quien entra es su dueño. Google emite email_verified tras comprobar el
+ * buzón. Microsoft NO está aquí: documenta que el claim de correo no está verificado y no sirve para autorizar.
+ */
+const PROVEEDORES_QUE_CERTIFICAN_EL_CORREO = new Set(['google']);
+
 async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
   const byOAuth = await query(
     `SELECT id, nombre, email, rol, activo, email_verified, institucion, avatar_url, perfil_completo, totp_enabled
@@ -149,29 +155,41 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
           { status: 409, code: 'EMAIL_LINKED_TO_OTHER_PROVIDER' },
         );
       }
-      if (existing.password_hash) {
-        // Nunca vincular en silencio una identidad externa a una cuenta que
-        // ya tiene contraseña propia solo porque el correo coincide — el
-        // proveedor OAuth es quien afirma esa dirección, no quien prueba ser
-        // dueño de la cuenta local. Vincular requiere que el usuario entre
-        // primero con su contraseña (fuera del alcance de este endpoint).
-        throw Object.assign(
-          new Error('Ya existe una cuenta con este correo. Inicia sesión con tu contraseña.'),
-          { status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' },
-        );
-      }
       // Cuenta ya vinculada a ESTE proveedor con otra identidad: nunca se re-vincula (caso nOAuth: quien controla su
-      // propio tenant de Entra ID puede declarar el correo de otra persona). Vincular solo si no tenía vínculo.
+      // propio tenant de Entra ID puede declarar el correo de otra persona). Va antes que la regla de la contraseña para
+      // que una cuenta con contraseña tampoco pueda ser re-vinculada a una identidad distinta.
       if (existing.oauth_provider === providerId) {
         throw Object.assign(
           new Error('Ya existe una cuenta con este correo vinculada a otra identidad de este proveedor.'),
           { status: 409, code: 'EMAIL_LINKED_TO_OTHER_IDENTITY' },
         );
       }
+      if (existing.password_hash && !PROVEEDORES_QUE_CERTIFICAN_EL_CORREO.has(providerId)) {
+        // Un proveedor cuyo claim de correo no prueba propiedad (Microsoft/Entra ID: el atributo lo puede editar quien
+        // controla un tenant propio) nunca vincula en silencio una cuenta con contraseña solo porque el correo coincide.
+        throw Object.assign(
+          new Error('Ya existe una cuenta con este correo. Inicia sesión con tu contraseña.'),
+          { status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' },
+        );
+      }
       await query(
         `UPDATE usuarios SET oauth_provider = $1, oauth_id = $2, actualizado_en = NOW() WHERE id = $3`,
         [providerId, profile.providerId, existing.id],
       );
+      if (existing.password_hash) {
+        // Google certifica el correo (handleCallback ya exigió email_verified) y la cuenta local también estaba
+        // verificada: quien entra es el dueño del correo. La contraseña no se toca y el 2FA sigue vigente.
+        registrarAuditoria({
+          accion: 'oauth_vinculo_cuenta',
+          modulo: 'auth',
+          entidadId: existing.id,
+          descripcion: `Google vinculado a una cuenta con contraseña — ${existing.email}`,
+          usuarioId: existing.id,
+          usuarioEmail: existing.email,
+          ip,
+          userAgent,
+        });
+      }
       return { user: existing, isNewAccount: false };
     }
 
