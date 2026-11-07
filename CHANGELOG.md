@@ -1,5 +1,90 @@
 # Changelog
 
+## [1.9.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.8.0...v1.9.0) (2026-11-07)
+
+
+### Features
+
+* **actividad:** fase 1 — registro legible, filtros, gravedad y resumen ([#194](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/194)) ([88004ad](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/88004ad70c6f1381f3bdbe04247263e046110ba6))
+* **actividad:** fase 2 — resultado, request id, accesos denegados y cambios ([#196](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/196)) ([56437ef](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/56437ef5323b4260b658237920d9d6ab3d169505))
+* **actividad:** fase 3 — ubicación e IP de las visitas, retención y alertas de seguridad ([#200](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/200)) ([dc124b7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/dc124b7aa21b5206fa5d6ac72b2d9dccefc5f20d))
+* **actividad:** registro de auditoría encadenado, de solo anexado y con retención ([#202](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/202)) ([b2aa5af](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b2aa5afeb71d2263e496c423cc9d75657197cb78))
+* actualización automática de biodiversidad con configuración del Super Administrador ([bf96571](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/bf9657158ab97751ef3fc007fb918e3c4d4faac4))
+* actualización automática de biodiversidad con configuración del Super Administrador ([7899cdd](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7899cddb8e93b1b476224be394a81f0f3d6f49a8))
+* API de lectura de biodiversidad (PR 2 de 4) ([a13f775](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a13f77577288f995179e07c84e35269e8b31f042))
+* API de lectura de biodiversidad detrás de un interruptor ([01a83a0](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/01a83a0fb1b3b2c922fd862d55ba5b1b1e6e62c3))
+* API v2 de biodiversidad (resumen, especies, series, detalle, fotos y conservación) ([#241](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/241)) ([bdd68a9](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/bdd68a91a41c30ec7be21b098efd651f6343e90f))
+* API v2.2 de biodiversidad (filtros transversales, /opciones y /puntos) ([#252](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/252)) ([e2fa15d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e2fa15d153699016b26c52aac26f5801423c3809))
+* cargador de datos de biodiversidad y workflow de carga ([2eb59d1](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2eb59d11d20df191b5e02b9710849c854c6c773f))
+* cargador de datos de biodiversidad y workflow de carga (PR 3) ([5ba6045](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5ba6045725897712b6243ddd905ecde13d62c911))
+* cola de reintentos de correo y conexión SMTP reutilizable ([#254](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/254)) ([7a6952d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7a6952d0377e87d25c4aada826a901cdcc10ffdc))
+* comparación de la analítica con el período anterior ([#260](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/260)) ([7d0cc5e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7d0cc5e5ea77d5a4e63a4f19de4c9f4a2b7bc43a))
+* contadores del limitador de tráfico compartidos entre instancias vía Redis ([#277](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/277)) ([b2ca57b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b2ca57b2f15162d1592d62f119e5050f8523954e))
+* **cumplimiento:** prueba de la autorizacion de tratamiento de datos (Ley 1581) ([64b0c2a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/64b0c2a89c363f785f49702ad665073b1f41057b))
+* **cumplimiento:** prueba de la autorización de tratamiento de datos (Ley 1581) ([72ff6ba](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/72ff6ba24ff658c8e5d945d052aaa4c733147d1d))
+* embudos de conversión y flujo de navegación en la analítica propia ([#257](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/257)) ([eb3d056](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/eb3d056e2410914e6a2d3ab65c4dff01678ccc3f))
+* esquema base de biodiversidad (migración 062) ([79affac](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/79affac6f9ef703d234007d4681e316804d5ab76))
+* esquema base de biodiversidad (PR 1 de 4) ([daff850](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/daff850631a2a730a00d786961c2443b40cd2b09))
+* eventos personalizados y tiempo real en la analítica propia ([#239](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/239)) ([1c63535](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/1c635355c8135e9169e51b83bfc18c1195742125))
+* exportar a CSV por bloques actividad y descargas ([#280](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/280)) ([74ee556](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/74ee556715a5422d25845dba701ea6261d78917f))
+* foto representativa por especie en grupos agregados (aves, insectos, plantas) ([cee036b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/cee036b84cb82c9e86105870e9e3e48e396d6d56))
+* foto representativa por especie en los grupos agregados (aves, insectos, plantas) ([ccceb7f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ccceb7fdc987ea058ed3644ce988e8479d6fcec8))
+* foto representativa y con_foto por especie en /biodiversidad/especies ([#246](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/246)) ([2519ee2](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2519ee2fa46c47173270661eaa0ccb06aa4f95a2))
+* **mantenimiento:** pausa total de la API y endpoint público de estado ([#208](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/208)) ([30ac6a9](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/30ac6a9b3c380c5680cb283ddc2d93ac16e40519))
+* **oauth:** Google vincula las cuentas existentes con contrasena cuando certifica el correo ([#310](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/310)) ([d32915f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d32915f50f9f84bbc5b4b38e5e37d970d512e8fe))
+* **privacidad:** eliminar y exportar mi cuenta, claves foraneas y retencion de registros ([#299](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/299)) ([092f49a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/092f49affaaca9028a43ddb68177bf6247454076))
+* tareas programadas en una sola instancia y revocación de tokens compartida ([#274](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/274)) ([b00c44b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b00c44b10a47431753080a613f7aafdd6227bc26))
+
+
+### Bug Fixes
+
+* **cache:** categorías devolvía documentos por colisión de claves; solo cachea 200 y usa SCAN ([#213](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/213)) ([ce00334](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ce00334abd3489fc93d5395de379f51956242a78))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([5c5283d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5c5283db0e67269c05c4ec81839fdba974217dc6))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([8401092](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8401092e3b81e6170e121f7dc56eb821eba15d25))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([5b38440](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5b384408e5bdc7e020b0e98248098ce80f359e4b))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([a8a6fb6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a8a6fb6ad0be85f967ef2a6e93b2a88b6a920a31))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([fd7f387](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/fd7f387f785b82a4d46865619bc4a62ed52bf11c))
+* **cache:** las claves incluyen el montaje del router (categorías devolvía documentos), solo cachea 200 y usa SCAN ([b436a1f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b436a1f6287c4b4375eea92fd18693f18c3370ba))
+* cierra hallazgos de auditoría de seguridad + residual nOAuth (OAuth email verification) ([d1aac10](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d1aac10e2d973abfcc7785e1f5080ab22962ec3a))
+* **ci:** release-please publica desde main aunque develop sea la rama por defecto ([#192](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/192)) ([2220f6d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2220f6de355bc87e47d59ebbd1009cea6fd7a420))
+* **deps:** corrige las vulnerabilidades de npm audit (zod 4, undici, multer, body-parser, nodemailer) ([#224](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/224)) ([ae8e26b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ae8e26b9033ca3c5684120b4b24745a9ca09ba38))
+* el archivo de datos de biodiversidad no viaja por GitHub ([2f74506](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2f74506765c263273440776c5f4c77801d9bd7d4))
+* el buscador de fotos distingue «sin foto» de «GBIF falló» ([ec727a1](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ec727a134810b26a10269237d57a995588869761))
+* el buscador de fotos distingue «sin foto» de «GBIF falló» ([2507403](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2507403995226a1413e206964229dededd2a53dc))
+* **geovisores:** elegir conexiones con el módulo Geovisores, sin acceso al módulo Conexiones ([#223](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/223)) ([b12918f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b12918f89b681be11aa443982fc174bc3e9f0adf))
+* **geovisores:** explicar el 400 por campo de fichas inexistente y la causa de los fallos de red ([#205](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/205)) ([d520a65](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d520a65fcddd964dedffb389ca252864b512259a))
+* la invalidación del cache público cubre /api y /api/v1, y los geovisores invalidan ([#231](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/231)) ([be0d37e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/be0d37e72e764450a0d214757a943a744c68cd55))
+* no cachear las rutas de biodiversidad con parámetros ([0df264c](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/0df264cfa84a60f4a15c0db46a01fd3ee6295949))
+* **oauth:** las cookies del flujo de Google y Microsoft no volvian al callback ([#305](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/305)) ([807bbf4](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/807bbf4776507bac7f6c0d94f03e3734bff4eef4))
+* permisos de modulos y pasos intermedios del login (2FA y contrasena vencida) ([#302](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/302)) ([d8b99bb](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d8b99bbec78dc5a0155b28017373fa3a23ee9e7f))
+* **seguridad:** bloqueo por cuenta en el segundo factor (2FA) ([0d29939](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/0d299396dae5fc7a744aadcdbe049af313257d3f))
+* **seguridad:** bloqueo por cuenta en el segundo factor (2FA) ([df2860a](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/df2860ad798181f91341108374d671fcdcf4c6cc))
+* **seguridad:** cifrar en reposo la contraseña SMTP ([bcf0aa8](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/bcf0aa8db229c0746d4cdc6bbc399d3201ce5041))
+* **seguridad:** cifrar en reposo la contrasena SMTP guardada en configuracion ([e06065e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e06065ed1b94428b54d90a3c3112afcd31bb9d21))
+* **seguridad:** cuentas desactivadas, reactivacion accidental y lectura de solicitudes por modulo ([1822607](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/182260735282de40e86d2404b2e0231f9854c4dc))
+* **seguridad:** cuentas desactivadas, reactivación accidental y lectura de solicitudes por módulo ([12fe1e3](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/12fe1e337f33c7c843677710c1415dbd8a6cfbd5))
+* **seguridad:** el intento 2FA se reserva de forma atomica y el login no reinicia el contador ([6d48281](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/6d48281af231de85cc364cde5bef698ba8f569cc))
+* **seguridad:** el registro no revela si un correo ya existe ([24d7e51](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/24d7e512b03fa0b3652b42b45636e15aac3dcbf0))
+* **seguridad:** el registro no revela si un correo ya existe ([120f1c5](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/120f1c52a28ac622ff4618e0524143bf01330f40))
+* **seguridad:** lote 1 de blindaje tras la auditoria complementaria ([#295](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/295)) ([2c3763e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2c3763ebe9251c483a70f1f9d7a0e1a371e4fd0b))
+* **seguridad:** lote 2 — borrado arbitrario de archivos, límites de subida, limitador y OAuth ([4f12381](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4f123818e0268dc6de063fad59a199b7af2ad7c1))
+* **seguridad:** lote 2 (borrado arbitrario de archivos, limites de subida, limitador y OAuth) ([0d083f2](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/0d083f22abe368376068dad8c3e3ad002880d466))
+* **seguridad:** pool de conexiones aislado para la API publica del Observatorio ([472e0db](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/472e0db5654b4e241adc79149a7c73972603dd54))
+* **seguridad:** pool de conexiones aislado para la API pública del Observatorio ([5eaacf7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5eaacf71840c6acd59e2614d00860d326aa87155))
+* **seguridad:** proxy WMS sin evasión por mayúsculas + límites + puertos locales ([2eea7d7](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/2eea7d72ccae2368ea6d900f16cd7db79a6b33e8))
+* **seguridad:** proxy WMS sin evasion por mayusculas, limites de tamano y puertos locales ([b683f7e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/b683f7eb81a6472ff6ea59e256c39b1177c8ee32))
+* tiempo límite de 30-60 s en las peticiones a GBIF ([660a5e1](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/660a5e1051181cca4b38cc96bd795e0cd81a7d6e))
+* **visitante:** conservar el nombre que da al entrar al recargar la página ([#209](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/209)) ([e77ff02](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/e77ff02a100e7962da4152dc425a4bf3c35f574a))
+
+
+### Performance Improvements
+
+* analítica de administración contada en SQL con caché local de 30 s ([#244](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/244)) ([3dc83a6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3dc83a6b9268eba8f994dcfa7e39d48f6f4aa0ff))
+* el buscador de fotos filtra la licencia en GBIF y pide pocas ocurrencias ([5f78853](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5f78853c0a3da7d7e43a561d4f94e891686e79b4))
+* el buscador de fotos salta las consultas lentas de GBIF ([970a5ef](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/970a5ef1c00f1415a37822733bec2b01c78e267c))
+* el buscador de fotos salta las consultas que GBIF tarda en responder ([7f5a14b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7f5a14b469abf6f517d4c096a148428e8a802ab9))
+* índices medidos, resumen de auditoría acotado por tiempo y limpieza de duplicados ([#230](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/230)) ([aa9ba75](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/aa9ba75cbcae251930d0f4e20ba28167709c7b43))
+
 ## [1.8.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.7.1...v1.8.0) (2026-10-09)
 
 
