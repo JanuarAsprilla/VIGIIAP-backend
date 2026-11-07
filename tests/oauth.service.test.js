@@ -30,7 +30,14 @@ vi.mock('../src/middlewares/cache.js', () => ({
 
 // vi.mock() se eleva (hoist) al inicio del módulo — cualquier valor que use su
 // factory debe crearse dentro de vi.hoisted() para no leerse antes de existir.
-const { mockGoogleProvider } = vi.hoisted(() => ({
+const { mockGoogleProvider, mockMicrosoftProvider } = vi.hoisted(() => ({
+  mockMicrosoftProvider: {
+    id: 'microsoft',
+    name: 'Microsoft',
+    isConfigured: vi.fn().mockReturnValue(false),
+    getAuthorizationUrl: vi.fn(),
+    exchangeCodeForProfile: vi.fn(),
+  },
   mockGoogleProvider: {
     id: 'google',
     name: 'Google',
@@ -40,15 +47,17 @@ const { mockGoogleProvider } = vi.hoisted(() => ({
   },
 }));
 vi.mock('../src/modules/oauth/oauth.providers.js', () => ({
-  PROVIDERS: { google: mockGoogleProvider, microsoft: { id: 'microsoft', isConfigured: () => false } },
+  PROVIDERS: { google: mockGoogleProvider, microsoft: mockMicrosoftProvider },
   getProvider: vi.fn((id) => {
     if (id === 'google') return mockGoogleProvider;
+    if (id === 'microsoft') return mockMicrosoftProvider;
     throw Object.assign(new Error(`Proveedor OAuth desconocido: ${id}`), { status: 404 });
   }),
 }));
 
 import jwt from 'jsonwebtoken';
 import { query } from '../src/config/database.js';
+import { registrarAuditoria } from '../src/utils/auditLog.js';
 import { issueTokenPair } from '../src/modules/auth/auth.service.js';
 import {
   listProviders,
@@ -181,20 +190,83 @@ describe('handleCallback()', () => {
     expect(issueTokenPair).not.toHaveBeenCalled();
   });
 
-  it('REGRESIÓN (account takeover): rechaza vincular por email si la cuenta existente tiene contraseña propia', async () => {
-    mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce({
-      providerId: 'atacante-oauth-id', email: 'victima-admin@iiap.gov.co', emailVerified: true, nombre: 'Atacante', avatarUrl: null,
+  describe('cuenta existente con contraseña propia y correo ya verificado', () => {
+    const cuentaConClave = (extra = {}) => ({
+      id: 'cuenta-uuid', nombre: 'Ana', email: 'ana@iiap.gov.co', rol: 'investigador', activo: true, email_verified: true,
+      institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false,
+      password_hash: '$2a$12$hash-real', oauth_provider: null, ...extra,
     });
-    query
-      .mockResolvedValueOnce({ rows: [] }) // SELECT por (provider, oauth_id) — no existe
-      .mockResolvedValueOnce({ rows: [{ id: 'victima-uuid', nombre: 'Víctima Admin', email: 'victima-admin@iiap.gov.co', rol: 'admin_sig', activo: true, email_verified: true, institucion: 'IIAP', avatar_url: null, perfil_completo: true, totp_enabled: false, password_hash: '$2a$12$hash-real-de-la-victima' }] }); // SELECT por email — tiene contraseña, correo YA verificado
+    const perfil = (extra = {}) => ({ providerId: 'g-777', email: 'ana@iiap.gov.co', emailVerified: true, nombre: 'Ana', avatarUrl: null, ...extra });
 
-    await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
-      .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' });
+    it('Google, que certifica el correo, vincula la cuenta SIN tocar su contraseña y abre sesión', async () => {
+      mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce(perfil());
+      query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [cuentaConClave()] })
+        .mockResolvedValueOnce({ rows: [] }); // UPDATE de vínculo
 
-    // Nunca debe llegar a vincular (UPDATE) ni a emitir tokens para la víctima.
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(issueTokenPair).not.toHaveBeenCalled();
+      const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
+
+      expect(query).toHaveBeenCalledTimes(3);
+      const [sql, params] = query.mock.calls[2];
+      expect(sql).toMatch(/SET oauth_provider = \$1, oauth_id = \$2/);
+      expect(sql).not.toMatch(/password_hash/);
+      expect(params).toEqual(['google', 'g-777', 'cuenta-uuid']);
+      expect(issueTokenPair).toHaveBeenCalledWith(expect.objectContaining({ id: 'cuenta-uuid' }), expect.any(Object));
+      expect(result.accessToken).toBe('access-tok');
+    });
+
+    it('deja constancia del vínculo en la auditoría', async () => {
+      mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce(perfil());
+      query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [cuentaConClave()] }).mockResolvedValueOnce({ rows: [] });
+
+      await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
+
+      expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({
+        accion: 'oauth_vinculo_cuenta', modulo: 'auth', entidadId: 'cuenta-uuid', usuarioId: 'cuenta-uuid',
+      }));
+    });
+
+    it('si la cuenta tiene 2FA, vincular NO se salta el segundo factor', async () => {
+      mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce(perfil());
+      query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [cuentaConClave({ totp_enabled: true })] }).mockResolvedValueOnce({ rows: [] });
+
+      const result = await handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts());
+
+      expect(result.requiresTwoFactor).toBe(true);
+      expect(issueTokenPair).not.toHaveBeenCalled();
+    });
+
+    it('REGRESIÓN (nOAuth): Microsoft NO vincula una cuenta con contraseña — su claim de correo no prueba propiedad', async () => {
+      mockMicrosoftProvider.exchangeCodeForProfile.mockResolvedValueOnce(perfil({ providerId: 'atacante-ms-id', email: 'victima-admin@iiap.gov.co' }));
+      query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [cuentaConClave({ email: 'victima-admin@iiap.gov.co', rol: 'admin_sig' })] });
+
+      await expect(handleCallback('microsoft', 'code', fakeState('microsoft'), REDIRECT_URI, callbackOpts()))
+        .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_PASSWORD_ACCOUNT' });
+
+      expect(query).toHaveBeenCalledTimes(2); // nunca llegó a vincular
+      expect(issueTokenPair).not.toHaveBeenCalled();
+    });
+
+    it('REGRESIÓN (nOAuth): una cuenta con contraseña ya vinculada a OTRA identidad de Google NO se re-vincula', async () => {
+      mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce(perfil({ providerId: 'identidad-del-atacante' }));
+      query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [cuentaConClave({ oauth_provider: 'google', oauth_id: 'identidad-real' })] });
+
+      await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
+        .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_OTHER_IDENTITY' });
+
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(issueTokenPair).not.toHaveBeenCalled();
+    });
+
+    it('una cuenta con contraseña vinculada a OTRO proveedor tampoco se re-vincula', async () => {
+      mockGoogleProvider.exchangeCodeForProfile.mockResolvedValueOnce(perfil());
+      query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [cuentaConClave({ oauth_provider: 'microsoft' })] });
+
+      await expect(handleCallback('google', 'code', fakeState(), REDIRECT_URI, callbackOpts()))
+        .rejects.toMatchObject({ status: 409, code: 'EMAIL_LINKED_TO_OTHER_PROVIDER' });
+      expect(issueTokenPair).not.toHaveBeenCalled();
+    });
   });
 
   it('REGRESIÓN (pre-hijacking / backdoor de verificación): un correo "reservado" antes con contraseña pero SIN verificar se puede reclamar por OAuth — no bloquea con 409', async () => {
