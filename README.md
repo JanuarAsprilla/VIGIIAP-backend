@@ -50,7 +50,7 @@ Lo consume la aplicación web [VIGIIAP](https://github.com/JanuarAsprilla/VIGIIA
 
 ## Tecnologías
 
-- **Node.js 20+** con ES Modules y **Express**
+- **Node.js 22.19+** con ES Modules y **Express**
 - **PostgreSQL** con **PostGIS**
 - **Redis** (opcional) para la caché de contenido público
 - Almacenamiento de archivos compatible con **S3**
