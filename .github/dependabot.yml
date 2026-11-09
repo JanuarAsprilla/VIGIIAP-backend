@@ -29,3 +29,19 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Imagen base del Dockerfile (Node, Alpine): sin esto queda con parches de seguridad viejos sin que nadie se entere.
+  - package-ecosystem: docker
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Lima
+    reviewers:
+      - JanuarAsprilla
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore

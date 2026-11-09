@@ -5,7 +5,7 @@
  * módulo; aquí se verifica que el wrapper invoque el binario correcto, con
  * los argumentos correctos, y maneje éxito/fallo/binario-ausente.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 
 vi.mock('node:child_process', () => ({
@@ -19,6 +19,7 @@ function procesoFalso() {
   const proceso = new EventEmitter();
   proceso.stdout = new EventEmitter();
   proceso.stderr = new EventEmitter();
+  proceso.kill = vi.fn();
   return proceso;
 }
 
@@ -116,5 +117,118 @@ describe('obtenerMetadatosVideo()', () => {
     proceso.emit('close', 1);
 
     await expect(promesa).rejects.toThrow(/código 1/);
+  });
+});
+
+describe('límites de ffmpeg/ffprobe sobre archivos que sube un usuario', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('ffmpeg solo puede leer archivos locales: el protocolo se restringe ANTES de -i, sin red ni referencias externas', async () => {
+    const proceso = procesoFalso();
+    spawn.mockReturnValueOnce(proceso);
+    const promesa = transcodificarVideo('entrada.mp4', 'salida.mp4');
+    proceso.emit('close', 0);
+    await promesa;
+
+    const [, args] = spawn.mock.calls[0];
+    const iWhitelist = args.indexOf('-protocol_whitelist');
+    expect(iWhitelist).toBeGreaterThan(-1);
+    expect(args[iWhitelist + 1]).toBe('file,pipe');
+    expect(iWhitelist).toBeLessThan(args.indexOf('-i'));
+  });
+
+  it('limita los hilos y no lee de la entrada estándar', async () => {
+    const proceso = procesoFalso();
+    spawn.mockReturnValueOnce(proceso);
+    const promesa = transcodificarVideo('entrada.mp4', 'salida.mp4');
+    proceso.emit('close', 0);
+    await promesa;
+
+    const [, args] = spawn.mock.calls[0];
+    expect(args).toContain('-nostdin');
+    // Un -threads antes de -i (decodificador) y otro después (codificador libx264).
+    const posiciones = args.reduce((acc, a, i) => (a === '-threads' ? [...acc, i] : acc), []);
+    expect(posiciones).toHaveLength(2);
+    expect(posiciones[0]).toBeLessThan(args.indexOf('-i'));
+    expect(posiciones[1]).toBeGreaterThan(args.indexOf('-i'));
+    expect(posiciones.map((i) => args[i + 1])).toEqual(['2', '2']);
+  });
+
+  it('el poster y ffprobe también restringen el protocolo', async () => {
+    const poster = procesoFalso();
+    spawn.mockReturnValueOnce(poster);
+    const p1 = extraerPosterFrame('v.mp4', 'p.jpg');
+    poster.emit('close', 0);
+    await p1;
+    expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['-protocol_whitelist', 'file,pipe']));
+
+    const probe = procesoFalso();
+    spawn.mockReturnValueOnce(probe);
+    const p2 = obtenerMetadatosVideo('v.mp4');
+    probe.stdout.emit('data', '{"streams":[],"format":{}}');
+    probe.emit('close', 0);
+    await p2;
+    expect(spawn.mock.calls[1][1]).toEqual(expect.arrayContaining(['-protocol_whitelist', 'file,pipe']));
+  });
+
+  it('un ffmpeg que no termina se mata con SIGKILL al vencer el plazo y la promesa se rechaza', async () => {
+    vi.useFakeTimers();
+    const proceso = procesoFalso();
+    spawn.mockReturnValueOnce(proceso);
+
+    const promesa = transcodificarVideo('hostil.mp4', 'salida.mp4');
+    const rechazo = expect(promesa).rejects.toThrow(/tiempo máximo/);
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+
+    await rechazo;
+    expect(proceso.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('si termina a tiempo no se mata nada', async () => {
+    vi.useFakeTimers();
+    const proceso = procesoFalso();
+    spawn.mockReturnValueOnce(proceso);
+
+    const promesa = transcodificarVideo('ok.mp4', 'salida.mp4');
+    proceso.emit('close', 0);
+    await promesa;
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+
+    expect(proceso.kill).not.toHaveBeenCalled();
+  });
+
+  it('las transcodificaciones se hacen de a una: la segunda no arranca hasta que termina la primera', async () => {
+    const primero = procesoFalso();
+    const segundo = procesoFalso();
+    spawn.mockReturnValueOnce(primero).mockReturnValueOnce(segundo);
+
+    const a = transcodificarVideo('a.mp4', 'a-out.mp4');
+    const b = transcodificarVideo('b.mp4', 'b-out.mp4');
+    await Promise.resolve();
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    primero.emit('close', 0);
+    await a;
+    await Promise.resolve();
+    expect(spawn).toHaveBeenCalledTimes(2);
+
+    segundo.emit('close', 0);
+    await b;
+  });
+
+  it('un fallo de una transcodificación no deja trabada la cola', async () => {
+    const malo = procesoFalso();
+    const bueno = procesoFalso();
+    spawn.mockReturnValueOnce(malo).mockReturnValueOnce(bueno);
+
+    const a = transcodificarVideo('malo.mp4', 'x.mp4');
+    const b = transcodificarVideo('bueno.mp4', 'y.mp4');
+    const rechazoA = expect(a).rejects.toThrow();
+    malo.emit('close', 1);
+    await rechazoA;
+    await Promise.resolve();
+    bueno.emit('close', 0);
+
+    await expect(b).resolves.toBeUndefined();
   });
 });
