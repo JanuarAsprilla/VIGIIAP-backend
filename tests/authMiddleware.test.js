@@ -3,11 +3,12 @@ import jwt from 'jsonwebtoken';
 
 vi.mock('../src/utils/tokenBlacklist.js', () => ({
   isRevoked:     vi.fn().mockReturnValue(false),
+  isUserSessionRevoked: vi.fn().mockReturnValue(false),
   revokeToken:   vi.fn(),
   loadBlacklist: vi.fn(),
 }));
 
-import { isRevoked } from '../src/utils/tokenBlacklist.js';
+import { isRevoked, isUserSessionRevoked } from '../src/utils/tokenBlacklist.js';
 import { authenticate, optionalAuthenticate, authorize, requireSuperAdmin } from '../src/middlewares/auth.js';
 
 const VALID_TOKEN = jwt.sign({ id: 'u1', rol: 'investigador', scope: 'access' }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -93,6 +94,16 @@ describe('authenticate middleware', () => {
     authenticate(req, res(), next);
     expect(next).toHaveBeenCalled();
   });
+
+  it('rechaza con 401 un token cuya cuenta cerró sus sesiones (contraseña cambiada, cuenta desactivada)', () => {
+    isUserSessionRevoked.mockReturnValueOnce(true);
+    const next = vi.fn();
+    const r = res();
+    authenticate({ cookies: { vigiiap_token: VALID_TOKEN }, headers: {} }, r, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(r.status).toHaveBeenCalledWith(401);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringMatching(/Sesión cerrada/) }));
+  });
 });
 
 describe('optionalAuthenticate middleware', () => {
@@ -112,6 +123,15 @@ describe('optionalAuthenticate middleware', () => {
     optionalAuthenticate(req, res(), next);
     expect(next).toHaveBeenCalled();
     expect(req.user?.id).toBe('u1');
+  });
+
+  it('trata como anónimo un token cuya cuenta cerró sus sesiones', () => {
+    isUserSessionRevoked.mockReturnValueOnce(true);
+    const next = vi.fn();
+    const req = { cookies: { vigiiap_token: VALID_TOKEN }, headers: {} };
+    optionalAuthenticate(req, res(), next);
+    expect(next).toHaveBeenCalled();
+    expect(req.user).toBeUndefined();
   });
 
   it('pasa con token inválido y continúa como anónimo', () => {

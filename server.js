@@ -52,6 +52,12 @@ function validateEnv() {
 
   // Advertir si TOTP_ENCRYPTION_KEY falta — 2FA fallará en runtime si está habilitado en BD
   if (!process.env.TOTP_ENCRYPTION_KEY) {
+    // En producción hay cuentas con 2FA y los secretos están cifrados con esta clave: arrancar sin ella dejaría fuera
+    // a quien lo tiene activo (y a los administradores, si es obligatorio). Mejor no arrancar que arrancar roto.
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[startup] FATAL: TOTP_ENCRYPTION_KEY no está definida. Genera una con: openssl rand -hex 32');
+      process.exit(1);
+    }
     logger.warn('[startup] TOTP_ENCRYPTION_KEY no configurada — el módulo 2FA no funcionará correctamente.');
   } else if (process.env.TOTP_ENCRYPTION_KEY.length < 64) {
     logger.error('[startup] FATAL: TOTP_ENCRYPTION_KEY demasiado corta (mínimo 64 hex chars = 32 bytes). Genera una con: openssl rand -hex 32');

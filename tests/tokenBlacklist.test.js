@@ -57,7 +57,7 @@ describe('loadBlacklist()', () => {
 
     await loadBlacklist();
 
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(4); // 2 de tokens revocados + 2 de cortes de sesión por usuario
     const deleteCall = query.mock.calls[0][0];
     expect(deleteCall).toMatch(/DELETE FROM revoked_tokens/i);
   });
@@ -74,7 +74,7 @@ describe('loadBlacklist()', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ token_hash: hash1 }, { token_hash: hash2 }] });
     await loadBlacklist();
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(4);
     const selectSql = query.mock.calls[1][0];
     expect(selectSql).toMatch(/SELECT token_hash/i);
   });
