@@ -20,6 +20,7 @@ export const MODULOS = [
   { clave: 'categorias',           nombre: 'Categorías' },
   { clave: 'herramientas',         nombre: 'Herramientas' },
   { clave: 'biodiversidad_datos',  nombre: 'Datos de biodiversidad' },
+  { clave: 'informes',             nombre: 'Informes descargables' },
   { clave: 'configuracion',        nombre: 'Configuración' },
   { clave: 'actividad',            nombre: 'Actividad' },
   { clave: 'errores',              nombre: 'Errores' },
