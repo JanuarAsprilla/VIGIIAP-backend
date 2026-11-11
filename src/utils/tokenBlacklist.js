@@ -18,6 +18,10 @@ const VENTANA_SINCRONIZACION_SEG = 120;
 
 /** hash del token → instante (ms) en que vence. */
 const revocados = new Map();
+/** id de usuario → instante (s) anterior al cual sus tokens de acceso ya no valen. */
+const cortes = new Map();
+// Un token de acceso dura minutos; un día cubre cualquier JWT_EXPIRES_IN razonable y acota la tabla y la memoria.
+const RETENCION_CORTES_SEG = 24 * 3600;
 let manejador = null;
 
 function hashToken(token) {
@@ -34,6 +38,49 @@ function podarVencidos() {
   for (const [hash, vence] of revocados) {
     if (vence <= ahora) revocados.delete(hash);
   }
+  const limiteCorte = Math.floor(ahora / 1000) - RETENCION_CORTES_SEG;
+  for (const [usuarioId, corte] of cortes) {
+    if (corte < limiteCorte) cortes.delete(usuarioId);
+  }
+}
+
+/**
+ * ¿Un token de acceso emitido antes de que la cuenta cerrara sus sesiones? Los emitidos en el mismo segundo del corte
+ * siguen valiendo: así la sesión que nace justo al cambiar la contraseña no se cierra a sí misma (los JWT tienen
+ * resolución de segundos). Un token sin `iat`, si hay corte, no se puede fechar y se rechaza.
+ */
+export function isUserSessionRevoked(payload) {
+  if (!payload?.id) return false;
+  const corte = cortes.get(payload.id);
+  if (corte === undefined) return false;
+  return !(payload.iat >= corte);
+}
+
+/**
+ * Cierra de inmediato los tokens de acceso que la cuenta tenga en circulación (contraseña cambiada o restablecida,
+ * cuenta desactivada, cierre de sesión total). Surte efecto aquí al instante y en las demás instancias con la
+ * sincronización periódica.
+ */
+export async function invalidarAccesoDeUsuario(usuarioId) {
+  const corte = Math.floor(Date.now() / 1000);
+  cortes.set(usuarioId, corte);
+  try {
+    await query(
+      `INSERT INTO sesiones_invalidadas (usuario_id, invalidar_antes_de)
+       VALUES ($1, to_timestamp($2))
+       ON CONFLICT (usuario_id) DO UPDATE SET invalidar_antes_de = EXCLUDED.invalidar_antes_de`,
+      [usuarioId, corte],
+    );
+  } catch (err) {
+    logger.warn(`[tokenBlacklist] Error persistiendo el corte de sesiones: ${err.message}`);
+  }
+}
+
+function incorporarCortes(rows) {
+  rows.forEach((r) => {
+    const actual = cortes.get(r.usuario_id) ?? 0;
+    if (Number(r.corte) > actual) cortes.set(r.usuario_id, Number(r.corte));
+  });
 }
 
 /** Retorna true si el token fue revocado explícitamente (logout / invalidación). */
@@ -72,7 +119,12 @@ export async function loadBlacklist() {
       'SELECT token_hash, expires_at FROM revoked_tokens WHERE expires_at > NOW()',
     );
     rows.forEach((r) => revocados.set(r.token_hash, vencimientoMs(r.expires_at)));
-    logger.info(`[tokenBlacklist] ${rows.length} tokens revocados cargados en memoria`);
+    await query('DELETE FROM sesiones_invalidadas WHERE invalidar_antes_de < NOW() - make_interval(secs => $1)', [RETENCION_CORTES_SEG]);
+    const { rows: filasCortes } = await query(
+      'SELECT usuario_id, EXTRACT(EPOCH FROM invalidar_antes_de) AS corte FROM sesiones_invalidadas',
+    );
+    incorporarCortes(filasCortes);
+    logger.info(`[tokenBlacklist] ${rows.length} tokens revocados y ${filasCortes.length} cortes de sesión cargados en memoria`);
   } catch (err) {
     logger.warn(`[tokenBlacklist] Error cargando blacklist (la revocación estará inactiva hasta el próximo arranque): ${err.message}`);
   }
@@ -91,6 +143,12 @@ export async function sincronizarRevocados() {
       [VENTANA_SINCRONIZACION_SEG],
     );
     rows.forEach((r) => revocados.set(r.token_hash, vencimientoMs(r.expires_at)));
+    const { rows: filasCortes } = await query(
+      `SELECT usuario_id, EXTRACT(EPOCH FROM invalidar_antes_de) AS corte FROM sesiones_invalidadas
+       WHERE invalidar_antes_de > NOW() - make_interval(secs => $1)`,
+      [VENTANA_SINCRONIZACION_SEG],
+    );
+    incorporarCortes(filasCortes);
   } catch (err) {
     logger.warn(`[tokenBlacklist] No se pudo sincronizar los tokens revocados: ${err.message}`);
   }

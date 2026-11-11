@@ -9,6 +9,7 @@ import { notificacionHabilitada } from '../../utils/configFlags.js';
 import logger from '../../utils/logger.js';
 import { permisosDeAdmin } from '../admin/modulos.service.js';
 import { getRequire2faAdmins } from '../../config/dynamicConfig.js';
+import { invalidarAccesoDeUsuario } from '../../utils/tokenBlacklist.js';
 
 const SALT_ROUNDS = 12;
 
@@ -126,12 +127,14 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
   return issueTokenPair(user, { ip, userAgent });
 }
 
-// Revoca todos los refresh tokens activos de un usuario (logout total)
+// Cierra todas las sesiones de un usuario (logout total): revoca sus refresh tokens e invalida los tokens de acceso
+// que tenga en circulación, para que una contraseña cambiada o una cuenta desactivada surtan efecto al instante.
 export async function revokeAllRefreshTokens(userId) {
   await query(
     'UPDATE refresh_tokens SET revocado = true, revocado_en = NOW() WHERE usuario_id = $1 AND revocado = false',
     [userId]
   );
+  await invalidarAccesoDeUsuario(userId);
 }
 
 // ─── Login institucional / externo ────────────────────────────────────────────
@@ -141,6 +144,9 @@ const LOCKOUT_MINS = 15;
 // Hash dummy precalculado — previene timing attack: si el email no existe,
 // bcrypt.compare() corre igualmente para que el tiempo de respuesta sea indistinguible.
 const DUMMY_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj0D4U0W5mFS';
+
+// Único mensaje para cuenta inexistente, contraseña incorrecta y cuenta sin contraseña propia (OAuth).
+export const MENSAJE_CREDENCIALES = 'Credenciales incorrectas. Si creaste tu cuenta con Google o Microsoft, usa ese botón.';
 
 export async function login(email, password, ip, userAgent) {
   const { rows } = await query(
@@ -162,18 +168,15 @@ export async function login(email, password, ip, userAgent) {
       ip, userAgent,
     });
     registrarFalloLogin(ip);
-    throw Object.assign(new Error('Credenciales incorrectas'), { status: 401 });
+    throw Object.assign(new Error(MENSAJE_CREDENCIALES), { status: 401 });
   }
 
-  // Cuenta creada vía OAuth (ver src/modules/oauth/) — no tiene contraseña
-  // propia. Comparación dummy igual por timing; mensaje distinto para no
-  // dejar a la persona intentando recordar una contraseña que nunca existió.
+  // Cuenta creada vía OAuth (ver src/modules/oauth/) — no tiene contraseña propia. Misma respuesta que una cuenta
+  // inexistente o una contraseña incorrecta (si no, el mensaje delataría qué correos existen y con qué proveedor): la pista
+  // para quien se registró con Google o Microsoft va en el mensaje común.
   if (!user.password_hash) {
     await bcrypt.compare(password, DUMMY_HASH);
-    throw Object.assign(
-      new Error('Esta cuenta inicia sesión con Google o Microsoft — usa ese botón en vez de contraseña.'),
-      { status: 401 }
-    );
+    throw Object.assign(new Error(MENSAJE_CREDENCIALES), { status: 401 });
   }
 
   // Bloqueo temporal por intentos fallidos
@@ -243,7 +246,7 @@ export async function login(email, password, ip, userAgent) {
     registrarFalloLogin(ip);
     const msg = bloquear
       ? `Cuenta bloqueada ${LOCKOUT_MINS} minutos por ${MAX_INTENTOS} intentos fallidos consecutivos.`
-      : 'Credenciales incorrectas';
+      : MENSAJE_CREDENCIALES;
     throw Object.assign(new Error(msg), { status: 401 });
   }
 
