@@ -71,11 +71,11 @@ describe('startSincronizacionRevocados() / stopSincronizacionRevocados()', () =>
 
     startSincronizacionRevocados(1000);
     await vi.advanceTimersByTimeAsync(3000);
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(6); // 3 sincronizaciones × (tokens revocados + cortes por usuario)
 
     stopSincronizacionRevocados();
     await vi.advanceTimersByTimeAsync(3000);
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(6);
   });
 
   it('arrancarla dos veces no duplica el temporizador', async () => {
@@ -86,6 +86,6 @@ describe('startSincronizacionRevocados() / stopSincronizacionRevocados()', () =>
     startSincronizacionRevocados(1000);
     await vi.advanceTimersByTimeAsync(2000);
 
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(4); // 2 sincronizaciones × 2 consultas: un solo temporizador
   });
 });
