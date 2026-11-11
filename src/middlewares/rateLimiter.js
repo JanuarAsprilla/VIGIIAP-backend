@@ -177,6 +177,19 @@ export const biodiversidadRateLimiter = limitador('biodiversidad', {
 });
 
 /**
+ * Exportar registros a una hoja de cálculo pesa mucho más que una consulta del tablero: pocas por ventana y por persona
+ * (por cuenta si hay sesión, por IP si no). Va después de optionalAuthenticate, que es quien deja `req.user`.
+ */
+export const exportacionInformesRateLimiter = limitador('informes-exportacion', {
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas descargas. Intenta de nuevo en unos minutos.' },
+});
+
+/**
  * Operaciones administrativas: máximo 600 por 15 minutos POR ADMINISTRADOR. Antes era por IP (200):
  * todo el equipo del instituto sale por la misma IP pública y una sola carga del panel dispara ~10
  * peticiones (dashboard, auditoría, errores, solicitudes, usuarios), así que unas pocas personas

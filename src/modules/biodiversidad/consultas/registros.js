@@ -60,6 +60,44 @@ export async function registros(filtros) {
   });
 }
 
+/** Columnas de la exportación: las del listado sin fotos (pesan y no van en una hoja de cálculo). */
+const COLUMNAS_EXPORTACION = `
+  v.gbif_id, v.especie, v.anio, v.fecha_evento, v.tipo_evidencia, v.licencia,
+  v.latitud, v.longitud, v.incertidumbre_m, v.coordenadas_ocultas,
+  c.titulo AS conjunto, c.doi AS doi_conjunto, m.nombre AS municipio, m.departamento,
+  v.registrado_por, v.identificado_por, ${COLUMNAS_CONSERVACION}`;
+
+/** Una exportación puede tardar más que una consulta del tablero; el tope de filas y de concurrencia la acotan. */
+const LIMITE_EXPORTACION_MS = 20_000;
+
+/**
+ * Registros individuales para descargar, con los mismos filtros y la misma vista pública que el listado: las coordenadas
+ * de especies amenazadas siguen llegando ocultas desde la base de datos. Pide una fila de más para saber si hubo recorte,
+ * sin pagar un conteo completo.
+ */
+export async function registrosParaExportar(filtros, limite) {
+  return conLimite(async (client) => {
+    const lote = await loteActivo(client, filtros.grupo);
+    if (!lote) return null;
+    exigirIndividual(lote);
+    const ctx = crearContexto();
+    const { desde, where } = alcance(ctx, lote, filtros);
+    const { rows } = await client.query(
+      `SELECT * FROM (
+         SELECT ${COLUMNAS_EXPORTACION}, row_number() OVER (PARTITION BY v.gbif_id ORDER BY a.codigo) AS _n
+           ${desde} ${UNIR_CONJUNTO} WHERE ${where}) x
+        WHERE _n = 1
+        ORDER BY ${ORDENES.anio_desc}
+        LIMIT ${ctx.p(limite + 1)}`,
+      ctx.params);
+    const truncado = rows.length > limite;
+    return {
+      grupo: lote.grupo, desde: lote.desde, hasta: lote.hasta, limite, truncado,
+      registros: rows.slice(0, limite).map(({ _n, ...r }) => r),
+    };
+  }, LIMITE_EXPORTACION_MS);
+}
+
 const marcas = (texto) => (texto ?? '').split(';').map((m) => m.trim()).filter(Boolean);
 
 /** Un registro con todo su detalle; si está en varios municipios, el primero por código. */

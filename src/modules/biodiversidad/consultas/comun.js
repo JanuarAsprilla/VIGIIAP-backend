@@ -16,12 +16,15 @@ async function conectar() {
   }
 }
 
-/** Ejecuta `fn` en una transacción de solo lectura con tope de tiempo: una consulta pesada no acapara la BD. */
-export async function conLimite(fn) {
+/**
+ * Ejecuta `fn` en una transacción de solo lectura con tope de tiempo: una consulta pesada no acapara la BD.
+ * `limiteMs` solo lo sube la exportación de registros, que ya está acotada por su propio límite de filas y de concurrencia.
+ */
+export async function conLimite(fn, limiteMs = LIMITE_CONSULTA_MS) {
   const client = await conectar();
   try {
     await client.query('BEGIN READ ONLY');
-    await client.query(`SET LOCAL statement_timeout = ${LIMITE_CONSULTA_MS}`);
+    await client.query(`SET LOCAL statement_timeout = ${Number(limiteMs)}`);
     // La compilación JIT de PostgreSQL añadía ~1,5 s a las consultas sobre vw_registro_publico (40 ms sin ella).
     await client.query('SET LOCAL jit = off');
     const resultado = await fn(client);

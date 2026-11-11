@@ -93,6 +93,9 @@ export const registrosQuerySchema = limitarProfundidad(conFiltros({
   ...paginacion,
 }));
 
+/** Exportación de registros: los mismos filtros, sin ordenar ni paginar (el orden es fijo y el tope lo pone la configuración de Informes). */
+export const exportacionRegistrosQuerySchema = conFiltros();
+
 const NUMERO = /^-?\d+(\.\d+)?$/;
 
 /** `minLon,minLat,maxLon,maxLat` → cuatro números dentro de rango y con mínimo ≤ máximo. */
