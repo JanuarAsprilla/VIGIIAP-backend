@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.10.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.9.0...v1.10.0) (2026-11-11)
+
+
+### Features
+
+* **informes:** configuración de informes descargables desde el panel ([#325](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/325)) ([dc90d32](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/dc90d32b300b3e29759bb1b611e8533f7349baeb))
+* **informes:** exportación de registros de Biodiversidad (Excel y CSV) ([#332](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/332)) ([c4da1ce](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c4da1ce88c9b831bd22a6bb04b355e97f346fcd9))
+
+
+### Bug Fixes
+
+* **seguridad:** sesiones cerradas al instante, login uniforme y clave de 2FA obligatoria ([#329](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/329)) ([4afde18](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4afde186b93c3fac29ba9c95bc37442ab8ea796a))
+
 ## [1.9.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.8.0...v1.9.0) (2026-11-09)
 
 
