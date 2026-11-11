@@ -30,6 +30,7 @@ vi.mock('../src/utils/tokenBlacklist.js', () => ({
   revokeToken: vi.fn().mockResolvedValue(undefined),
   loadBlacklist: vi.fn().mockResolvedValue(undefined),
   revokeAllRefreshTokens: vi.fn().mockResolvedValue(undefined),
+  invalidarAccesoDeUsuario: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/utils/mailer.js', () => ({
   notifyNuevoInicioSesion: vi.fn().mockResolvedValue(undefined),
