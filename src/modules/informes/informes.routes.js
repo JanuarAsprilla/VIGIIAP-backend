@@ -6,7 +6,8 @@ import { authenticate, authorize, optionalAuthenticate } from '../../middlewares
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadFields } from '../../middlewares/upload.js';
-import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
+import { uploadRateLimiter, exportacionInformesRateLimiter } from '../../middlewares/rateLimiter.js';
+import { registrosBiodiversidad } from './exportacion.controller.js';
 
 const router = Router();
 
@@ -14,6 +15,10 @@ const logoUpload = uploadFields([{ name: 'logo', folder: 'informes', maxSizeMB: 
 
 // Lo consulta el botón «Descargar informe» de cada herramienta. Depende de quién pregunta: nunca se cachea.
 router.get('/configuracion/:herramienta', optionalAuthenticate, configuracionPublica);
+
+// Registros individuales de Biodiversidad para el Excel y el CSV: una sola petición con el tope de la configuración, en vez de
+// cientos de páginas. Los permisos los decide el servidor (exportacion.controller.js), no el botón.
+router.get('/biodiversidad/registros', optionalAuthenticate, exportacionInformesRateLimiter, registrosBiodiversidad);
 
 const admin = [authenticate, authorize('admin_sig')];
 router.get('/admin', ...admin, requireModulo('informes', 'ver'), panel);
