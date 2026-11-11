@@ -18,6 +18,9 @@ vi.mock('bcryptjs', () => ({
   hash: vi.fn(),
 }));
 
+vi.mock('../src/utils/tokenBlacklist.js', () => ({
+  invalidarAccesoDeUsuario: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
