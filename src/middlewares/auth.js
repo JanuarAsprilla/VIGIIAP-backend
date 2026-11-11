@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { isRevoked } from '../utils/tokenBlacklist.js';
+import { isRevoked, isUserSessionRevoked } from '../utils/tokenBlacklist.js';
 import { COOKIE_NAME } from '../utils/cookieOptions.js';
 import { asignarUsuarioAlContexto } from '../utils/contextoPeticion.js';
 import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
@@ -51,6 +51,9 @@ export function authenticate(req, res, next) {
     if (!hasValidAccessScope(payload)) {
       return res.status(401).json({ error: 'Token no válido para este endpoint' });
     }
+    if (isUserSessionRevoked(payload)) {
+      return res.status(401).json({ error: 'Sesión cerrada. Inicia sesión nuevamente.' });
+    }
     req.user = payload;
     asignarUsuarioAlContexto(payload);
     next();
@@ -70,7 +73,7 @@ export function optionalAuthenticate(req, res, next) {
       const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       // Mismo chequeo que authenticate(): un token de scope '2fa' o
       // 'password-change' no debe tratarse como sesión válida tampoco aquí.
-      if (hasValidAccessScope(payload)) {
+      if (hasValidAccessScope(payload) && !isUserSessionRevoked(payload)) {
         req.user = payload;
         asignarUsuarioAlContexto(payload);
       }
