@@ -1117,6 +1117,8 @@ describe('refreshTokens() — token reutilizado (stolen)', () => {
     await expect(refreshTokens('stolen-token', { ip: '::1', userAgent: 'bot' }))
       .rejects.toMatchObject({ status: 401 });
     expect(query).toHaveBeenCalledTimes(3);
+    const { invalidarAccesoDeUsuario } = await import('../src/utils/tokenBlacklist.js');
+    expect(invalidarAccesoDeUsuario).toHaveBeenCalledWith('u-victim');
   });
 
   it('NO revoca toda la sesión si el token se reutiliza dentro de la ventana de gracia (carrera benigna: doble clic, reintento de red, dos pestañas)', async () => {
