@@ -7,6 +7,7 @@ import { obtenerCapasNuevas } from './capasNuevas.service.js';
 import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
 import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
+import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -147,7 +148,7 @@ function visibilidadPermitida(user) {
 export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { categoria, admin } = reqQuery;
-  const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
+  const isAdminView = await esVistaAdmin(admin, user, 'geovisores');
 
   const condiciones = isAdminView ? ['deleted_at IS NULL'] : ['activo = true', 'deleted_at IS NULL'];
   const params = [];
@@ -266,6 +267,9 @@ export async function update(id, data) {
   return filaAGeovisor(rows[0]);
 }
 
+// Solo se borran objetos que la subida de miniaturas creó; thumbnail_url ya no se acepta por JSON.
+const PREFIJO_MINIATURAS = 'geovisores/thumbnails/';
+
 /** Reemplaza la miniatura y borra la anterior de R2 -- mismo patrón que categorias.service.js. */
 export async function updateThumbnail(id, newUrl) {
   const { rows: prev } = await query(
@@ -279,7 +283,7 @@ export async function updateThumbnail(id, newUrl) {
 
   if (oldUrl && oldUrl !== newUrl) {
     const key = extractKey(oldUrl);
-    if (key) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
+    if (key?.startsWith(PREFIJO_MINIATURAS)) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
   }
 
   return result;
