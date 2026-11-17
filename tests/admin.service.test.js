@@ -179,6 +179,17 @@ describe('admin.service → crearUsuario()', () => {
     expect(result._passwordTemporal.length).toBeGreaterThan(0);
   });
 
+  it('crea la cuenta con el correo verificado: el reclamo anónimo a las 24 h solo aplica a cuentas sin verificar', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [USR] });
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+    await crearUsuario({ nombre: 'Ana', email: 'ana@iiap.org.co', rol: 'investigador', ...ADMIN_CTX });
+
+    expect(query.mock.calls[1][0]).toMatch(/INSERT INTO usuarios[^]*email_verified[^]*VALUES[^]*true,\s*true\)/);
+  });
+
   it('la contraseña temporal NO se guarda en texto plano (hash es llamado)', async () => {
     query
       .mockResolvedValueOnce({ rows: [] })
