@@ -308,6 +308,25 @@ describe('POST /api/solicitudes/:id/archivos', () => {
   });
 });
 
+describe('POST /api/solicitudes/:id/archivos — admin_sig sin el módulo', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const sinModulo = () => vi.mocked(db.query).mockImplementation(() => Promise.resolve({ rows: [] }));
+  afterEach(() => vi.mocked(db.query).mockImplementation((sql) => (
+    /admin_permisos_modulo/.test(sql) ? Promise.resolve({ rows: [{ puede_ver: true, puede_editar: true }] }) : Promise.resolve({ rows: [] })
+  )));
+
+  it('403 al adjuntar a una solicitud ajena si el admin no tiene editar en «solicitudes»', async () => {
+    sinModulo();
+    const { addArchivo } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('archivo', Buffer.from('%PDF-1.4 fake'), 'documento.pdf');
+    expect(res.status).toBe(403);
+    expect(addArchivo).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET /api/solicitudes/:id/archivos', () => {
   beforeEach(() => vi.clearAllMocks());
 
