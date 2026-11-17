@@ -95,12 +95,13 @@ export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso
   }
 
   // Contraseña temporal criptográficamente segura
+  // Verificada de origen (como crearAdminSig): sin esto, un registro anónimo la reclamaba pasadas 24 h.
   const passwordTemporal = generateTempPassword(12);
   const password_hash = await bcrypt.hash(passwordTemporal, 12);
 
   const { rows } = await query(
-    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, tipo_acceso, activo)
-     VALUES ($1,$2,$3,$4,$5,$6, true)
+    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, tipo_acceso, activo, email_verified)
+     VALUES ($1,$2,$3,$4,$5,$6, true, true)
      RETURNING id, nombre, email, rol, institucion, tipo_acceso, activo, creado_en`,
     [nombre, email.toLowerCase(), password_hash, rol, institucion ?? null, tipoAcceso ?? 'institucional']
   );
