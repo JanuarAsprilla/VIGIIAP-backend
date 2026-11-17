@@ -5,7 +5,10 @@ vi.mock('../src/config/database.js', () => ({
   getClient: vi.fn(),
 }));
 
+vi.mock('../src/modules/admin/modulos.service.js', () => ({ tienePermisoModulo: vi.fn().mockResolvedValue(true) }));
+
 import { query } from '../src/config/database.js';
+import { tienePermisoModulo } from '../src/modules/admin/modulos.service.js';
 import { getBySlug, getAll, create } from '../src/modules/geovisores/geovisores.service.js';
 
 const filaGeovisorPublico = {
@@ -120,6 +123,18 @@ describe('getAll — excluye geovisores en papelera', () => {
     const [sql] = vi.mocked(query).mock.calls[0];
     expect(sql).not.toMatch(/activo = true/);
     expect(sql).toMatch(/deleted_at IS NULL/);
+  });
+
+  it('?admin=true sin permiso ver del módulo geovisores NO abre la vista de gestión', async () => {
+    tienePermisoModulo.mockResolvedValueOnce(false);
+    vi.mocked(query)
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await getAll({ admin: 'true' }, { rol: 'admin_sig' });
+
+    expect(tienePermisoModulo).toHaveBeenCalledWith({ rol: 'admin_sig' }, 'geovisores', 'ver');
+    expect(vi.mocked(query).mock.calls[0][0]).toMatch(/activo = true/);
   });
 });
 
