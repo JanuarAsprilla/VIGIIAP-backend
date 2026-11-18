@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.10.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.9.0...v1.10.0) (2026-11-18)
+
+
+### Features
+
+* **auth:** exigir 2FA a administradores también en la API (auditoría run-4) ([#347](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/347)) ([910b4a3](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/910b4a3726eed2a72ae28fd05717e1761485277b))
+* **informes:** configuración de informes descargables desde el panel ([#325](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/325)) ([dc90d32](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/dc90d32b300b3e29759bb1b611e8533f7349baeb))
+* **informes:** exportación de registros de Biodiversidad (Excel y CSV) ([#332](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/332)) ([c4da1ce](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/c4da1ce88c9b831bd22a6bb04b355e97f346fcd9))
+
+
+### Bug Fixes
+
+* **admin:** auditoría y configuración más estrictas (auditoría run-4, grupo B) ([#343](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/343)) ([393a491](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/393a491b45611965ef4a8065448ac9c2a9a586ea))
+* **admin:** ocultar identidad de super_admin en custodia/exportes y verificar cuentas creadas por admin ([#340](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/340)) ([7b99603](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/7b996036a5dc24a45f870a86a0e278917f758081))
+* **analitica:** no guardar ni devolver tokens en rutas, títulos y referrer ([#341](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/341)) ([4e73fb6](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4e73fb64d17e59b0ad2e4976694006cc1951cbfc))
+* **auth:** cortar los access token al cerrar sesiones, borrar cuenta o expulsar por reuso ([#338](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/338)) ([3815b54](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3815b544288e10cd2dd9473bc35cd1293f7316fe))
+* **auth:** endurecimientos de autenticación (auditoría run-4, grupo A) ([#342](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/342)) ([bf19170](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/bf19170f658883307c5ac14e92632ecdf301f1d0))
+* **authz:** correcciones menores de autorización (documentos, descargas, solicitudes, vista admin) ([#339](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/339)) ([16dad58](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/16dad583cb50d086682f28a7eb1ac90ef720b893))
+* **geovisores:** la miniatura ya no puede borrar archivos de otros módulos ([#337](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/337)) ([88cf06b](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/88cf06b8e36a385994976172a82d7958d1c725c6))
+* **ratelimit:** límites de tasa más difíciles de manipular (auditoría run-4, grupo D) ([#345](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/345)) ([d77268d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d77268d673837afa1957ecb0f7e4d8e911c2d8cc))
+* **seguridad:** caché, subidas y cuota de solicitudes (auditoría run-4, grupo C) ([#344](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/344)) ([29b9e04](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/29b9e04cf0e3ab7f3856556e789a305b6f089f28))
+* **seguridad:** límites multipart en solicitudes y capaId estricto en GeoServer (auditoría run-4, grupo E) ([#346](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/346)) ([8a1311f](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/8a1311ff40e0637a63626c0226460fe163f41cc3))
+* **seguridad:** sesiones cerradas al instante, login uniforme y clave de 2FA obligatoria ([#329](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/329)) ([4afde18](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4afde186b93c3fac29ba9c95bc37442ab8ea796a))
+
 ## [1.9.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.8.0...v1.9.0) (2026-11-09)
 
 
