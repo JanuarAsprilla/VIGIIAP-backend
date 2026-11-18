@@ -10,7 +10,9 @@ import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
  */
 function extractToken(req) {
   // 1. Cookie HttpOnly — inmune a XSS, prioridad cuando está presente
-  if (req.cookies?.[COOKIE_NAME]) return req.cookies[COOKIE_NAME];
+  // cookie-parser convierte «j:{...}» en objeto: solo un texto puede ser un JWT.
+  const cookie = req.cookies?.[COOKIE_NAME];
+  if (typeof cookie === 'string' && cookie) return cookie;
   // 2. Authorization: Bearer — compatibilidad con clientes API y fase de transición
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7);
