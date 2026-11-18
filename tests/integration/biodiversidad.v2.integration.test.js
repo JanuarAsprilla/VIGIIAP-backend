@@ -354,12 +354,12 @@ describe('especies() — foto representativa', () => {
     expect((await listar({ con_foto: true, departamento: 'Chocó', conservacion: 'amenazada' })).especies.map((e) => e.especie_clave)).toEqual(['1']);
   });
 
-  it('con_foto no altera el conteo de registros de la especie', async () => {
+  it('con_foto cuenta solo los registros y municipios con foto válida de la especie', async () => {
     await sembrar();
     const sin = porClave(await listar())['2'];
     const con = porClave(await listar({ con_foto: true }))['2'];
-    expect(con.registros).toBe(sin.registros);
-    expect(con.municipios).toBe(sin.municipios);
+    expect(sin).toMatchObject({ registros: 2, municipios: 2 });
+    expect(con).toMatchObject({ registros: 1, municipios: 1 });
   });
 
   it('en grupos agregados sin foto cargada foto=null y fotos_total=0; con_foto responde 422 «no aplica»', async () => {

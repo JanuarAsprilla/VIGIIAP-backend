@@ -1,5 +1,6 @@
 import { getClient } from '../../../config/database.js';
 import { ConsultaInvalida } from '../biodiversidad.errores.js';
+import { plegarSql, plegarTexto } from './texto.js';
 
 const LIMITE_CONSULTA_MS = 5000;
 export const LOTE_ACTIVO = `activo AND estado = 'completo'`;
@@ -83,7 +84,7 @@ export function fuente(lote, ctx) {
 export function condicionesTerritorio(ctx, { codigo_municipal, departamento }, columnaCodigo) {
   const donde = [];
   if (codigo_municipal != null) donde.push(`${columnaCodigo} = ${ctx.p(codigo_municipal)}`);
-  if (departamento != null) donde.push(`m.departamento = ${ctx.p(departamento)}`);
+  if (departamento != null) donde.push(`${plegarSql('m.departamento')} = ${ctx.p(plegarTexto(departamento))}`);
   return donde;
 }
 

@@ -114,6 +114,17 @@ describe.each(CASOS)('filtro %s', (_n, filtros, pred) => {
   });
 });
 
+describe('departamento sin distinguir mayúsculas ni acentos', () => {
+  it.each(['choco', 'CHOCÓ', 'chocó', ' Choco'.trim()])('«%s» equivale a «Chocó» en todas las rutas', async (depto) => {
+    const exacto = await registros({ ...G, ...PAG, departamento: 'Chocó' });
+    expect(exacto.total).toBeGreaterThan(0);
+    expect((await registros({ ...G, ...PAG, departamento: depto })).total).toBe(exacto.total);
+    expect((await resumen({ ...G, departamento: depto })).registros).toBe(exacto.total);
+    expect((await puntos({ ...G, limite: 10, departamento: depto })).total).toBe((await puntos({ ...G, limite: 10, departamento: 'Chocó' })).total);
+    expect((await municipios({ ...G, departamento: depto })).municipios.map((m) => m.codigo_municipal).sort()).toEqual(['27001', '27099']);
+  });
+});
+
 describe('/especies con_foto', () => {
   it('cuenta solo los registros con foto válida y los municipios de esos registros, sin cambiar el total de especies', async () => {
     const con = await especies({ ...G, ...PAG, orden: 'registros', con_foto: true });
