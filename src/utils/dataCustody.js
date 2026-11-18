@@ -13,6 +13,7 @@
  */
 import { query } from '../config/database.js';
 import logger from './logger.js';
+import { excluirSuperAdminDe } from '../modules/admin/auditoriaCatalogo.js';
 
 // ─── Tipos de acción sobre recursos ─────────────────────────────────────────
 export const ACCION = Object.freeze({
@@ -158,16 +159,21 @@ export async function registrarScanArchivo({
 
 // ─── Consultas de custodia (para panel admin) ────────────────────────────────
 
+// Sin rol conocido se asume el caso restrictivo.
+const filtroVisor = (viewerRol) => (viewerRol === 'super_admin' ? 'TRUE' : excluirSuperAdminDe('usuario_id'));
+
 /**
  * Retorna la cadena de custodia completa de un recurso.
+ * Salvo para super_admin, omite lo hecho por cuentas super_admin (igual que el registro de auditoría).
  * @param {'mapa'|'documento'} tipoRecurso
  * @param {string} recursoId
+ * @param {{ viewerRol?: string }} [visor]
  */
-export async function getCadenaCustodia(tipoRecurso, recursoId) {
+export async function getCadenaCustodia(tipoRecurso, recursoId, { viewerRol } = {}) {
   const { rows } = await query(
     `SELECT id, accion, usuario_email, ip, metadatos, created_at
      FROM geo_custodia
-     WHERE tipo_recurso = $1 AND recurso_id = $2
+     WHERE tipo_recurso = $1 AND recurso_id = $2 AND ${filtroVisor(viewerRol)}
      ORDER BY created_at ASC`,
     [tipoRecurso, recursoId],
   );
@@ -175,15 +181,16 @@ export async function getCadenaCustodia(tipoRecurso, recursoId) {
 }
 
 /**
- * Retorna las descargas de un recurso específico.
+ * Retorna las descargas de un recurso específico (misma regla de visor que la cadena de custodia).
  * @param {'mapa'|'documento'} tipoRecurso
  * @param {string} recursoId
+ * @param {{ viewerRol?: string }} [visor]
  */
-export async function getDescargasRecurso(tipoRecurso, recursoId) {
+export async function getDescargasRecurso(tipoRecurso, recursoId, { viewerRol } = {}) {
   const { rows } = await query(
     `SELECT id, usuario_email, ip, archivo_url, created_at
      FROM descarga_log
-     WHERE tipo_recurso = $1 AND recurso_id = $2
+     WHERE tipo_recurso = $1 AND recurso_id = $2 AND ${filtroVisor(viewerRol)}
      ORDER BY created_at DESC`,
     [tipoRecurso, recursoId],
   );

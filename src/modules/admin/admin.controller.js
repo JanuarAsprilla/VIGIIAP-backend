@@ -7,6 +7,7 @@ import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { verificarIntegridadAuditoria } from './integridadAuditoria.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
+import { excluirSuperAdminDe } from './auditoriaCatalogo.js';
 import {
   paginationQuerySchema, listUsuariosQuerySchema, auditLogQuerySchema,
   listAdministradoresQuerySchema, reportesQuerySchema,
@@ -343,7 +344,7 @@ export async function custodiaRecurso(req, res, next) {
     if (!['mapa', 'documento'].includes(tipo)) {
       return res.status(400).json({ error: 'tipo debe ser "mapa" o "documento"' });
     }
-    const rows = await getCadenaCustodia(tipo, id);
+    const rows = await getCadenaCustodia(tipo, id, { viewerRol: req.user?.rol });
     res.json({ data: rows });
   } catch (err) { next(err); }
 }
@@ -358,7 +359,7 @@ export async function descargasRecurso(req, res, next) {
     if (!['mapa', 'documento'].includes(tipo)) {
       return res.status(400).json({ error: 'tipo debe ser "mapa" o "documento"' });
     }
-    const rows = await getDescargasRecurso(tipo, id);
+    const rows = await getDescargasRecurso(tipo, id, { viewerRol: req.user?.rol });
     res.json({ data: rows });
   } catch (err) { next(err); }
 }
@@ -383,7 +384,7 @@ export async function scanLog(req, res, next) {
     const resultado = req.query.resultado ?? null;
     const limit     = Math.min(Number(req.query.limit) || 50, 200);
 
-    const conditions = [];
+    const conditions = req.user?.rol === 'super_admin' ? [] : [excluirSuperAdminDe('uploaded_by')];
     const params     = [];
 
     if (resultado && ['clean', 'rejected', 'suspicious'].includes(resultado)) {

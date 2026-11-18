@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
+import { invalidarAccesoDeUsuario } from '../../utils/tokenBlacklist.js';
 import { paginate } from '../../utils/paginate.js';
 import { diffCambios } from '../../utils/cambios.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado, clearMailConfigCache, notifyCambioConfigCritica } from '../../utils/mailer.js';
@@ -95,12 +96,13 @@ export async function crearUsuario({ nombre, email, rol, institucion, tipoAcceso
   }
 
   // Contraseña temporal criptográficamente segura
+  // Verificada de origen (como crearAdminSig): sin esto, un registro anónimo la reclamaba pasadas 24 h.
   const passwordTemporal = generateTempPassword(12);
   const password_hash = await bcrypt.hash(passwordTemporal, 12);
 
   const { rows } = await query(
-    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, tipo_acceso, activo)
-     VALUES ($1,$2,$3,$4,$5,$6, true)
+    `INSERT INTO usuarios (nombre, email, password_hash, rol, institucion, tipo_acceso, activo, email_verified)
+     VALUES ($1,$2,$3,$4,$5,$6, true, true)
      RETURNING id, nombre, email, rol, institucion, tipo_acceso, activo, creado_en`,
     [nombre, email.toLowerCase(), password_hash, rol, institucion ?? null, tipoAcceso ?? 'institucional']
   );
@@ -224,6 +226,8 @@ export async function eliminarUsuario({ id, adminId, adminRol, adminEmail }) {
     throw Object.assign(new Error('Solo el Super Administrador puede eliminar cuentas de administrador'), { status: 403 });
   }
 
+  // Antes del DELETE: sus access JWT siguen siendo válidos hasta 15 min si no se fija el corte.
+  await invalidarAccesoDeUsuario(id);
   const { rows } = await query(
     'DELETE FROM usuarios WHERE id = $1 RETURNING id, nombre, email',
     [id]

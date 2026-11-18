@@ -90,10 +90,7 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
     if (stolen[0]) {
       const revocadoHaceMs = stolen[0].revocado_en ? Date.now() - new Date(stolen[0].revocado_en).getTime() : Infinity;
       if (revocadoHaceMs > REUSE_GRACE_MS) {
-        await query(
-          'UPDATE refresh_tokens SET revocado = true, revocado_en = NOW() WHERE usuario_id = $1 AND revocado = false',
-          [stolen[0].usuario_id]
-        );
+        await revokeAllRefreshTokens(stolen[0].usuario_id);
         registrarAuditoria({
           accion:      'refresh_token_reuse',
           modulo:      'auth',
