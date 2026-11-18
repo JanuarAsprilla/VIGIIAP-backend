@@ -290,3 +290,35 @@ describe('proxyWmsDeGeovisor — los parámetros se leen sin distinguir mayúscu
     await expect(proxyWmsDeGeovisor('geologia-choco', new URLSearchParams({ layers: permitida, width: '1024', height: '768', bbox: '-77.5,5.1,-76.2,6.0' }), undefined, null)).resolves.toBeDefined();
   });
 });
+
+describe('capaId con varias capas o mal formado — 400 antes de tocar GeoServer', () => {
+  const invalidos = ['t_15_geologia:unidades,t_20_hidrologia:cuencas', 't_15_geologia:unidades x', 'unidades', 'a:b:c'];
+
+  it.each(invalidos)('la consulta rechaza %j', async (capaId) => {
+    await expect(consultarCapaDeGeovisor('geologia-choco', capaId, geometriaPunto, null)).rejects.toMatchObject({ status: 400, code: 'CAPA_ID_INVALIDO' });
+    expect(geoserver.consultarWfs).not.toHaveBeenCalled();
+  });
+
+  it.each(invalidos)('la leyenda rechaza %j', async (capaId) => {
+    await expect(proxyLeyendaDeGeovisor('geologia-choco', capaId, null)).rejects.toMatchObject({ status: 400, code: 'CAPA_ID_INVALIDO' });
+    expect(geoserver.proxyLeyenda).not.toHaveBeenCalled();
+  });
+
+  it('WMS valida CADA elemento de layers y rechaza uno mal formado aunque el primero sea válido', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisor()] });
+    const params = new URLSearchParams({ layers: 't_15_geologia:unidades,t_15_geologia:malo con espacio' });
+
+    await expect(proxyWmsDeGeovisor('geologia-choco', params, undefined, null)).rejects.toMatchObject({ status: 400, code: 'CAPA_ID_INVALIDO' });
+    expect(geoserver.proxyWms).not.toHaveBeenCalled();
+  });
+
+  it('WMS reenvía la lista validada y normalizada (sin espacios de relleno)', async () => {
+    vi.mocked(query).mockResolvedValueOnce({ rows: [filaGeovisor()] });
+    vi.mocked(geoserver.proxyWms).mockResolvedValueOnce({ status: 200 });
+    const params = new URLSearchParams({ layers: ' t_15_geologia:unidades , t_15_geologia:fallas ' });
+
+    await proxyWmsDeGeovisor('geologia-choco', params, undefined, null);
+
+    expect(vi.mocked(geoserver.proxyWms).mock.calls[0][1].get('layers')).toBe('t_15_geologia:unidades,t_15_geologia:fallas');
+  });
+});

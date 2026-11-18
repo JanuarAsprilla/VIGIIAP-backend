@@ -9,6 +9,7 @@ import {
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from './twoFactorBloqueo.js';
+import { olvidarEstado2fa } from '../../utils/politica2fa.js';
 
 /** POST /api/auth/2fa/setup — genera secret + QR */
 export async function setup(req, res, next) {
@@ -25,6 +26,7 @@ export async function verify(req, res, next) {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Código TOTP requerido' });
     const { backupCodes } = await tfService.enableTotp(req.user.id, code);
+    olvidarEstado2fa(req.user.id);
     registrarAuditoria({
       accion: '2fa_activado',
       modulo: 'auth',
@@ -47,6 +49,7 @@ export async function disable(req, res, next) {
     await reservarIntentoSegundoFactor(req.user.id);
     await tfService.disableTotp(req.user.id, code);
     await limpiarFallosSegundoFactor(req.user.id);
+    olvidarEstado2fa(req.user.id);
     // Desactivar 2FA es un evento de seguridad de alto valor -- un atacante
     // con la sesión ya comprometida suele apagar el segundo factor antes de
     // moverse; que quede en el log permite correlacionarlo con lo que sigue.

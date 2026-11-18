@@ -22,18 +22,13 @@ import { registrarDescarga } from '../../utils/dataCustody.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { registrarAccesoDenegado } from '../../utils/accesoDenegado.js';
 import { streamPrivateFile } from '../../utils/streamFile.js';
+import { puedeVerVisibilidad } from '../../utils/visibilidad.js';
 
 /**
  * Verifica si el usuario puede acceder al recurso según su visibilidad.
- * Espeja la lógica de visibilidadPermitida() en los servicios.
+ * Usa la misma regla que los listados (utils/visibilidad.js).
  */
-function canAccess(visibilidad, user) {
-  if (visibilidad === 'publico') return true;
-  if (!user || user.tipo === 'visitante' || user.rol === 'visitante') return false;
-  if (['admin_sig', 'investigador', 'super_admin'].includes(user.rol)) return true;
-  if (visibilidad === 'usuarios') return true;
-  return false; // 'acreditados' requiere rol elevado
-}
+const canAccess = puedeVerVisibilidad;
 
 /**
  * Las descargas de recursos que no son públicos (para usuarios o acreditados) quedan también en

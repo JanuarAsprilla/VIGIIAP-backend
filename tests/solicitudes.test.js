@@ -292,6 +292,25 @@ describe('POST /api/solicitudes/:id/archivos', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rechaza con 413 una petición que declara más que el tope, sin leer el cuerpo', async () => {
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${invToken}`)
+      .set('Content-Type', 'multipart/form-data; boundary=x')
+      .set('Content-Length', String(31 * 1024 * 1024))
+      .send('');
+    expect(res.status).toBe(413);
+  });
+
+  it('rechaza con 400 (no 500) un multipart con demasiados campos de texto', async () => {
+    let peticion = request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${invToken}`);
+    for (let i = 0; i < 80; i++) peticion = peticion.field(`campo${i}`, 'x');
+    const res = await peticion.attach('archivo', Buffer.from('%PDF-1.4 fake'), 'documento.pdf');
+    expect(res.status).toBe(400);
+  });
+
   it('usuario sube archivo adjunto — retorna 201', async () => {
     const { addArchivo } = await import('../src/modules/solicitudes/solicitudes.service.js');
     addArchivo.mockResolvedValue({
@@ -305,6 +324,25 @@ describe('POST /api/solicitudes/:id/archivos', () => {
       .attach('archivo', Buffer.from('%PDF-1.4 fake'), 'documento.pdf');
     expect(res.status).toBe(201);
     expect(res.body.nombre).toBe('documento.pdf');
+  });
+});
+
+describe('POST /api/solicitudes/:id/archivos — admin_sig sin el módulo', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const sinModulo = () => vi.mocked(db.query).mockImplementation(() => Promise.resolve({ rows: [] }));
+  afterEach(() => vi.mocked(db.query).mockImplementation((sql) => (
+    /admin_permisos_modulo/.test(sql) ? Promise.resolve({ rows: [{ puede_ver: true, puede_editar: true }] }) : Promise.resolve({ rows: [] })
+  )));
+
+  it('403 al adjuntar a una solicitud ajena si el admin no tiene editar en «solicitudes»', async () => {
+    sinModulo();
+    const { addArchivo } = await import('../src/modules/solicitudes/solicitudes.service.js');
+    const res = await request(app)
+      .post('/api/solicitudes/uuid-sol-1/archivos')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('archivo', Buffer.from('%PDF-1.4 fake'), 'documento.pdf');
+    expect(res.status).toBe(403);
+    expect(addArchivo).not.toHaveBeenCalled();
   });
 });
 

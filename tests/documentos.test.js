@@ -19,7 +19,11 @@ vi.mock('../src/config/database.js', () => ({
   getClient: vi.fn(),
 }));
 
+vi.mock('../src/config/r2.js', async (importOriginal) => ({ ...(await importOriginal()), uploadFile: vi.fn().mockResolvedValue('https://files.test.local/x.pdf') }));
+
 import * as docService from '../src/modules/documentos/documentos.service.js';
+import { query } from '../src/config/database.js';
+import { uploadFile } from '../src/config/r2.js';
 
 const adminToken = jwt.sign(
   { id: 'uuid-admin', email: 'admin@iiap.org.co', rol: 'admin_sig' },
@@ -127,10 +131,24 @@ describe('POST /api/documentos', () => {
   // el bloqueo/permiso real ahora depende de configuracion.investigadorCanUpload,
   // evaluado dentro de documentos.service.js#create (ver documentos.service.test.js
   // para la cobertura completa de esa lógica con mocks de `query`).
+  it('investigador sin permiso de subida recibe 403 ANTES de parsear el archivo (no queda objeto huérfano en R2)', async () => {
+    query.mockImplementation(async (sql) => (String(sql).includes('investigadorCanUpload')
+      ? { rows: [{ valor: 'false' }] }
+      : { rows: [{ puede_ver: true, puede_editar: true }] }));
+    const res = await request(app)
+      .post('/api/documentos')
+      .set('Authorization', `Bearer ${invToken}`)
+      .attach('archivo', Buffer.from('%PDF-1.4 prueba'), { filename: 'x.pdf', contentType: 'application/pdf' })
+      .field('titulo', 'Informe');
+    expect(res.status).toBe(403);
+    expect(uploadFile).not.toHaveBeenCalled();
+    expect(docService.create).not.toHaveBeenCalled();
+  });
+
   it('investigador NO puede subir documento cuando investigadorCanUpload está deshabilitado — retorna 403', async () => {
-    docService.create.mockRejectedValue(
-      Object.assign(new Error('Los usuarios con rol Investigador no tienen habilitada la subida de documentos. Contacta a un administrador.'), { status: 403 })
-    );
+    query.mockImplementation(async (sql) => (String(sql).includes('investigadorCanUpload')
+      ? { rows: [] }
+      : { rows: [{ puede_ver: true, puede_editar: true }] }));
     const res = await request(app)
       .post('/api/documentos')
       .set('Authorization', `Bearer ${invToken}`)
@@ -139,6 +157,9 @@ describe('POST /api/documentos', () => {
   });
 
   it('investigador sube documento — retorna 201 cuando investigadorCanUpload está habilitado', async () => {
+    query.mockImplementation(async (sql) => (String(sql).includes('investigadorCanUpload')
+      ? { rows: [{ valor: 'true' }] }
+      : { rows: [{ puede_ver: true, puede_editar: true }] }));
     docService.create.mockResolvedValue(DOC_FIXTURE);
     const res = await request(app)
       .post('/api/documentos')

@@ -6,6 +6,7 @@ import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadSingle } from '../../middlewares/upload.js';
 import { uploadRateLimiter } from '../../middlewares/rateLimiter.js';
 import { cacheMiddleware } from '../../middlewares/cache.js';
+import { exigirPermisoDeSubida } from './documentos.permisos.js';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.post(
   authorize('admin_sig', 'investigador'),
   requireModulo('documentos', 'editar'), // no-op para investigador — solo aplica a admin_sig
   csrfProtection,
+  exigirPermisoDeSubida,
   uploadRateLimiter,
   uploadSingle('archivo', 'documentos', 20, 'document'),
   store,
