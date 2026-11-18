@@ -33,7 +33,7 @@ function mockCurrentLimit(valor) {
 function poblarVentana({ total, bloqueadas }) {
   snapshotAndReset(); // por si quedó algo de un test anterior
   for (let i = 0; i < total - bloqueadas; i++) recordRequest();
-  for (let i = 0; i < bloqueadas; i++) { recordRequest(); recordBlocked(); }
+  for (let i = 0; i < bloqueadas; i++) { recordRequest(); recordBlocked(`cliente-${i}`); }
 }
 
 describe('runRateLimitAutoScaleCheck()', () => {
@@ -46,6 +46,17 @@ describe('runRateLimitAutoScaleCheck()', () => {
     poblarVentana({ total: 100, bloqueadas: 50 }); // tasa altísima, pero muy poco volumen
     await runRateLimitAutoScaleCheck();
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('no sube el límite si los bloqueos vienen de un solo cliente (un anónimo no puede mover el límite global)', async () => {
+    snapshotAndReset();
+    for (let i = 0; i < 1000; i++) recordRequest();
+    for (let i = 0; i < 30; i++) recordBlocked('ip-atacante');
+
+    await runRateLimitAutoScaleCheck();
+
+    expect(query).not.toHaveBeenCalled();
+    expect(registrarAuditoria).not.toHaveBeenCalled();
   });
 
   it('no hace nada si la tasa de bloqueo está por debajo del umbral', async () => {
