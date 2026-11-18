@@ -37,7 +37,10 @@ export function cacheMiddleware(ttlSeconds) {
     const safeParams = new URLSearchParams();
     const ALLOWED_PARAMS = ['page', 'limit', 'categoria', 'q', 'anio', 'tipo'];
     for (const p of ALLOWED_PARAMS) {
-      if (req.query[p]) safeParams.set(p, String(req.query[p]).slice(0, 100));
+      const valor = req.query[p];
+      // Arreglo u objeto (?categoria[]=x): String() lo igualaba a ?categoria=x y cachearía su resultado vacío para todos.
+      if (valor !== undefined && typeof valor !== 'string') return next();
+      if (valor) safeParams.set(p, valor.slice(0, 100));
     }
     // baseUrl + path: dentro de un router montado, req.path es relativo al montaje, así que
     // /documentos y /categorias eran ambos "/" y compartían la misma clave (el listado de

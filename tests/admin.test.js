@@ -280,6 +280,23 @@ describe('PUT /api/admin/configuracion', () => {
     expect(res.body).toHaveProperty('message');
   });
 
+  it('rechaza con 400 las claves heredadas del prototipo (constructor, toString, __proto__) sin guardar nada', async () => {
+    adminService.setConfiguracion.mockClear();
+    for (const cuerpo of [
+      '{"siteName":"x","constructor":"a"}',
+      '{"toString":"a"}',
+      '{"__proto__":"a"}',
+    ]) {
+      const res = await request(app)
+        .put('/api/admin/configuracion')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Content-Type', 'application/json')
+        .send(cuerpo);
+      expect(res.status).toBe(400);
+    }
+    expect(adminService.setConfiguracion).not.toHaveBeenCalled();
+  });
+
   it('acepta las 7 preferencias booleanas del panel de Configuración — no retorna 400', async () => {
     adminService.setConfiguracion.mockResolvedValue();
     const nuevasClaves = {

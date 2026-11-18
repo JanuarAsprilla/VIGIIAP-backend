@@ -2,6 +2,7 @@ import { z } from 'zod';
 import * as herramientasService from './herramientas.service.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { invalidarRecurso } from '../../middlewares/cache.js';
+import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 
 const claveSchema = z.string().regex(/^[a-z0-9-]{2,50}$/, 'Solo minúsculas, números y guiones (2-50 caracteres)');
 const tituloSchema = z.string().min(2, 'Mínimo 2 caracteres').max(150, 'Máximo 150 caracteres');
@@ -38,7 +39,7 @@ function invalidarCacheHerramientas() {
 
 export async function index(req, res, next) {
   try {
-    const isAdminView = req.query.admin === 'true' && ['admin_sig', 'super_admin'].includes(req.user?.rol);
+    const isAdminView = await esVistaAdmin(req.query.admin, req.user, 'herramientas');
     res.json(await herramientasService.listar(isAdminView, req.user));
   } catch (err) { next(err); }
 }

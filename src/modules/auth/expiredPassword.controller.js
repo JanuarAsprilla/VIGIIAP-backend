@@ -50,11 +50,16 @@ export async function changeExpiredPassword(req, res, next) {
 
     // Verificar que el token no fue ya consumido (previene replay del JWT temporal)
     const { rows: check } = await query(
-      'SELECT password_hash, expired_token_jti FROM usuarios WHERE id = $1', [payload.id]
+      'SELECT password_hash, expired_token_jti, activo FROM usuarios WHERE id = $1', [payload.id]
     );
     if (!check[0]) return res.status(401).json({ error: 'Usuario no encontrado' });
     if (payload.jti && check[0].expired_token_jti !== payload.jti) {
       return res.status(401).json({ error: 'Token de cambio ya utilizado. Inicia sesión de nuevo.' });
+    }
+
+    // El token temporal dura 15 min: una desactivación posterior no lo invalida, así que se revisa aquí.
+    if (!check[0].activo) {
+      return res.status(403).json({ error: 'Tu cuenta no está activa. Contacta a un administrador.', code: 'ACCOUNT_INACTIVE' });
     }
 
     // Verificar que la nueva contraseña es diferente a la actual

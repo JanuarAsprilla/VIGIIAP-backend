@@ -249,6 +249,19 @@ describe('getCadenaCustodia()', () => {
     expect(params).toEqual(['mapa', 'uuid-mapa-1']);
   });
 
+  it('oculta los registros de super_admin a quien no es super_admin (también si no se indica el rol)', async () => {
+    query.mockResolvedValue({ rows: [] });
+    await getCadenaCustodia('mapa', 'uuid-mapa-1', { viewerRol: 'admin_sig' });
+    await getCadenaCustodia('mapa', 'uuid-mapa-1');
+    for (const [sql] of query.mock.calls) expect(sql).toMatch(/usuario_id NOT IN \(SELECT id FROM usuarios WHERE rol = 'super_admin'\)/);
+  });
+
+  it('el super_admin ve toda la cadena', async () => {
+    query.mockResolvedValue({ rows: [] });
+    await getCadenaCustodia('mapa', 'uuid-mapa-1', { viewerRol: 'super_admin' });
+    expect(query.mock.calls[0][0]).not.toMatch(/super_admin/);
+  });
+
   it('retorna array vacío si no hay registros', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     const result = await getCadenaCustodia('documento', 'uuid-doc-X');
@@ -272,6 +285,14 @@ describe('getDescargasRecurso()', () => {
     const [sql, params] = query.mock.calls[0];
     expect(sql).toMatch(/SELECT.*FROM descarga_log/is);
     expect(params).toEqual(['mapa', 'uuid-mapa-1']);
+  });
+
+  it('oculta las descargas de super_admin a quien no es super_admin; el super_admin ve todas', async () => {
+    query.mockResolvedValue({ rows: [] });
+    await getDescargasRecurso('mapa', 'uuid-mapa-1', { viewerRol: 'admin_sig' });
+    await getDescargasRecurso('mapa', 'uuid-mapa-1', { viewerRol: 'super_admin' });
+    expect(query.mock.calls[0][0]).toMatch(/rol = 'super_admin'/);
+    expect(query.mock.calls[1][0]).not.toMatch(/super_admin/);
   });
 
   it('retorna array vacío si no hay descargas', async () => {

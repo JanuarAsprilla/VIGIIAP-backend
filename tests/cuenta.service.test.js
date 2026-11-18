@@ -3,12 +3,14 @@ import bcrypt from 'bcryptjs';
 
 vi.mock('../src/config/database.js', () => ({ query: vi.fn(), getClient: vi.fn() }));
 vi.mock('../src/config/r2.js', () => ({ deleteFileByUrl: vi.fn() }));
+vi.mock('../src/utils/tokenBlacklist.js', () => ({ invalidarAccesoDeUsuario: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
 import { query, getClient } from '../src/config/database.js';
 import { deleteFileByUrl } from '../src/config/r2.js';
+import { invalidarAccesoDeUsuario } from '../src/utils/tokenBlacklist.js';
 import { exportarMisDatos, eliminarMiCuenta, FRASE_CONFIRMACION } from '../src/modules/privacidad/cuenta.service.js';
 
 /** Cliente transaccional falso: responde por patrón de SQL y deja el rastro de lo ejecutado. */
@@ -94,6 +96,13 @@ describe('eliminarMiCuenta()', () => {
     expect(anonimizacion[0]).toMatch(/eliminado_en = NOW\(\)/);
     expect(anonimizacion[1]).toEqual(['u1', 'eliminado-u1@cuenta-eliminada.invalid']);
     expect(cliente.release).toHaveBeenCalledOnce();
+    expect(invalidarAccesoDeUsuario).toHaveBeenCalledWith('u1');
+  });
+
+  it('no corta los access tokens si la eliminación no se confirma', async () => {
+    clienteFalso({ usuario: { ...USUARIO, rol: 'admin_sig' } });
+    await expect(eliminarMiCuenta({ usuarioId: 'u1', confirmacion: FRASE_CONFIRMACION })).rejects.toMatchObject({ status: 403 });
+    expect(invalidarAccesoDeUsuario).not.toHaveBeenCalled();
   });
 
   it('una cuenta de Google o Microsoft (sin contraseña) se elimina con la frase', async () => {

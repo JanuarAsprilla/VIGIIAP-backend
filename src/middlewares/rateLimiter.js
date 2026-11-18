@@ -27,6 +27,20 @@ function normalizeIp(req) {
   return ipKeyGenerator(req.ip);
 }
 
+// El token de visitante es gratuito y se obtiene sin credenciales: no debe dar el cupo de una cuenta real.
+const esSesionAutenticada = (user) => Boolean(user) && user.tipo !== 'visitante' && user.rol !== 'visitante';
+
+const MAX_LONGITUD_CORREO = 254;
+
+/** Clave por correo normalizada y acotada; si el cuerpo no trae un texto utilizable, cae a la IP. */
+function claveDeCorreo(prefijo, req) {
+  const email = req.body?.email;
+  if (typeof email !== 'string') return normalizeIp(req);
+  const normalizado = email.trim().toLowerCase();
+  if (!normalizado || normalizado.length > MAX_LONGITUD_CORREO) return normalizeIp(req);
+  return `${prefijo}:${normalizado}`;
+}
+
 // windowMs NO es dinámico a propósito: express-rate-limit lo fija al crear
 // este middleware — cambiarlo en caliente exigiría destruir y recrear todo
 // el limiter (y su store de conteos en memoria), perdiendo el conteo en
@@ -59,7 +73,7 @@ const esRutaDeBiodiversidad = (req) => /^\/api(\/v1)?\/biodiversidad(\/|$)/.test
 const _rateLimiter = limitador('general', {
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: async (req) => {
-    if (req.user) return 500;
+    if (esSesionAutenticada(req.user)) return 500;
     const dynamic = await getRateLimitMax();
     return dynamic ?? (Number(process.env.RATE_LIMIT_MAX) || 300);
   },
@@ -71,7 +85,7 @@ const _rateLimiter = limitador('general', {
   // Registra el bloqueo para rateLimitAutoScaler.js antes de responder con el
   // mismo cuerpo/estado que el comportamiento por defecto de la librería.
   handler: (req, res, _next, optionsUsed) => {
-    recordBlocked();
+    recordBlocked(req.user?.id ?? normalizeIp(req));
     res.status(optionsUsed.statusCode ?? 429).json(optionsUsed.message);
   },
 });
@@ -134,10 +148,7 @@ export const twoFactorRateLimiter = limitador('dos_factores', {
 export const loginAccountRateLimiter = limitador('login_cuenta', {
   windowMs: 15 * 60 * 1000,
   max: 15,
-  keyGenerator: (req) => {
-    const email = req.body?.email;
-    return email ? `login-account:${String(email).trim().toLowerCase()}` : normalizeIp(req);
-  },
+  keyGenerator: (req) => claveDeCorreo('login-account', req),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de autenticación para esta cuenta. Intenta en 15 minutos.' },
@@ -226,10 +237,7 @@ export const tileRateLimiter = limitador('tiles', {
 export const passwordResetLimiter = limitador('recuperar_password', {
   windowMs: 60 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) => {
-    const email = req.body?.email;
-    return email ? `reset:${String(email).toLowerCase()}` : normalizeIp(req);
-  },
+  keyGenerator: (req) => claveDeCorreo('reset', req),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes de recuperación para este correo. Intenta en 1 hora.' },
@@ -244,10 +252,7 @@ export const passwordResetLimiter = limitador('recuperar_password', {
 export const emailActionRateLimiter = limitador('accion_email', {
   windowMs: 60 * 60 * 1000,
   max: 5,
-  keyGenerator: (req) => {
-    const email = req.body?.email;
-    return email ? `email-action:${String(email).trim().toLowerCase()}` : normalizeIp(req);
-  },
+  keyGenerator: (req) => claveDeCorreo('email-action', req),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes para este correo. Intenta en 1 hora.' },

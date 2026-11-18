@@ -159,9 +159,12 @@ describe('contraseña: rechazos y bloqueo', () => {
     await crearUsuario('e@iiap.test');
     const nav = new Navegador();
     for (let i = 0; i < 5; i += 1) await nav.post('/api/v1/auth/login', { email: 'e@iiap.test', password: 'Incorrecta-123!' });
+    const noExiste = await nav.post('/api/v1/auth/login', { email: 'nadie-e@iiap.test', password: CLAVE });
 
     const conCorrecta = await nav.post('/api/v1/auth/login', { email: 'e@iiap.test', password: CLAVE });
-    expect(conCorrecta.status).toBe(429);
+    // Mismo 401 genérico que una contraseña incorrecta: el bloqueo no delata que la cuenta existe.
+    expect(conCorrecta.status).toBe(401);
+    expect(conCorrecta.body.error).toBe(noExiste.body.error);
     expect(await nav.haySesion()).toBe(false);
   });
 

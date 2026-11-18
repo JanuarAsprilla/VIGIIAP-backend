@@ -3,6 +3,9 @@ import { isRevoked, isUserSessionRevoked } from '../utils/tokenBlacklist.js';
 import { COOKIE_NAME } from '../utils/cookieOptions.js';
 import { asignarUsuarioAlContexto } from '../utils/contextoPeticion.js';
 import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
+import {
+  ROLES_CON_2FA_EXIGIDO, CODIGO_2FA_REQUERIDO, esRutaExenta2fa, incumplePolitica2fa,
+} from '../utils/politica2fa.js';
 
 /**
  * Extrae el JWT de la cookie HttpOnly (preferido) o del header Authorization: Bearer.
@@ -10,7 +13,9 @@ import { registrarAccesoDenegado } from '../utils/accesoDenegado.js';
  */
 function extractToken(req) {
   // 1. Cookie HttpOnly — inmune a XSS, prioridad cuando está presente
-  if (req.cookies?.[COOKIE_NAME]) return req.cookies[COOKIE_NAME];
+  // cookie-parser convierte «j:{...}» en objeto: solo un texto puede ser un JWT.
+  const cookie = req.cookies?.[COOKIE_NAME];
+  if (typeof cookie === 'string' && cookie) return cookie;
   // 2. Authorization: Bearer — compatibilidad con clientes API y fase de transición
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7);
@@ -55,11 +60,33 @@ export function authenticate(req, res, next) {
       return res.status(401).json({ error: 'Sesión cerrada. Inicia sesión nuevamente.' });
     }
     req.user = payload;
-    asignarUsuarioAlContexto(payload);
-    next();
   } catch {
-    res.status(401).json({ error: 'Token inválido o expirado' });
+    return res.status(401).json({ error: 'Token inválido o expirado' });
   }
+  return aplicarPolitica2fa(req, res, next);
+}
+
+/**
+ * Con «exigir 2FA a administradores» activa, un admin_sig/super_admin sin TOTP solo puede usar lo necesario para
+ * activarlo (ver RUTAS_EXENTAS). El resto del mundo no pasa por la base de datos ni se vuelve asíncrono.
+ */
+function aplicarPolitica2fa(req, res, next) {
+  const { user } = req;
+  if (!ROLES_CON_2FA_EXIGIDO.includes(user.rol) || esRutaExenta2fa(req)) {
+    asignarUsuarioAlContexto(user);
+    return next();
+  }
+  return incumplePolitica2fa(user).then((incumple) => {
+    if (incumple) {
+      registrarAccesoDenegado(req, 'la política exige 2FA a administradores y esta cuenta no lo tiene activo');
+      return res.status(403).json({
+        error: 'Tu organización exige activar la verificación en dos pasos (2FA) para administrar la plataforma. Actívala desde tu perfil.',
+        code: CODIGO_2FA_REQUERIDO,
+      });
+    }
+    asignarUsuarioAlContexto(user);
+    return next();
+  }).catch(next);
 }
 
 /**
@@ -68,20 +95,31 @@ export function authenticate(req, res, next) {
  */
 export function optionalAuthenticate(req, res, next) {
   const token = extractToken(req);
-  if (token && !isRevoked(token)) {
-    try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-      // Mismo chequeo que authenticate(): un token de scope '2fa' o
-      // 'password-change' no debe tratarse como sesión válida tampoco aquí.
-      if (hasValidAccessScope(payload) && !isUserSessionRevoked(payload)) {
-        req.user = payload;
-        asignarUsuarioAlContexto(payload);
-      }
-    } catch {
-      // Token inválido/expirado — continuar como anónimo
-    }
+  if (!token || isRevoked(token)) return next();
+
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+  } catch {
+    return next(); // Token inválido/expirado — continuar como anónimo
   }
-  next();
+  // Mismo chequeo que authenticate(): un token de scope '2fa' o
+  // 'password-change' no debe tratarse como sesión válida tampoco aquí.
+  if (!hasValidAccessScope(payload) || isUserSessionRevoked(payload)) return next();
+
+  if (!ROLES_CON_2FA_EXIGIDO.includes(payload.rol)) {
+    req.user = payload;
+    asignarUsuarioAlContexto(payload);
+    return next();
+  }
+  // Un administrador que incumple la política navega como anónimo: no ve borradores ni vistas de administración.
+  return incumplePolitica2fa(payload).then((incumple) => {
+    if (!incumple || esRutaExenta2fa(req)) {
+      req.user = payload;
+      asignarUsuarioAlContexto(payload);
+    }
+    next();
+  }).catch(next);
 }
 
 /**

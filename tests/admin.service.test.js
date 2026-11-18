@@ -31,10 +31,15 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
+vi.mock('../src/utils/tokenBlacklist.js', () => ({
+  invalidarAccesoDeUsuario: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { query } from '../src/config/database.js';
 import bcrypt from 'bcryptjs';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyCambioConfigCritica } from '../src/utils/mailer.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
+import { invalidarAccesoDeUsuario } from '../src/utils/tokenBlacklist.js';
 import {
   crearUsuario,
   actualizarUsuario,
@@ -177,6 +182,17 @@ describe('admin.service → crearUsuario()', () => {
     expect(result).toHaveProperty('_passwordTemporal');
     expect(typeof result._passwordTemporal).toBe('string');
     expect(result._passwordTemporal.length).toBeGreaterThan(0);
+  });
+
+  it('crea la cuenta con el correo verificado: el reclamo anónimo a las 24 h solo aplica a cuentas sin verificar', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [USR] });
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$hashed');
+
+    await crearUsuario({ nombre: 'Ana', email: 'ana@iiap.org.co', rol: 'investigador', ...ADMIN_CTX });
+
+    expect(query.mock.calls[1][0]).toMatch(/INSERT INTO usuarios[^]*email_verified[^]*VALUES[^]*true,\s*true\)/);
   });
 
   it('la contraseña temporal NO se guarda en texto plano (hash es llamado)', async () => {
@@ -426,6 +442,19 @@ describe('admin.service → eliminarUsuario()', () => {
 
     expect(result.id).toBe('usr-uuid-1');
     expect(registrarAuditoria).toHaveBeenCalledOnce();
+  });
+
+  it('corta los access tokens vigentes del usuario antes de borrarlo', async () => {
+    const orden = [];
+    invalidarAccesoDeUsuario.mockImplementationOnce(async () => { orden.push('corte'); });
+    query
+      .mockResolvedValueOnce({ rows: [{ rol: 'investigador' }] })
+      .mockImplementationOnce(async () => { orden.push('delete'); return { rows: [{ id: 'usr-uuid-1', nombre: 'Inv', email: 'inv@iiap.org.co' }] }; });
+
+    await eliminarUsuario({ id: 'usr-uuid-1', ...ADMIN_CTX });
+
+    expect(invalidarAccesoDeUsuario).toHaveBeenCalledWith('usr-uuid-1');
+    expect(orden).toEqual(['corte', 'delete']);
   });
 
   it('lanza 403 si el target es super_admin', async () => {
