@@ -38,5 +38,7 @@ export async function streamPrivateFile(res, next, fileUrl, filename) {
     if (res.headersSent) { res.destroy(err); return; }
     next(err);
   });
+  // pipe() no destruye el origen si el cliente corta la descarga: sin esto el socket hacia S3 queda abierto y bajando datos.
+  res.on('close', () => { if (!stream.destroyed) stream.destroy(); });
   stream.pipe(res);
 }

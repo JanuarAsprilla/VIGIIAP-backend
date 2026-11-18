@@ -5,6 +5,9 @@
  */
 import { createClient } from 'redis';
 import logger from '../utils/logger.js';
+import {
+  cabecerasCdnActivas, tieneCredenciales, marcarPrivada, instalarCabecerasPublicas,
+} from './cabecerasCdn.js';
 
 let redis = null;
 
@@ -27,8 +30,16 @@ export function cacheMiddleware(ttlSeconds) {
     // el cliente (ej. un parámetro de query) permitiría forzar hits directos
     // a BD en cada request (DoS), así que el bypass nunca queda del lado del cliente.
     if (req.cookies?.vigiiap_token || req.headers.authorization) {
+      if (cabecerasCdnActivas()) marcarPrivada(res);
       return next();
     }
+    // Un usuario ya resuelto (aunque no venga cookie/Authorization) hace la respuesta propia: nunca pública.
+    if (tieneCredenciales(req)) {
+      if (cabecerasCdnActivas()) marcarPrivada(res);
+      return next();
+    }
+
+    if (cabecerasCdnActivas()) instalarCabecerasPublicas(res, ttlSeconds);
 
     const client = getRedisClient();
     if (!client?.isReady) return next();
