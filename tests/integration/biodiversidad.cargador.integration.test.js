@@ -19,16 +19,23 @@ const DETALLES = [
   ['registro_detalle', { lote: 1, gbif_id: 'g2', registrado_por: null, identificado_por: null, fotos: [] }],
 ];
 
-function lineas({ huella = 'h1', amenazada = true, conteoRegistro = 3, detalle = false, soloDetalle = false, detalles = DETALLES } = {}) {
+// Los cruces de prueba son diminutos: para activarlos se bajan los mínimos de producción.
+const MIN = { afirmaciones: 1, vinculos: 1 };
+const ACTIVAR = { activar: true, minimosCruce: MIN };
+
+function lineas({
+  huella = 'h1', amenazada = true, conteoRegistro = 3, detalle = false, soloDetalle = false, detalles = DETALLES,
+  aves = 500, inventarioAves, fuenteAves = aves, tituloConjunto = 'Conjunto', cruceN = 1,
+} = {}) {
   const d = [
     ['clasificacion', { clave: CLASIF, nombre: 'GBIF Backbone' }],
     ['territorio_version', { huella: TERR, origen: 'region/municipios.geojson' }],
     ['municipio', { territorio_huella: TERR, codigo: '27001', nombre: 'Quibdó', departamento: 'Chocó' }],
     ['municipio', { territorio_huella: TERR, codigo: '05045', nombre: 'Apartadó', departamento: 'Antioquia' }],
     ['entidad', { clave: 'e1', nombre: 'IIAP', metadatos: { sigla: 'IIAP' }, consultado_en: '2026-10-22T12:00:00Z' }],
-    ['conjunto', { clave: 'ds1', titulo: 'Conjunto', entidad_clave: 'e1', doi: '10.1/x', licencia: 'CC_BY_4_0', metadatos: {}, consultado_en: '2026-10-22T12:00:00Z' }],
+    ['conjunto', { clave: 'ds1', titulo: tituloConjunto, entidad_clave: 'e1', doi: '10.1/x', licencia: 'CC_BY_4_0', metadatos: {}, consultado_en: '2026-10-22T12:00:00Z' }],
     ['lote', { ref: 1, grupo: 'anfibios', metodo: 'individual', clasificacion_clave: CLASIF, territorio_huella: TERR, desde: 2000, hasta: 2025, huella_fuente: huella, origen: 'gbif-api', doi: null, creado_en: '2026-10-20T10:00:00Z', fecha_fuente: '2026-10-20T09:00:00Z', registros: 3 }],
-    ['lote', { ref: 2, grupo: 'aves', metodo: 'agregado', clasificacion_clave: CLASIF, territorio_huella: TERR, desde: 2000, hasta: 2025, huella_fuente: huella + 'a', origen: 'gbif-api', doi: null, creado_en: '2026-10-20T10:00:00Z', fecha_fuente: null, registros: 500 }],
+    ['lote', { ref: 2, grupo: 'aves', metodo: 'agregado', clasificacion_clave: CLASIF, territorio_huella: TERR, desde: 2000, hasta: 2025, huella_fuente: huella + 'a', origen: 'gbif-api', doi: null, creado_en: '2026-10-20T10:00:00Z', fecha_fuente: null, registros: aves }],
     ['taxon_version', { huella: 'tx1', clasificacion_clave: CLASIF, taxon_clave: '1', rango: 'SPECIES', nombre_cientifico: 'Especie amenazada', especie_clave: '1', especie: 'Especie amenazada', linaje: { reino: 'Animalia' } }],
     ['taxon_version', { huella: 'tx2', clasificacion_clave: CLASIF, taxon_clave: '2', rango: 'SPECIES', nombre_cientifico: 'Especie común', especie_clave: '2', especie: 'Especie común', linaje: {} }],
     ['registro', { lote: 1, gbif_id: 'g1', dataset_key: 'ds1', taxon_huella: 'tx1', anio: 2020, latitud: 5.69, longitud: -76.65, incertidumbre_m: 30, tipo_evidencia: 'HUMAN_OBSERVATION', licencia: 'CC_BY_4_0', vista_1000m: true }],
@@ -38,14 +45,16 @@ function lineas({ huella = 'h1', amenazada = true, conteoRegistro = 3, detalle =
     ['asignacion', { lote: 1, gbif_id: 'g2', territorio_huella: TERR, codigo: '27001' }],
     ['asignacion', { lote: 1, gbif_id: 'g3', territorio_huella: TERR, codigo: '05045' }],
     ['resumen_territorial', { lote: 1, territorio_huella: TERR, codigo: '27001', registros: 2, sin_especie: 0 }],
-    ['resumen_territorial', { lote: 2, territorio_huella: TERR, codigo: '27001', registros: 500, sin_especie: 3 }],
-    ['inventario_especie', { lote: 2, codigo: '27001', taxon_huella: 'tx2', registros: 400 }],
-    ['conteo_fuente', { lote: 2, codigo: '27001', dataset_key: 'ds1', registros: 500 }],
+    ['resumen_territorial', { lote: 2, territorio_huella: TERR, codigo: '27001', registros: aves, sin_especie: 3 }],
+    ['inventario_especie', { lote: 2, codigo: '27001', taxon_huella: 'tx2', registros: inventarioAves ?? aves - 3 }],
+    ['conteo_fuente', { lote: 2, codigo: '27001', dataset_key: 'ds1', registros: fuenteAves }],
     ['faceta_municipal', { lote: 2, codigo: '27001', faceta: 'anio', valor: '2020', registros: 300 }],
     ['conservacion_importacion', { ref: 7, creado_en: '2026-10-20T18:19:56Z', huella: 'c-' + huella, informe: { lotes: [] } }],
     ['conservacion_fuente', { importacion: 7, slug: 'amenaza_colombia', metadatos: { doi: '10.15472/frowz3' } }],
-    ['conservacion_afirmacion', { ref: 70, importacion: 7, fuente: 'amenaza_colombia', id_original: 'a1', nombre: 'Especie amenazada', reino: 'Animalia', rango: 'SPECIES', tema: 'amenaza_nacional', valor: amenazada ? 'CR' : 'LC', campo: 'categoria', original: { x: 1 }, motivo_revision: null }],
-    ['conservacion_vinculo', { afirmacion: 70, clasificacion_clave: CLASIF, especie_clave: '1', metodo: 'nombre_exacto' }],
+    ...Array.from({ length: cruceN }, (_, i) => [
+      ['conservacion_afirmacion', { ref: 70 + i, importacion: 7, fuente: 'amenaza_colombia', id_original: `a${i + 1}`, nombre: 'Especie amenazada', reino: 'Animalia', rango: 'SPECIES', tema: 'amenaza_nacional', valor: amenazada ? 'CR' : 'LC', campo: 'categoria', original: { x: 1 }, motivo_revision: null }],
+      ['conservacion_vinculo', { afirmacion: 70 + i, clasificacion_clave: CLASIF, especie_clave: '1', metodo: 'nombre_exacto' }],
+    ]).flat(),
   ];
   if (detalle || soloDetalle) {
     const i = d.findIndex(([t]) => t === 'asignacion');
@@ -97,7 +106,7 @@ describe('cargarDatos()', () => {
   });
 
   it('con activar publica los cortes y la vista pública oculta solo la especie amenazada', async () => {
-    await cargarDatos(archivo(cuerpo()), { activar: true });
+    await cargarDatos(archivo(cuerpo()), ACTIVAR);
     const { rows } = await query(
       'SELECT gbif_id, latitud, coordenadas_ocultas FROM biodiversidad.vw_registro_publico ORDER BY gbif_id');
     expect(rows).toEqual([
@@ -142,14 +151,14 @@ describe('cargarDatos()', () => {
 
   it('escribe con el rol aislado: no toca usuarios ni herramientas', async () => {
     const antes = (await query('SELECT count(*)::int AS n FROM usuarios')).rows[0].n;
-    await cargarDatos(archivo(cuerpo()), { activar: true });
+    await cargarDatos(archivo(cuerpo()), ACTIVAR);
     expect((await query('SELECT count(*)::int AS n FROM usuarios')).rows[0].n).toBe(antes);
     expect((await query(`SELECT activa FROM herramientas WHERE clave = 'biodiversidad'`)).rows[0].activa).toBe(false);
   });
 
   it('activar un corte nuevo del mismo grupo desactiva el anterior', async () => {
-    await cargarDatos(archivo(cuerpo({ huella: 'h1' })), { activar: true });
-    await cargarDatos(archivo(cuerpo({ huella: 'h2' })), { activar: true });
+    await cargarDatos(archivo(cuerpo({ huella: 'h1' })), ACTIVAR);
+    await cargarDatos(archivo(cuerpo({ huella: 'h2' })), ACTIVAR);
     const { rows } = await query(
       `SELECT huella_fuente, activo FROM biodiversidad.lote WHERE grupo = 'anfibios' ORDER BY id`);
     expect(rows).toEqual([{ huella_fuente: 'h1', activo: false }, { huella_fuente: 'h2', activo: true }]);
@@ -192,7 +201,7 @@ describe('cargarDatos() — detalle de registros (formato v2)', () => {
   });
 
   it('inserta los detalles sobre cortes ya cargados (lotes omitidos) sin duplicar nada', async () => {
-    await cargarDatos(archivo(cuerpo()), { activar: true });
+    await cargarDatos(archivo(cuerpo()), ACTIVAR);
     const r = await cargarDatos(archivo(cuerpo({ detalle: true })));
     expect(r.omitidos).toEqual({ lotes: 2, cruces: 1 });
     expect(r.tablas.registro_detalle).toEqual({ leidas: 2, insertadas: 2 });
@@ -284,7 +293,7 @@ describe('cargarDatos() — ANALYZE posterior a la carga', () => {
 
 describe('estadoCarga() y cambiarHerramienta()', () => {
   it('resume lotes, cruce y estado de la herramienta', async () => {
-    await cargarDatos(archivo(cuerpo()), { activar: true });
+    await cargarDatos(archivo(cuerpo()), ACTIVAR);
     const e = await estadoCarga();
     expect(e.lotes.map((l) => [l.grupo, l.activo, l.registros_cargados])).toEqual([['anfibios', true, 3], ['aves', true, 0]]);
     expect(e.cruce_activo).toBe(true);
@@ -304,5 +313,74 @@ describe('estadoCarga() y cambiarHerramienta()', () => {
     } finally {
       await query(`UPDATE herramientas SET deleted_at = NULL WHERE clave = 'biodiversidad'`);
     }
+  });
+});
+
+describe('cargarDatos() — comprobaciones de coherencia', () => {
+  const sinActivos = async () => (await query('SELECT count(*)::int AS n FROM biodiversidad.lote WHERE activo')).rows[0].n;
+
+  it('un cruce por debajo del mínimo de producción no se activa y no deja nada cargado', async () => {
+    await expect(cargarDatos(archivo(cuerpo()), { activar: true })).rejects.toThrow(/mínimo para activarlo/);
+    expect(await contar('lote')).toBe(0);
+    expect(await contar('conservacion_importacion')).toBe(0);
+  });
+
+  it('un cruce con menos del 90 % de los vínculos del activo se rechaza y el anterior sigue activo', async () => {
+    await cargarDatos(archivo(cuerpo({ huella: 'h1', cruceN: 10 })), ACTIVAR);
+    await expect(cargarDatos(archivo(cuerpo({ huella: 'h2', cruceN: 5 })), ACTIVAR)).rejects.toThrow(/menos del 90 %/);
+    const { rows } = await query('SELECT huella, activo FROM biodiversidad.conservacion_importacion');
+    expect(rows).toEqual([{ huella: 'c-h1', activo: true }]);
+    await cargarDatos(archivo(cuerpo({ huella: 'h3', cruceN: 9 })), ACTIVAR);
+    expect((await query('SELECT huella FROM biodiversidad.conservacion_importacion WHERE activo')).rows).toEqual([{ huella: 'c-h3' }]);
+  });
+
+  it.each([
+    ['el inventario no suma lo declarado', { inventarioAves: 100 }],
+    ['las fuentes no suman los registros', { fuenteAves: 450 }],
+  ])('un lote agregado donde %s aborta antes del COMMIT', async (_n, extra) => {
+    await expect(cargarDatos(archivo(cuerpo(extra)))).rejects.toThrow(/no cuadra/);
+    expect(await contar('lote')).toBe(0);
+    expect(await contar('inventario_especie')).toBe(0);
+  });
+
+  it('un lote agregado cuyo total declarado difiere de la suma de municipios aborta', async () => {
+    const mal = lineas().map((l) => {
+      const o = JSON.parse(l);
+      if (o.t === 'lote' && o.d.metodo === 'agregado') o.d.registros = 999;
+      return JSON.stringify(o);
+    }).join('\n') + '\n';
+    await expect(cargarDatos(archivo(mal))).rejects.toThrow(/declara 999 registros y los municipios suman 500/);
+    expect(await contar('lote')).toBe(0);
+  });
+
+  it('un corte con menos de la mitad de los registros del activo se rechaza salvo --permitir-regresion', async () => {
+    await cargarDatos(archivo(cuerpo({ huella: 'h1' })), ACTIVAR);
+    await expect(cargarDatos(archivo(cuerpo({ huella: 'h2', aves: 200 })), ACTIVAR)).rejects.toThrow(/permitir-regresion/);
+    expect((await query(`SELECT huella_fuente FROM biodiversidad.lote WHERE grupo = 'aves' AND activo`)).rows).toEqual([{ huella_fuente: 'h1a' }]);
+    expect(await contar('lote')).toBe(2);
+    await cargarDatos(archivo(cuerpo({ huella: 'h2', aves: 200 })), { ...ACTIVAR, permitirRegresion: true });
+    expect((await query(`SELECT huella_fuente FROM biodiversidad.lote WHERE grupo = 'aves' AND activo`)).rows).toEqual([{ huella_fuente: 'h2a' }]);
+  });
+
+  it('un corte con al menos la mitad de los registros se activa sin bandera', async () => {
+    await cargarDatos(archivo(cuerpo({ huella: 'h1' })), ACTIVAR);
+    await cargarDatos(archivo(cuerpo({ huella: 'h2', aves: 260 })), ACTIVAR);
+    expect(await sinActivos()).toBe(2);
+  });
+
+  it('entidad y conjunto se actualizan al recargar en vez de conservar el título viejo', async () => {
+    await cargarDatos(archivo(cuerpo()));
+    await cargarDatos(archivo(cuerpo({ tituloConjunto: 'Conjunto corregido' })));
+    expect((await query(`SELECT titulo FROM biodiversidad.conjunto WHERE clave = 'ds1'`)).rows).toEqual([{ titulo: 'Conjunto corregido' }]);
+    expect(await contar('conjunto')).toBe(1);
+  });
+
+  it('el manifiesto debe declarar todas las tablas permitidas', async () => {
+    const [primera, ...resto] = lineas();
+    const manifiesto = JSON.parse(primera);
+    delete manifiesto.d.conteos.faceta_municipal;
+    const texto = [JSON.stringify(manifiesto), ...resto].join('\n') + '\n';
+    await expect(cargarDatos(archivo(texto))).rejects.toThrow(/no declara la tabla faceta_municipal/);
+    expect(await contar('lote')).toBe(0);
   });
 });
