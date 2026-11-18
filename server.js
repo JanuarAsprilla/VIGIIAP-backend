@@ -11,6 +11,7 @@ import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportSche
 import { startRateLimitAutoScaler, stopRateLimitAutoScaler } from './src/utils/rateLimitAutoScaler.js';
 import { startOutboxCorreos, stopOutboxCorreos } from './src/utils/correosPendientes.js';
 import { enviarDirecto } from './src/utils/mailer.js';
+import { marcarApagando } from './src/utils/salud.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 4000;
@@ -167,6 +168,7 @@ async function start() {
   // Dejamos que las requests en vuelo terminen (hasta 10 s) antes de salir.
   async function shutdown(signal) {
     logger.info(`[shutdown] ${signal} recibido — cerrando servidor...`);
+    marcarApagando();
     stopMaintenanceStatePolling();
     stopWeeklyReportScheduler();
     stopRetencionScheduler();
