@@ -3,6 +3,8 @@ import { normalizarIp, ubicarIp } from '../../utils/geolocalizacion.js';
 import { memoizar } from '../../utils/cacheLocal.js';
 import { EMBUDOS, construirConsultaEmbudo } from './embudos.js';
 import { redactarRuta, redactarTexto, fusionarRutas } from './redaccion.js';
+import { crearColaPorLotes } from '../../utils/colaPorLotes.js';
+import { escribirLoteAnalitica } from './escrituraLotes.js';
 
 const VENTANA_DIAS = 14;
 const ZONA_HORARIA = 'America/Bogota';
@@ -41,6 +43,43 @@ function calcularTendencia(conteosPorDia) {
   return { serie7: serie.slice(7), semanaActual, semanaAnterior, deltaPct };
 }
 
+// Cola de escritura por lotes (apagada por defecto): con ANALITICA_COLA=true el beacon solo encola y una
+// escritura multifila cada pocos segundos reemplaza a las 3 consultas por visita.
+const COLA_TOPE_POR_DEFECTO = 5_000;
+const COLA_LOTE_POR_DEFECTO = 200;
+const COLA_INTERVALO_MS_POR_DEFECTO = 2_000;
+
+const enteroPositivo = (valor, porDefecto) => {
+  const n = Math.trunc(Number(valor));
+  return n >= 1 ? n : porDefecto;
+};
+
+let cola = null;
+
+const colaActiva = () => process.env.ANALITICA_COLA === 'true';
+
+function obtenerCola() {
+  if (!cola) {
+    cola = crearColaPorLotes({
+      nombre: 'analitica',
+      vaciarLote: escribirLoteAnalitica,
+      tope: enteroPositivo(process.env.ANALITICA_COLA_TOPE, COLA_TOPE_POR_DEFECTO),
+      tamanoLote: enteroPositivo(process.env.ANALITICA_COLA_LOTE, COLA_LOTE_POR_DEFECTO),
+      intervaloMs: enteroPositivo(process.env.ANALITICA_COLA_INTERVALO_MS, COLA_INTERVALO_MS_POR_DEFECTO),
+    });
+  }
+  return cola;
+}
+
+/** Vacía la cola y la cierra (apagado ordenado). Sin cola creada no hace nada. */
+export function vaciarColaAnalitica() {
+  return cola ? cola.cerrar() : Promise.resolve();
+}
+
+export function estadisticasColaAnalitica() {
+  return cola ? cola.estadisticas() : null;
+}
+
 /** Detección de bots como red de seguridad server-side (defensa en
  *  profundidad): la mayoría de bots reales ni ejecutan JS y nunca llegan a
  *  este endpoint, pero algunos sí (crawlers de previsualización de links,
@@ -63,6 +102,15 @@ export async function registrarPageview({
   referrerInicial, utmSource, utmMedium, utmCampaign, esAreaAdmin, userAgent, ip,
 }) {
   const bot = esBot(userAgent);
+  if (colaActiva()) {
+    obtenerCola().encolar({
+      tipo: 'pageview',
+      sessionId, ruta: redactarRuta(ruta), titulo: redactarTexto(titulo) ?? null, dispositivo, navegador, sistemaOperativo,
+      referrerInicial: redactarTexto(referrerInicial) ?? null, utmSource, utmMedium, utmCampaign,
+      esBot: bot, ip: bot ? null : ip, esAreaAdmin, creadoEn: new Date(),
+    });
+    return;
+  }
   const { rows } = await query('SELECT id FROM analytics_sessions WHERE id = $1', [sessionId]);
   const esSesionNueva = rows.length === 0;
 
@@ -261,6 +309,11 @@ export { EVENTOS_PERMITIDOS } from './eventos.js';
 
 /** Guarda un evento de una sesión existente. Devuelve false si se descarta (sesión inexistente o bot). */
 export async function registrarEvento({ sessionId, nombre, recurso = null, ruta = null }) {
+  if (colaActiva()) {
+    return obtenerCola().encolar({
+      tipo: 'evento', sessionId, nombre, recurso: redactarTexto(recurso), ruta: redactarRuta(ruta), creadoEn: new Date(),
+    });
+  }
   const { rows } = await query('SELECT es_bot FROM analytics_sessions WHERE id = $1', [sessionId]);
   if (!rows.length || rows[0].es_bot) return false;
   await query(
