@@ -806,7 +806,7 @@ describe('resetPassword()', () => {
 });
 
 // ─── Additional imports for new tests ─────────────────────────────────────────
-import { verifyEmail, reenviarVerificacion, solicitarRecuperacion } from '../src/modules/auth/auth.service.js';
+import { verifyEmail, reenviarVerificacion, solicitarRecuperacion, MENSAJE_CREDENCIALES } from '../src/modules/auth/auth.service.js';
 import { query } from '../src/config/database.js';
 
 describe('verifyEmail()', () => {
@@ -941,16 +941,30 @@ describe('login() — bloqueo por 5 intentos fallidos', () => {
     expect(updateParams).toEqual([mockUser.id, 5, 15]); // el UPDATE calcula +1 y el umbral en SQL
   });
 
-  it('rechaza el intento con 429 mientras la cuenta sigue bloqueada — no llega a comparar password', async () => {
+  it('mientras la cuenta sigue bloqueada responde igual que una cuenta inexistente (401 genérico) y no prueba la contraseña real', async () => {
     const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockClear();
     const bloqueadoHasta = new Date(Date.now() + 10 * 60_000); // 10 min en el futuro
     query.mockResolvedValueOnce({ rows: [{ ...mockUser, bloqueado_hasta: bloqueadoHasta }] });
 
-    await expect(login('admin@iiap.gob.pe', 'cualquiera', '127.0.0.1', 'jest'))
-      .rejects.toMatchObject({ status: 429, code: 'ACCOUNT_LOCKED' });
+    const err = await login('admin@iiap.gob.pe', 'cualquiera', '127.0.0.1', 'jest').catch((e) => e);
 
-    expect(bcryptMock.compare).not.toHaveBeenCalled();
+    expect(err).toMatchObject({ status: 401, message: MENSAJE_CREDENCIALES });
+    expect(err.code).toBeUndefined();
+    expect(bcryptMock.compare).toHaveBeenCalledTimes(1); // hash señuelo: mismo tiempo que una cuenta inexistente
+    expect(bcryptMock.compare).not.toHaveBeenCalledWith('cualquiera', mockUser.password_hash);
     expect(query).toHaveBeenCalledTimes(1); // solo el SELECT, ningún UPDATE
+  });
+
+  it('el intento que dispara el bloqueo recibe el mismo mensaje genérico que un fallo normal', async () => {
+    const bcryptMock = (await import('bcryptjs')).default;
+    bcryptMock.compare.mockResolvedValue(false);
+    query
+      .mockResolvedValueOnce({ rows: [{ ...mockUser, intentos_fallidos: 4 }] })
+      .mockResolvedValueOnce({ rows: [{ intentos_fallidos: 0, bloqueado_hasta: new Date(Date.now() + 15 * 60_000) }] });
+
+    await expect(login('admin@iiap.gob.pe', 'wrong', '127.0.0.1', 'jest'))
+      .rejects.toMatchObject({ status: 401, message: MENSAJE_CREDENCIALES });
   });
 
   it('permite login normalmente si bloqueado_hasta ya pasó', async () => {
