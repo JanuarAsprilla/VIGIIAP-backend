@@ -266,6 +266,9 @@ export async function update(id, data) {
   return filaAGeovisor(rows[0]);
 }
 
+// Solo se borran objetos que la subida de miniaturas creó; thumbnail_url ya no se acepta por JSON.
+const PREFIJO_MINIATURAS = 'geovisores/thumbnails/';
+
 /** Reemplaza la miniatura y borra la anterior de R2 -- mismo patrón que categorias.service.js. */
 export async function updateThumbnail(id, newUrl) {
   const { rows: prev } = await query(
@@ -279,7 +282,7 @@ export async function updateThumbnail(id, newUrl) {
 
   if (oldUrl && oldUrl !== newUrl) {
     const key = extractKey(oldUrl);
-    if (key) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
+    if (key?.startsWith(PREFIJO_MINIATURAS)) await deleteFile(key).catch((err) => logger.warn('[r2] delete failed', { key, error: err.message }));
   }
 
   return result;
