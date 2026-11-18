@@ -9,7 +9,7 @@ node loadtest/carga.mjs --url http://localhost:3000 --duracion 30 --concurrencia
 | Opción | Por defecto | Descripción |
 |---|---|---|
 | `--url` | `http://localhost:3000` | Base del servidor a medir |
-| `--escenario` | `publico` | `publico` (navegación general) o `busqueda` (consultas con `q`) |
+| `--escenario` | `publico` | `publico` (navegación general), `busqueda` (consultas con `q`) o `analitica` (beacon público `POST`; sesiones aleatorias de un pool de 5000) |
 | `--duracion` | `20` | Segundos |
 | `--concurrencia` | `10` | Trabajadores simultáneos |
 | `--umbral-p95` | `500` | Milisegundos máximos del p95 global |
