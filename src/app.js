@@ -23,6 +23,7 @@ const { version: APP_VERSION } = JSON.parse(
 import { query } from './config/database.js';
 import logger from './utils/logger.js';
 import { middlewareDegradacion } from './middlewares/degradacion.js';
+import { comprobarListo } from './utils/salud.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { optionalAuthenticate } from './middlewares/auth.js';
 import { requestId } from './middlewares/requestId.js';
@@ -177,6 +178,19 @@ app.get('/health', async (_req, res) => {
     timestamp: new Date().toISOString(),
     ...checks,
   });
+});
+
+// Liveness: el proceso responde; no consulta dependencias (si la BD cae, reiniciar el contenedor no la arregla).
+app.get('/health/live', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ status: 'ok' });
+});
+
+// Readiness para balanceadores: BD (y Redis, si se exige) con timeouts cortos; solo estados, sin detalles internos.
+app.get('/health/ready', async (_req, res) => {
+  const { listo, cuerpo } = await comprobarListo();
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(listo ? 200 : 503).json(cuerpo);
 });
 
 // ─── CORS estricto ────────────────────────────────────────────────────────────
