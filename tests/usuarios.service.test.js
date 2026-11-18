@@ -25,6 +25,11 @@ vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
 
+vi.mock('../src/modules/auth/twoFactorBloqueo.js', () => ({
+  reservarIntentoSegundoFactor: vi.fn().mockResolvedValue({ bloqueaAhora: false }),
+  limpiarFallosSegundoFactor: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../src/utils/mailer.js', () => ({
   notifyRolCambiado: vi.fn().mockResolvedValue(undefined),
 }));
@@ -38,6 +43,7 @@ import { query } from '../src/config/database.js';
 import bcrypt from 'bcryptjs';
 import { notifyRolCambiado } from '../src/utils/mailer.js';
 import { deleteFileByUrl } from '../src/config/r2.js';
+import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from '../src/modules/auth/twoFactorBloqueo.js';
 import {
   getAll,
   getProfile,
@@ -447,6 +453,36 @@ describe('usuarios.service → updatePassword()', () => {
     // No debe llegar a hacer el UPDATE
     expect(query).toHaveBeenCalledTimes(1);
     expect(bcrypt.hash).not.toHaveBeenCalled();
+  });
+
+  it('reserva el intento por cuenta ANTES de comparar la contraseña actual', async () => {
+    query.mockResolvedValueOnce({ rows: [{ password_hash: '$2a$12$h' }] });
+    bcrypt.compare.mockResolvedValueOnce(false);
+
+    await expect(updatePassword('usr-uuid-1', 'mala', 'Nueva123!')).rejects.toMatchObject({ status: 401 });
+
+    expect(reservarIntentoSegundoFactor).toHaveBeenCalledWith('usr-uuid-1');
+    expect(reservarIntentoSegundoFactor.mock.invocationCallOrder[0]).toBeLessThan(bcrypt.compare.mock.invocationCallOrder[0]);
+    expect(limpiarFallosSegundoFactor).not.toHaveBeenCalled();
+  });
+
+  it('con la cuenta bloqueada no llega a leer ni comparar la contraseña', async () => {
+    reservarIntentoSegundoFactor.mockRejectedValueOnce(Object.assign(new Error('bloqueada'), { status: 429, code: 'ACCOUNT_LOCKED' }));
+
+    await expect(updatePassword('usr-uuid-1', 'x', 'Nueva123!')).rejects.toMatchObject({ status: 429 });
+
+    expect(query).not.toHaveBeenCalled();
+    expect(bcrypt.compare).not.toHaveBeenCalled();
+  });
+
+  it('limpia el contador de fallos cuando la contraseña actual es correcta', async () => {
+    query.mockResolvedValue({ rows: [{ password_hash: '$2a$12$h' }] });
+    bcrypt.compare.mockResolvedValueOnce(true);
+    bcrypt.hash.mockResolvedValueOnce('$2a$12$n');
+
+    await updatePassword('usr-uuid-1', 'OldPass1!', 'Nueva123!');
+
+    expect(limpiarFallosSegundoFactor).toHaveBeenCalledWith('usr-uuid-1');
   });
 
   it('lanza 404 si el usuario no existe', async () => {
