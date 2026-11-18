@@ -160,6 +160,34 @@ describe('optionalAuthenticate middleware', () => {
   });
 });
 
+describe('token que no es texto (cookie "j:" parseada como objeto por cookie-parser)', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const objeto = { vigiiap_token: { a: 1 } };
+
+  it('optionalAuthenticate lo trata como anónimo sin llegar a la lista de revocados', () => {
+    const next = vi.fn();
+    const req = { cookies: objeto, headers: {} };
+    optionalAuthenticate(req, res(), next);
+    expect(isRevoked).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith();
+    expect(req.user).toBeUndefined();
+  });
+
+  it('authenticate responde 401 sin lanzar', () => {
+    const r = res();
+    expect(() => authenticate({ cookies: objeto, headers: {} }, r, vi.fn())).not.toThrow();
+    expect(r.status).toHaveBeenCalledWith(401);
+    expect(isRevoked).not.toHaveBeenCalled();
+  });
+
+  it('con cookie no textual cae al header Authorization si es válido', () => {
+    const next = vi.fn();
+    const req = { cookies: objeto, headers: { authorization: `Bearer ${VALID_TOKEN}` } };
+    optionalAuthenticate(req, res(), next);
+    expect(req.user?.id).toBe('u1');
+  });
+});
+
 describe('authorize middleware', () => {
   beforeEach(() => vi.clearAllMocks());
 
