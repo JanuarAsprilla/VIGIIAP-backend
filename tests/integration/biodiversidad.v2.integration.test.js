@@ -640,6 +640,14 @@ describe('series()', () => {
     expect(ant.por_evidencia).toEqual([{ tipo: 'HUMAN_OBSERVATION', registros: 150 }, { tipo: 'MACHINE_OBSERVATION', registros: 50 }]);
   });
 
+  it('agregados: cruzar año y tipo de evidencia responde 422 en vez de ignorar uno; por separado sí se admiten', async () => {
+    await sembrar();
+    await expect(series({ grupo: 'aves', anio_desde: 2020, tipo_evidencia: 'HUMAN_OBSERVATION' })).rejects.toMatchObject({ status: 422, message: expect.stringMatching(/año y el tipo de evidencia/) });
+    await expect(series({ grupo: 'aves', anio_hasta: 2024, tipo_evidencia: 'HUMAN_OBSERVATION' })).rejects.toBeInstanceOf(ConsultaInvalida);
+    expect((await series({ grupo: 'aves', anio_desde: 2024 })).por_anio).toEqual([{ anio: 2024, registros: 200 }]);
+    expect((await series({ grupo: 'aves', tipo_evidencia: 'MACHINE_OBSERVATION' })).por_evidencia).toEqual([{ tipo: 'MACHINE_OBSERVATION', registros: 50 }]);
+  });
+
   it('null si el grupo no tiene lote activo', async () => {
     await sembrar();
     expect(await series({ grupo: 'hongos' })).toBeNull();
