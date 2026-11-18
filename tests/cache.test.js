@@ -109,6 +109,20 @@ describe('cacheMiddleware() — cache MISS', () => {
     }
   });
 
+  it('no usa la caché cuando un parámetro de la clave no es texto (?categoria[]=x se confundía con ?categoria=x)', async () => {
+    const client = getClient();
+    for (const query of [{ categoria: ['x'] }, { categoria: { a: 'x' } }, { page: ['1', '2'] }]) {
+      mockNext.mockClear();
+      client.get.mockClear();
+      const res = mockRes();
+      const jsonOriginal = res.json;
+      await cacheMiddleware(120)({ query, cookies: {}, headers: {}, path: '/', baseUrl: '/api/geovisores' }, res, mockNext);
+      expect(mockNext).toHaveBeenCalledOnce();
+      expect(client.get).not.toHaveBeenCalled();
+      expect(res.json).toBe(jsonOriginal);
+    }
+  });
+
   it('llama next() en cache miss e intercepta res.json para cachear', async () => {
     const middleware = cacheMiddleware(120);
     const req  = { query: {}, cookies: {}, headers: {}, path: '/mapas' };
