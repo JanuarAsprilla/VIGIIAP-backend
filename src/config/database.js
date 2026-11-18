@@ -28,7 +28,13 @@ function crearPool({ max, connectionTimeoutMillis = 5_000 }) {
   );
 }
 
-const pool = crearPool({ max: 20 });
+const POOL_MAX_POR_DEFECTO = 20;
+const POOL_MAX_TOPE = 200;
+// Con N instancias detrás de un balanceador, las conexiones totales son N x DB_POOL_MAX: dimensionarlo contra max_connections.
+const pedido = Math.trunc(Number(process.env.DB_POOL_MAX));
+const POOL_PRINCIPAL_MAX = pedido >= 1 ? Math.min(POOL_MAX_TOPE, pedido) : POOL_MAX_POR_DEFECTO;
+
+const pool = crearPool({ max: POOL_PRINCIPAL_MAX });
 
 // La API pública del Observatorio (anónima, consultas de hasta 5 s) tiene su propio pool pequeño: una
 // ráfaga de consultas pesadas se encola ahí y no agota las conexiones del login y del panel de administración.
