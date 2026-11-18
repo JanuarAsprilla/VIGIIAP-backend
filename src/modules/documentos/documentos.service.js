@@ -4,6 +4,7 @@ import { slugify } from '../../utils/slugify.js';
 import logger from '../../utils/logger.js';
 import { deleteFileByUrl } from '../../config/r2.js';
 import { esVistaAdmin } from '../../utils/vistaAdmin.js';
+import { verificarPermisoInvestigador } from './documentos.permisos.js';
 
 /**
  * Devuelve los valores de visibilidad accesibles según el rol del usuario:
@@ -82,21 +83,6 @@ export async function getBySlug(slug, user) {
   );
   if (!rows[0]) throw Object.assign(new Error('Documento no encontrado'), { status: 404 });
   return rows[0];
-}
-
-// El rol 'investigador' solo puede subir documentos si el admin habilitó
-// configuracion.investigadorCanUpload='true'. Ausente/otro valor → seguro por defecto (bloqueado).
-async function verificarPermisoInvestigador(userRol) {
-  if (userRol !== 'investigador') return;
-  const { rows: cfg } = await query(
-    "SELECT valor FROM configuracion WHERE clave = 'investigadorCanUpload'", []
-  );
-  if (cfg[0]?.valor !== 'true') {
-    throw Object.assign(
-      new Error('Los usuarios con rol Investigador no tienen habilitada la subida de documentos. Contacta a un administrador.'),
-      { status: 403 }
-    );
-  }
 }
 
 export async function create(data, userId, userRol) {
