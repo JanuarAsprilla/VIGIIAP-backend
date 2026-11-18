@@ -21,7 +21,7 @@ vi.mock('../src/config/r2.js', () => ({
   isPublicUrl:     vi.fn((url) => !!url?.startsWith('https://files.test.local')),
 }));
 
-import { query } from '../src/config/database.js';
+import { query, getClient } from '../src/config/database.js';
 import {
   getAll,
   getMine,
@@ -172,51 +172,80 @@ describe('solicitudes.service → getMine()', () => {
 });
 
 // ─── create() ─────────────────────────────────────────────────────────────────
+// La cuota y el INSERT corren en una transacción con un candado por usuario (pg_advisory_xact_lock):
+// sin él, ráfagas en paralelo leían el mismo COUNT y superaban el tope.
+function clienteTransaccional({ count = '0' } = {}) {
+  const cliente = {
+    release: vi.fn(),
+    query: vi.fn(async (sql) => {
+      if (/COUNT\(\*\)/.test(sql)) return { rows: [{ count }] };
+      if (/INSERT INTO solicitudes/.test(sql)) return { rows: [SOL] };
+      return { rows: [] };
+    }),
+  };
+  getClient.mockResolvedValue(cliente);
+  return cliente;
+}
+const sqlsDe = (cliente) => cliente.query.mock.calls.map(([sql]) => String(sql).trim().split(/\s+/).slice(0, 3).join(' '));
+
 describe('solicitudes.service → create()', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('inserta y retorna la solicitud creada', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate limit check
-      .mockResolvedValueOnce({ rows: [SOL] });            // INSERT
+    const cliente = clienteTransaccional();
+    const result = await create({ tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos' }, 'usr-uuid-1');
 
-    const result = await create(
-      { tipo: 'uso-suelo', descripcion: 'Solicito acceso a datos' },
-      'usr-uuid-1'
-    );
     expect(result.id).toBe('sol-uuid-1');
-    expect(query).toHaveBeenCalledTimes(2);
-    const params = query.mock.calls[1][1]; // 2nd call = INSERT
-    expect(params).toContain('uso-suelo');
-    expect(params).toContain('usr-uuid-1');
+    const insert = cliente.query.mock.calls.find(([sql]) => /INSERT INTO solicitudes/.test(sql));
+    expect(insert[1]).toContain('uso-suelo');
+    expect(insert[1]).toContain('usr-uuid-1');
+    expect(cliente.query).toHaveBeenLastCalledWith('COMMIT');
+    expect(cliente.release).toHaveBeenCalledOnce();
   });
 
   it('pasa descripción aunque sea undefined (BD puede manejarla como null)', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
-      .mockResolvedValueOnce({ rows: [{ ...SOL, descripcion: null }] });
-    const result = await create({ tipo: 'biodiversidad', descripcion: undefined }, 'usr-2');
+    const cliente = clienteTransaccional();
+    await create({ tipo: 'biodiversidad', descripcion: undefined }, 'usr-2');
 
-    expect(result.descripcion).toBeNull();
-    const insertParams = query.mock.calls[1][1];
-    expect(insertParams[1]).toBeUndefined(); // descripcion se pasa tal cual, sin transformar
+    const insert = cliente.query.mock.calls.find(([sql]) => /INSERT INTO solicitudes/.test(sql));
+    expect(insert[1][1]).toBeUndefined(); // descripcion se pasa tal cual, sin transformar
   });
 
   it('el SQL de INSERT hace RETURNING *', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
-      .mockResolvedValueOnce({ rows: [SOL] });
+    const cliente = clienteTransaccional();
     await create({ tipo: 'agua', descripcion: 'Test' }, 'usr-3');
-    const sql = query.mock.calls[1][0]; // 2nd call = INSERT
-    expect(sql).toMatch(/RETURNING/i);
+    const insert = cliente.query.mock.calls.find(([sql]) => /INSERT INTO solicitudes/.test(sql));
+    expect(insert[0]).toMatch(/RETURNING/i);
   });
 
-  it('lanza 429 si el usuario supera 5 solicitudes en 24 horas', async () => {
-    query.mockResolvedValueOnce({ rows: [{ count: '5' }] });
+  it('toma el candado por usuario ANTES de contar y confirma después de insertar', async () => {
+    const cliente = clienteTransaccional();
+    await create({ tipo: 'agua', descripcion: 'Test' }, 'usr-3');
+
+    expect(sqlsDe(cliente)).toEqual(['BEGIN', 'SELECT pg_advisory_xact_lock(hashtext($1))', 'SELECT COUNT(*) FROM', 'INSERT INTO solicitudes', 'COMMIT']);
+    expect(cliente.query.mock.calls[1][1]).toEqual(['solicitudes:usr-3']);
+  });
+
+  it('lanza 429 si el usuario supera 5 solicitudes en 24 horas, sin insertar y revirtiendo', async () => {
+    const cliente = clienteTransaccional({ count: '5' });
     await expect(
       create({ tipo: 'uso-suelo', descripcion: 'Solicitud extra' }, 'usr-spam')
     ).rejects.toMatchObject({ status: 429 });
-    expect(query).toHaveBeenCalledOnce(); // solo el rate limit check, nunca el INSERT
+
+    expect(sqlsDe(cliente)).not.toContain('INSERT INTO solicitudes');
+    expect(cliente.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(cliente.release).toHaveBeenCalledOnce();
+  });
+
+  it('libera la conexión y revierte si el INSERT falla', async () => {
+    const cliente = clienteTransaccional();
+    cliente.query.mockImplementation(async (sql) => {
+      if (/INSERT INTO solicitudes/.test(sql)) throw new Error('BD caída');
+      return { rows: /COUNT\(\*\)/.test(sql) ? [{ count: '0' }] : [] };
+    });
+    await expect(create({ tipo: 'agua', descripcion: 'x' }, 'usr-4')).rejects.toThrow('BD caída');
+    expect(cliente.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(cliente.release).toHaveBeenCalledOnce();
   });
 });
 
@@ -229,7 +258,8 @@ describe('solicitudes.service → create() → permiso publico (config publicoCa
     await expect(
       create({ tipo: 'uso-suelo', descripcion: 'test' }, 'usr-pub', 'publico')
     ).rejects.toMatchObject({ status: 403 });
-    expect(query).toHaveBeenCalledOnce(); // nunca llega al rate limit ni al INSERT
+    expect(query).toHaveBeenCalledOnce();
+    expect(getClient).not.toHaveBeenCalled(); // nunca llega al rate limit ni al INSERT
   });
 
   it('bloquea a publico con 403 cuando publicoCanSolicitar="false"', async () => {
@@ -238,31 +268,28 @@ describe('solicitudes.service → create() → permiso publico (config publicoCa
       create({ tipo: 'uso-suelo', descripcion: 'test' }, 'usr-pub', 'publico')
     ).rejects.toMatchObject({ status: 403 });
     expect(query).toHaveBeenCalledOnce();
+    expect(getClient).not.toHaveBeenCalled();
   });
 
   it('permite a publico crear la solicitud cuando publicoCanSolicitar="true"', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ valor: 'true' }] }) // config
-      .mockResolvedValueOnce({ rows: [{ count: '0' }] })    // rate limit
-      .mockResolvedValueOnce({ rows: [SOL] });               // INSERT
+    query.mockResolvedValueOnce({ rows: [{ valor: 'true' }] }); // config
+    clienteTransaccional();
 
     const result = await create(
       { tipo: 'uso-suelo', descripcion: 'test' }, 'usr-pub', 'publico'
     );
     expect(result.id).toBe('sol-uuid-1');
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledOnce();
   });
 
   it('no consulta configuracion para roles ya verificados (sin cambio de comportamiento)', async () => {
-    query
-      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate limit
-      .mockResolvedValueOnce({ rows: [SOL] });            // INSERT
+    clienteTransaccional();
 
     const result = await create(
       { tipo: 'uso-suelo', descripcion: 'test' }, 'usr-inv', 'investigador'
     );
     expect(result.id).toBe('sol-uuid-1');
-    expect(query).toHaveBeenCalledTimes(2); // sin la query extra de config
+    expect(query).not.toHaveBeenCalled(); // sin la query extra de config
   });
 });
 

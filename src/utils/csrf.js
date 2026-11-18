@@ -39,7 +39,7 @@ export function generateCsrfToken(accessToken) {
 
 /** Compara en tiempo constante el token recibido contra el esperado. */
 export function verifyCsrfToken(accessToken, provided) {
-  if (!accessToken || !provided || typeof provided !== 'string') return false;
+  if (typeof accessToken !== 'string' || !accessToken || typeof provided !== 'string' || !provided) return false;
 
   const expected = generateCsrfToken(accessToken);
   const expectedBuf = Buffer.from(expected, 'hex');

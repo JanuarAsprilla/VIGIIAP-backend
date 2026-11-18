@@ -2,6 +2,7 @@ import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
 import { deleteFileByUrl } from '../../config/r2.js';
+import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 
 /** Visibilidad según rol: visitante/publico solo ven contenido público.
  *  Usuarios verificados (investigador, tecnico, institucional, admin) acceso total.
@@ -16,7 +17,7 @@ export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { categoria, q, admin } = reqQuery;
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
-  const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
+  const isAdminView = await esVistaAdmin(admin, user, 'mapas');
 
   const conditions = isAdminView ? ['m.deleted_at IS NULL'] : ['m.activo = true', 'm.deleted_at IS NULL'];
   const params = [];

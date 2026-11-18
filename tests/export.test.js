@@ -331,6 +331,23 @@ describe('exportDescargas()', () => {
     expect(sqlLectura).not.toMatch(/archivo_key|ip_origen|descargado_en|archivo_url/);
   });
 
+  it('un admin_sig no recibe las descargas de super_admin (CSV ni JSON); el super_admin sí', async () => {
+    mockCsv([DL_ROW]);
+    await exportDescargas({ query: {}, user: ADMIN_USER, ip: '10.0.0.1' }, mockRes(), mockNext);
+    expect(query.mock.calls[0][0]).toMatch(/rol = 'super_admin'/);
+    expect(query.mock.calls[1][0]).toMatch(/rol = 'super_admin'/);
+
+    vi.clearAllMocks();
+    query.mockResolvedValueOnce({ rows: [DL_ROW] });
+    await exportDescargas({ query: { formato: 'json' }, user: ADMIN_USER, ip: '10.0.0.1' }, mockRes(), mockNext);
+    expect(query.mock.calls[0][0]).toMatch(/rol = 'super_admin'/);
+
+    vi.clearAllMocks();
+    mockCsv([DL_ROW]);
+    await exportDescargas({ query: {}, user: { ...ADMIN_USER, rol: 'super_admin' }, ip: '10.0.0.1' }, mockRes(), mockNext);
+    expect(query.mock.calls[1][0]).not.toMatch(/super_admin/);
+  });
+
   it('retorna JSON de descargas cuando formato=json', async () => {
     query.mockResolvedValueOnce({ rows: [DL_ROW] });
     const req = { query: { formato: 'json' }, user: ADMIN_USER, ip: '10.0.0.1' };

@@ -11,6 +11,7 @@
 import { Agent } from 'undici';
 import { geometriaAWkt } from '../../utils/geometry.js';
 import { dnsLookupSeguro } from '../../utils/ssrfGuard.js';
+import { validarCapaId } from './capaId.js';
 
 const MAX_REINTENTOS = 1;
 
@@ -136,6 +137,7 @@ async function obtenerNombrePropiedadGeometria(conexion, capaId) {
  * equivocado.
  */
 export async function consultarWfs(conexion, capaId, geometria) {
+  validarCapaId(capaId);
   const wkt = `SRID=4326;${geometriaAWkt(geometria)}`;
   const propiedadGeometria = await obtenerNombrePropiedadGeometria(conexion, capaId);
 
@@ -173,6 +175,7 @@ export async function consultarWfs(conexion, capaId, geometria) {
  * identificador ni etiqueta de una ficha por punto.
  */
 export async function obtenerAtributosCapa(conexion, capaId) {
+  validarCapaId(capaId);
   const url = new URL(`${conexion.url}/wfs`);
   url.searchParams.set('service', 'WFS');
   url.searchParams.set('version', '2.0.0');
@@ -210,6 +213,7 @@ export async function obtenerAtributosCapa(conexion, capaId) {
  * respuesta sea JSON solo porque se pidió.
  */
 export async function contarFeaturesCapa(conexion, capaId) {
+  validarCapaId(capaId);
   const url = new URL(`${conexion.url}/wfs`);
   url.searchParams.set('service', 'WFS');
   url.searchParams.set('version', '2.0.0');
@@ -252,7 +256,7 @@ export async function contarFeaturesCapa(conexion, capaId) {
  * accionable que dice cuál campo falla y cuáles hay, en vez de un genérico "respondió 400".
  */
 function errorDeCampoInexistente(cuerpo, capaId) {
-  const coincidencia = cuerpo.match(/Requested property:\s*(.+?) is not available[^\[]*(?:\[([^\]]*)\])?/s);
+  const coincidencia = cuerpo.match(/Requested property:\s*(.+?) is not available[^[]*(?:\[([^\]]*)\])?/s);
   if (!coincidencia) return null;
   const [, campo, disponibles] = coincidencia;
   const lista = disponibles ? ` Campos disponibles: ${disponibles.trim()}.` : '';
@@ -263,6 +267,7 @@ function errorDeCampoInexistente(cuerpo, capaId) {
 }
 
 export async function listarFeaturesCapa(conexion, capaId, campoIdentificador, campoEtiqueta) {
+  validarCapaId(capaId);
   const propiedadGeometria = await obtenerNombrePropiedadGeometria(conexion, capaId);
   const propiedades = [campoIdentificador, campoEtiqueta, propiedadGeometria].filter(Boolean).join(',');
 
@@ -428,6 +433,7 @@ export async function proxyWms(conexion, query, geometriaFiltro) {
  * aproximación.
  */
 export async function proxyLeyenda(conexion, capaId) {
+  validarCapaId(capaId);
   const url = new URL(`${conexion.url}/wms`);
   url.searchParams.set('service', 'WMS');
   url.searchParams.set('version', '1.1.0');

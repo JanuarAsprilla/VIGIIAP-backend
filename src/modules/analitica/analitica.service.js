@@ -2,6 +2,7 @@ import { query } from '../../config/database.js';
 import { normalizarIp, ubicarIp } from '../../utils/geolocalizacion.js';
 import { memoizar } from '../../utils/cacheLocal.js';
 import { EMBUDOS, construirConsultaEmbudo } from './embudos.js';
+import { redactarRuta, redactarTexto, fusionarRutas } from './redaccion.js';
 
 const VENTANA_DIAS = 14;
 const ZONA_HORARIA = 'America/Bogota';
@@ -73,7 +74,7 @@ export async function registrarPageview({
           ip, pais, departamento, ciudad)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [sessionId, dispositivo, navegador ?? null, sistemaOperativo ?? null,
-        referrerInicial ?? null, utmSource ?? null, utmMedium ?? null, utmCampaign ?? null, bot,
+        redactarTexto(referrerInicial) ?? null, utmSource ?? null, utmMedium ?? null, utmCampaign ?? null, bot,
         bot ? null : normalizarIp(ip), ubicacion?.pais ?? null, ubicacion?.departamento ?? null, ubicacion?.ciudad ?? null],
     );
   } else {
@@ -83,7 +84,7 @@ export async function registrarPageview({
   await query(
     `INSERT INTO analytics_pageviews (session_id, ruta, titulo, es_entrada, es_area_admin)
      VALUES ($1, $2, $3, $4, $5)`,
-    [sessionId, ruta, titulo ?? null, esSesionNueva, esAreaAdmin],
+    [sessionId, redactarRuta(ruta), redactarTexto(titulo) ?? null, esSesionNueva, esAreaAdmin],
   );
 }
 
@@ -155,7 +156,7 @@ async function calcularPaginasTop({ desde, hasta, limit = 10 }) {
      GROUP BY p.ruta ORDER BY vistas DESC LIMIT $3`,
     [desde, hasta, limit],
   );
-  return rows;
+  return fusionarRutas(rows, ['ruta'], 'vistas');
 }
 
 export const getDispositivos = memoizar(calcularDispositivos, TTL_PANEL_MS);
@@ -226,7 +227,7 @@ async function calcularEntradaSalida({ desde, hasta, limit = 10 }) {
      GROUP BY ruta ORDER BY veces DESC LIMIT $3`,
     [desde, hasta, limit],
   );
-  return { entradas, salidas };
+  return { entradas: fusionarRutas(entradas, ['ruta'], 'veces'), salidas: fusionarRutas(salidas, ['ruta'], 'veces') };
 }
 
 /** Sesiones por país y, dentro de Colombia, por departamento. Las sin ubicación se cuentan aparte. */
@@ -264,7 +265,7 @@ export async function registrarEvento({ sessionId, nombre, recurso = null, ruta 
   if (!rows.length || rows[0].es_bot) return false;
   await query(
     'INSERT INTO analytics_eventos (session_id, nombre, recurso, ruta) VALUES ($1, $2, $3, $4)',
-    [sessionId, nombre, recurso, ruta],
+    [sessionId, nombre, redactarTexto(recurso), redactarRuta(ruta)],
   );
   return true;
 }
@@ -387,7 +388,7 @@ async function calcularFlujoNavegacion({ desde, hasta, limit = 15 }) {
      LIMIT $3`,
     [desde, hasta, limit],
   );
-  return rows;
+  return fusionarRutas(rows, ['desde', 'hacia'], 'veces').filter((f) => f.desde !== f.hacia);
 }
 
 /** Pares «de esta página a esta otra» más frecuentes dentro de una misma sesión. */
@@ -413,7 +414,11 @@ export async function getTiempoReal() {
      ) actuales
      GROUP BY ruta ORDER BY visitantes DESC LIMIT 10`,
   );
-  return { ventanaMin: VENTANA_TIEMPO_REAL_MIN, visitantesActivos: activos[0]?.activos ?? 0, paginasActuales };
+  return {
+    ventanaMin: VENTANA_TIEMPO_REAL_MIN,
+    visitantesActivos: activos[0]?.activos ?? 0,
+    paginasActuales: fusionarRutas(paginasActuales, ['ruta'], 'visitantes'),
+  };
 }
 
 /** Últimas sesiones con su IP (mientras no se haya purgado) y ubicación; solo para administradores. */

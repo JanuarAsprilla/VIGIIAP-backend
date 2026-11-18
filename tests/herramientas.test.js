@@ -59,6 +59,16 @@ describe('herramientas.controller → index()', () => {
     expect(herramientasService.listar).toHaveBeenCalledWith(true, user);
   });
 
+  it('admin=true de un admin_sig sin permiso ver del módulo herramientas se ignora', async () => {
+    const { query } = await import('../src/config/database.js');
+    query.mockResolvedValueOnce({ rows: [] });
+    herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
+    const res = mockRes();
+    const user = { id: 'adm-1', rol: 'admin_sig' };
+    await index({ query: { admin: 'true' }, user }, res, mockNext);
+    expect(herramientasService.listar).toHaveBeenCalledWith(false, user);
+  });
+
   it('admin=true sin rol admin/super_admin se ignora', async () => {
     herramientasService.listar.mockResolvedValue([HERRAMIENTA]);
     const res = mockRes();

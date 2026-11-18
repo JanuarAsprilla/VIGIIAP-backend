@@ -279,8 +279,7 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
   }
 
   // Cuenta nueva — rol 'publico' (mismo nivel que ya está abierto al público
-  // en mapas/documentos/geovisor/herramientas), activa de inmediato (igual
-  // que antes) pero SIN dar por verificado el correo que solo afirma el
+  // en mapas/documentos/geovisor/herramientas), activa solo si requireApproval='false' (igual que register()), SIN dar por verificado el correo que solo afirma el
   // proveedor — Microsoft mismo documenta que ese claim no está verificado y
   // no debe usarse para decisiones de autorización. Cierra aquí la clase
   // nOAuth que antes quedaba como residual: si nadie tenía ya esta cuenta,
@@ -299,7 +298,9 @@ async function findOrCreateUser(providerId, profile, { ip, userAgent } = {}) {
        (nombre, email, password_hash, rol, activo, email_verified,
         email_verification_token, email_verification_expires,
         oauth_provider, oauth_id, avatar_url, perfil_completo)
-     VALUES ($1, $2, NULL, 'publico', true, false, $3, $4, $5, $6, $7, false)
+     VALUES ($1, $2, NULL, 'publico',
+             COALESCE((SELECT valor = 'false' FROM configuracion WHERE clave = 'requireApproval'), false),
+             false, $3, $4, $5, $6, $7, false)
      RETURNING id, nombre, email, rol, activo, institucion, avatar_url, perfil_completo, email_verified`,
     [
       profile.nombre, profile.email.toLowerCase(),

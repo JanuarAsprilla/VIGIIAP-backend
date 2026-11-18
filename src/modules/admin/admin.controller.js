@@ -7,6 +7,8 @@ import { getCadenaCustodia, getDescargasRecurso } from '../../utils/dataCustody.
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { verificarIntegridadAuditoria } from './integridadAuditoria.js';
 import { CONFIG_SCHEMA, SUPER_ADMIN_ONLY_KEYS } from './configSchema.js';
+import { excluirSuperAdminDe } from './auditoriaCatalogo.js';
+import { cambiosDeLote } from './batchCambios.js';
 import {
   paginationQuerySchema, listUsuariosQuerySchema, auditLogQuerySchema,
   listAdministradoresQuerySchema, reportesQuerySchema,
@@ -55,7 +57,7 @@ export async function setConfiguracion(req, res, next) {
       return res.status(400).json({ error: 'Body debe ser un objeto clave→valor' });
     }
 
-    const unknownKeys = Object.keys(req.body).filter((k) => !CONFIG_SCHEMA[k]);
+    const unknownKeys = Object.keys(req.body).filter((k) => !Object.hasOwn(CONFIG_SCHEMA, k));
     if (unknownKeys.length) {
       return res.status(400).json({ error: `Claves no permitidas: ${unknownKeys.join(', ')}` });
     }
@@ -343,7 +345,7 @@ export async function custodiaRecurso(req, res, next) {
     if (!['mapa', 'documento'].includes(tipo)) {
       return res.status(400).json({ error: 'tipo debe ser "mapa" o "documento"' });
     }
-    const rows = await getCadenaCustodia(tipo, id);
+    const rows = await getCadenaCustodia(tipo, id, { viewerRol: req.user?.rol });
     res.json({ data: rows });
   } catch (err) { next(err); }
 }
@@ -358,7 +360,7 @@ export async function descargasRecurso(req, res, next) {
     if (!['mapa', 'documento'].includes(tipo)) {
       return res.status(400).json({ error: 'tipo debe ser "mapa" o "documento"' });
     }
-    const rows = await getDescargasRecurso(tipo, id);
+    const rows = await getDescargasRecurso(tipo, id, { viewerRol: req.user?.rol });
     res.json({ data: rows });
   } catch (err) { next(err); }
 }
@@ -383,7 +385,7 @@ export async function scanLog(req, res, next) {
     const resultado = req.query.resultado ?? null;
     const limit     = Math.min(Number(req.query.limit) || 50, 200);
 
-    const conditions = [];
+    const conditions = req.user?.rol === 'super_admin' ? [] : [excluirSuperAdminDe('uploaded_by')];
     const params     = [];
 
     if (resultado && ['clean', 'rejected', 'suspicious'].includes(resultado)) {
@@ -440,7 +442,7 @@ export async function batchUsuarios(req, res, next) {
       return res.status(400).json({ error: 'No puedes operar sobre tu propia cuenta en batch' });
     }
     const { rows: targets } = await query(
-      'SELECT id, rol FROM usuarios WHERE id = ANY($1::uuid[])', [ids]
+      'SELECT id, rol, activo FROM usuarios WHERE id = ANY($1::uuid[])', [ids]
     );
     if (targets.some((u) => u.rol === 'super_admin')) {
       return res.status(403).json({ error: 'No se puede operar sobre cuentas super_admin en batch' });
@@ -490,7 +492,8 @@ export async function batchUsuarios(req, res, next) {
       usuarioId:    req.user.id,
       usuarioEmail: req.user.email,
       ip:           req.ip,
-      metadatos:    { ids, accion, rol: rol ?? null, afectados: result.rowCount },
+      entidadTipo:  'usuario',
+      cambios:      cambiosDeLote(targets, accion, rol),
     });
 
     res.json({ message: `${result.rowCount} usuarios actualizados`, afectados: result.rowCount });

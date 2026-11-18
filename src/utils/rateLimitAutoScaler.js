@@ -26,6 +26,7 @@ const CHECK_INTERVAL_MS      = 60 * 60 * 1000; // 1 hora
 const MIN_SAMPLE_SIZE        = 500;   // menos que esto en la ventana: no hay señal confiable, no se decide nada
 const BLOCKED_RATE_THRESHOLD = 0.02;  // 2% de la ventana bloqueada dispara una subida
 const GROWTH_FACTOR          = 1.2;   // +20% por ajuste -- gradual, no salta directo a un valor grande
+const MIN_BLOCKED_CLIENTS    = 5;     // un solo cliente insistente no mueve el límite global: hacen falta varios distintos bloqueados
 const HARD_CEILING           = 5000;  // nunca sube de acá aunque el tráfico siga creciendo
 const STATIC_FLOOR           = 300;   // nunca calcula desde menos que el default estático (ver rateLimiter.js)
 
@@ -49,8 +50,9 @@ async function persistLimit(nuevo) {
 
 /** Revisa la ventana de tráfico más reciente y sube rate_limit_max si corresponde. */
 export async function runRateLimitAutoScaleCheck() {
-  const { totalRequests, blockedRequests } = snapshotAndReset();
+  const { totalRequests, blockedRequests, blockedClients } = snapshotAndReset();
   if (totalRequests < MIN_SAMPLE_SIZE) return;
+  if (blockedClients < MIN_BLOCKED_CLIENTS) return;
 
   const blockedRate = blockedRequests / totalRequests;
   if (blockedRate < BLOCKED_RATE_THRESHOLD) return;
