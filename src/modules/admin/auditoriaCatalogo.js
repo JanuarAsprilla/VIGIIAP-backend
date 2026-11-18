@@ -10,8 +10,10 @@ export const SEVERIDADES = ['critica', 'advertencia', 'info'];
  * (accesos anónimos, intentos contra correos inexistentes) SÍ son visibles: con un simple
  * `usuario_id NOT IN (...)` se descartaban, porque NULL NOT IN (...) no es verdadero.
  */
-export const EXCLUIR_SUPER_ADMIN =
-  `(usuario_id IS NULL OR usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin'))`;
+export const excluirSuperAdminDe = (columna) =>
+  `(${columna} IS NULL OR ${columna} NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin'))`;
+
+export const EXCLUIR_SUPER_ADMIN = excluirSuperAdminDe('usuario_id');
 
 const CRITICAS = [
   'refresh_token_reuse', 'login_blocked', 'alerta_rafaga_login',

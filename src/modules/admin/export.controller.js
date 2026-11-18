@@ -173,10 +173,11 @@ export async function exportAudit(req, res, next) {
 export async function exportDescargas(req, res, next) {
   try {
     const formato = req.query.formato === 'json' ? 'json' : 'csv';
+    const conditions = req.user?.rol === 'super_admin' ? [] : [EXCLUIR_SUPER_ADMIN];
     if (formato === 'csv') {
       await transmitirCsv({
         res, nombreArchivo: 'descargas', tabla: 'descarga_log', columnas: COLUMNAS_DESCARGAS, columnaFecha: 'created_at',
-        excluir: EXCLUDED,
+        condiciones: conditions, excluir: EXCLUDED,
         alIniciar: (total) => registrarAuditoria({
           accion: 'export_descargas', modulo: 'admin',
           descripcion: `Export descargas (${total} registros, csv)`,
@@ -187,7 +188,7 @@ export async function exportDescargas(req, res, next) {
     }
     const { rows } = await query(
       `SELECT ${COLUMNAS_DESCARGAS}
-       FROM descarga_log ORDER BY created_at DESC LIMIT $1`,
+       FROM descarga_log ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY created_at DESC LIMIT $1`,
       [MAX_ROWS]
     );
     if (rows.length === MAX_ROWS) {
