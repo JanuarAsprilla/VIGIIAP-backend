@@ -28,13 +28,30 @@ describe('limiteSimultaneasPorIp', () => {
     expect(res.body).toEqual({ error: 'ocupado' });
   });
 
-  it.each(['finish', 'close', 'error'])('libera el cupo con «%s», y una sola vez', (evento) => {
+  it('libera el cupo al terminar la respuesta, y una sola vez', () => {
     const mw = limiteSimultaneasPorIp({ tope: 1, mensaje: 'x' });
     const a = entrar(mw);
-    a.res.emit(evento);
+    a.res.emit('finish');
     a.res.emit('close');
     expect(entrar(mw).next).toHaveBeenCalled();
     expect(entrar(mw).res.statusCode).toBe(503);
+  });
+
+  it.each(['close', 'error'])('si el cliente se va («%s»), el cupo sigue ocupado hasta que pase la gracia de la consulta', (evento) => {
+    vi.useFakeTimers();
+    try {
+      const mw = limiteSimultaneasPorIp({ tope: 1, mensaje: 'x', graciaMs: 6000 });
+      const a = entrar(mw);
+      a.res.emit(evento);
+      expect(entrar(mw).res.statusCode).toBe(503);
+      vi.advanceTimersByTime(5999);
+      expect(entrar(mw).res.statusCode).toBe(503);
+      vi.advanceTimersByTime(1);
+      expect(entrar(mw).next).toHaveBeenCalled();
+      expect(mw.enCurso()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cuenta cada IP por separado y no retiene memoria al quedar en cero', () => {

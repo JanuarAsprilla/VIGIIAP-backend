@@ -1,4 +1,6 @@
 const POR_DEFECTO = 4;
+/** Tope de una consulta del Observatorio (5 s) más margen: si el cliente corta, la base puede seguir trabajando hasta entonces. */
+const GRACIA_POR_DEFECTO_MS = 6000;
 
 /** Entero positivo de una variable de entorno; si falta o es inválido, el valor por defecto. */
 export function leerTope(valor, porDefecto = POR_DEFECTO) {
@@ -7,9 +9,12 @@ export function leerTope(valor, porDefecto = POR_DEFECTO) {
 
 /**
  * Tope de peticiones en vuelo por IP (en memoria, por instancia): una sola IP no agota el pool de conexiones
- * del Observatorio. El cupo se libera siempre al terminar, cortarse la conexión o fallar la respuesta.
+ * del Observatorio. El cupo se libera al terminar la respuesta; si el cliente corta o falla la conexión, la consulta
+ * sigue en la base, así que se libera pasada la gracia y no antes (si no, cortar y reintentar saltaría el tope).
  */
-export function limiteSimultaneasPorIp({ tope = leerTope(process.env.BIODIVERSIDAD_MAX_SIMULTANEAS_IP), mensaje, reintentarEn = 3 } = {}) {
+export function limiteSimultaneasPorIp({
+  tope = leerTope(process.env.BIODIVERSIDAD_MAX_SIMULTANEAS_IP), mensaje, reintentarEn = 3, graciaMs = GRACIA_POR_DEFECTO_MS,
+} = {}) {
   const enCurso = new Map();
   const liberar = (ip) => {
     const quedan = (enCurso.get(ip) ?? 1) - 1;
@@ -29,9 +34,13 @@ export function limiteSimultaneasPorIp({ tope = leerTope(process.env.BIODIVERSID
       liberada = true;
       liberar(ip);
     };
+    const soltarTrasGracia = () => {
+      if (res.writableFinished) soltar();
+      else setTimeout(soltar, graciaMs).unref?.();
+    };
     res.once('finish', soltar);
-    res.once('close', soltar);
-    res.once('error', soltar);
+    res.once('close', soltarTrasGracia);
+    res.once('error', soltarTrasGracia);
     return next();
   };
   middleware.enCurso = () => enCurso.size;
