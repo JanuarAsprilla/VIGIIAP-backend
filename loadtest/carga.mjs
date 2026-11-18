@@ -8,8 +8,14 @@
  * Úsala contra un entorno propio: los límites de tasa por IP (429) se verán con una sola máquina.
  */
 import { parseArgs } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { resumir, evaluarUmbrales, elegirRuta } from './estadisticas.mjs';
+
+const TAMANO_POOL_SESIONES = 5_000;
+const sesiones = Array.from({ length: TAMANO_POOL_SESIONES }, () => randomUUID());
+const sesionAlAzar = () => sesiones[Math.floor(Math.random() * sesiones.length)];
+const CABECERAS_NAVEGADOR = { 'content-type': 'application/json', 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120 prueba-de-carga' };
 
 const ESCENARIOS = {
   publico: [
@@ -20,6 +26,11 @@ const ESCENARIOS = {
     { ruta: '/api/v1/categorias', peso: 2 },
     { ruta: '/api/v1/herramientas', peso: 1 },
     { ruta: '/api/v1/geovisores', peso: 3 },
+  ],
+  // Beacon público de analítica (POST). Mide la escritura por visita; compáralo con ANALITICA_COLA=true y sin ella.
+  analitica: [
+    { ruta: '/api/v1/analitica/pageview', metodo: 'POST', peso: 4, cuerpo: () => ({ sessionId: sesionAlAzar(), ruta: '/mapas', titulo: 'Mapas', dispositivo: 'escritorio' }) },
+    { ruta: '/api/v1/analitica/evento', metodo: 'POST', peso: 1, cuerpo: () => ({ sessionId: sesionAlAzar(), nombre: 'abrir_geovisor', recurso: 'rio' }) },
   ],
   busqueda: [
     { ruta: '/api/v1/mapas?q=rio', peso: 3 },
@@ -51,11 +62,16 @@ const medidas = new Map(rutas.map((r) => [r.ruta, { latencias: [], estados: [] }
 
 async function trabajador(finaliza) {
   while (performance.now() < finaliza) {
-    const { ruta } = elegirRuta(rutas, Math.random());
+    const { ruta, metodo = 'GET', cuerpo } = elegirRuta(rutas, Math.random());
     const inicio = performance.now();
     let estado;
     try {
-      const respuesta = await fetch(base + ruta, { signal: globalThis.AbortSignal.timeout(15_000) });
+      const respuesta = await fetch(base + ruta, {
+        method: metodo,
+        headers: CABECERAS_NAVEGADOR,
+        body: cuerpo ? JSON.stringify(cuerpo()) : undefined,
+        signal: globalThis.AbortSignal.timeout(15_000),
+      });
       await respuesta.arrayBuffer();
       estado = respuesta.status;
     } catch {
