@@ -16,6 +16,7 @@ const DEFECTOS = Object.freeze({
   LOAD_SHED_EN_VUELO_TODO: 1_500,
   LOAD_SHED_RETRY_AFTER_S: 5,
   LOAD_SHED_INTERVALO_MS: 1_000,
+  LOAD_SHED_MANTENER_MS: 10_000,
 });
 
 const enteroPositivo = (valor, porDefecto) => {
@@ -32,6 +33,7 @@ export function leerConfigDegradacion(env = process.env) {
     enVueloTodo: enteroPositivo(env.LOAD_SHED_EN_VUELO_TODO, DEFECTOS.LOAD_SHED_EN_VUELO_TODO),
     retryAfterS: enteroPositivo(env.LOAD_SHED_RETRY_AFTER_S, DEFECTOS.LOAD_SHED_RETRY_AFTER_S),
     intervaloMs: enteroPositivo(env.LOAD_SHED_INTERVALO_MS, DEFECTOS.LOAD_SHED_INTERVALO_MS),
+    mantenerMs: enteroPositivo(env.LOAD_SHED_MANTENER_MS, DEFECTOS.LOAD_SHED_MANTENER_MS),
     histeresis: HISTERESIS_POR_DEFECTO,
   };
 }
@@ -95,11 +97,14 @@ export function crearDegradacion({
   let enVuelo = 0;
   let descartadas = 0;
   let desde = 0;
+  let cambioEn = 0;
 
   function evaluar() {
     const medidas = { retrasoMs: leerRetraso(), enVuelo };
     const nuevo = siguienteNivel(nivel, medidas, config);
     if (nuevo === nivel) return;
+    // Descartar reduce las peticiones en vuelo y el retraso: sin un tiempo mínimo el modo entraría y saldría cada intervalo.
+    if (nuevo < nivel && Date.now() - cambioEn < config.mantenerMs) return;
     const detalle = `retraso p${PERCENTIL_RETRASO}=${Math.round(medidas.retrasoMs)}ms enVuelo=${medidas.enVuelo}`;
     if (nivel === NIVEL.NORMAL) {
       desde = Date.now();
@@ -111,6 +116,7 @@ export function crearDegradacion({
       logger.warn(`[degradacion] CAMBIA a modo ${NOMBRE_NIVEL[nuevo]} — ${detalle}`);
     }
     nivel = nuevo;
+    cambioEn = Date.now();
   }
 
   const temporizador = iniciarTemporizador ? setInterval(evaluar, config.intervaloMs) : null;
