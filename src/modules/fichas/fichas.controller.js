@@ -1,3 +1,4 @@
+import fsp from 'node:fs/promises';
 import {
   configFichasSchema, fichaPuntoSchema, importarFichasSchema, medioFichaMetaSchema, actualizarMedioSchema, reordenarMediosSchema,
 } from './fichas.schema.js';
@@ -126,6 +127,8 @@ export async function features(req, res, next) {
  * (imagen o video) y el tipo resuelto por magic bytes.
  */
 export async function subirMedio(req, res, next) {
+  // El temporal pasa a ser del servicio solo cuando este termina bien (imagen: ya lo borró; video: lo procesa en segundo plano).
+  let entregado = false;
   try {
     const meta = medioFichaMetaSchema.parse(req.body);
     const { configId, valor } = req.params;
@@ -134,6 +137,7 @@ export async function subirMedio(req, res, next) {
     const medio = tipo === 'imagen'
       ? await fichasService.crearMedioImagen({ configId, valor, archivoPath, userId: req.user.id, ...meta })
       : await fichasService.crearMedioVideo({ configId, valor, archivoPath, posterPath, bytes, userId: req.user.id, ...meta });
+    entregado = true;
 
     registrarAuditoria({
       accion: 'subir_medio_ficha',
@@ -145,7 +149,16 @@ export async function subirMedio(req, res, next) {
       ip: req.ip,
     });
     res.status(201).json(medio);
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  } finally {
+    if (!entregado) await borrarTemporales(req.medioFicha);
+  }
+}
+
+async function borrarTemporales(medio) {
+  const rutas = [medio?.path, medio?.posterPath].filter(Boolean);
+  await Promise.all(rutas.map((ruta) => fsp.rm(ruta, { force: true }).catch(() => {})));
 }
 
 export async function actualizarMedio(req, res, next) {
