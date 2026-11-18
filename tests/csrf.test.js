@@ -30,6 +30,10 @@ describe('utils/csrf', () => {
     expect(generateCsrfToken(token)).not.toBe(generateCsrfToken('otro-token'));
   });
 
+  it('verifyCsrfToken() rechaza sin lanzar un token de sesión que no es texto (cookie j: parseada)', () => {
+    expect(verifyCsrfToken({ a: 1 }, 'abcd')).toBe(false);
+  });
+
   it('verifyCsrfToken() acepta el token correcto', () => {
     const csrf = generateCsrfToken(token);
     expect(verifyCsrfToken(token, csrf)).toBe(true);
