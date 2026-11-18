@@ -127,7 +127,7 @@ describe('changeExpiredPassword()', () => {
     const token = makeToken({ id: 'user-uuid', scope: 'password-change' });
     query
       .mockResolvedValueOnce({ rows: [{ totp_enabled: true }] })              // SELECT totp_enabled
-      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti' }] }) // SELECT for jti check
+      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti', activo: true }] }) // SELECT for jti check
       .mockResolvedValueOnce({ rows: [] })                                    // UPDATE password
       .mockResolvedValueOnce({ rows: [USER_ROW] });                           // SELECT user
 
@@ -156,7 +156,7 @@ describe('changeExpiredPassword()', () => {
     const token = makeToken({ id: 'user-uuid', scope: 'password-change' });
     query
       .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })             // SELECT totp_enabled
-      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti' }] }) // SELECT for jti check
+      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti', activo: true }] }) // SELECT for jti check
       .mockResolvedValueOnce({ rows: [] })                                    // UPDATE password
       .mockResolvedValueOnce({ rows: [USER_ROW] });                           // SELECT user
 
@@ -180,6 +180,22 @@ describe('changeExpiredPassword()', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('Contraseña actualizada') })
     );
+  });
+
+  it('retorna 403 y no cambia la contraseña ni abre sesión si la cuenta se desactivó tras emitirse el token', async () => {
+    const token = makeToken({ id: 'user-uuid', scope: 'password-change', jti: 'test-jti' });
+    query
+      .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'test-jti', activo: false }] });
+
+    const req = { cookies: { vigiiap_expired_temp: token }, body: { password: 'NuevaPassword123!' }, ip: '127.0.0.1', headers: {} };
+    const res = mockRes();
+    await changeExpiredPassword(req, res, mockNext);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(issueTokenPair).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 
   it('retorna 401 si el usuario no existe al verificar el token consumido', async () => {
@@ -207,7 +223,7 @@ describe('changeExpiredPassword()', () => {
     query
       .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
       .mockResolvedValueOnce({
-        rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'jti-viejo' }],
+        rows: [{ password_hash: '$2b$12$dummy', expired_token_jti: 'jti-viejo', activo: true }],
       });
 
     const req = {
@@ -231,7 +247,7 @@ describe('changeExpiredPassword()', () => {
     query
       .mockResolvedValueOnce({ rows: [{ totp_enabled: false }] }) // SELECT totp_enabled
       .mockResolvedValueOnce({
-        rows: [{ password_hash: existingHash, expired_token_jti: null }],
+        rows: [{ password_hash: existingHash, expired_token_jti: null, activo: true }],
       });
 
     const req = {
