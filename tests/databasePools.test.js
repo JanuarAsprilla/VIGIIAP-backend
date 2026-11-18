@@ -9,7 +9,7 @@ vi.mock('pg', () => {
 });
 vi.mock('../src/utils/logger.js', () => ({ default: { info: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
 
-beforeEach(() => { creados.length = 0; vi.resetModules(); delete process.env.BIODIVERSIDAD_POOL_MAX; process.env.DATABASE_URL = 'postgres://x'; });
+beforeEach(() => { creados.length = 0; vi.resetModules(); delete process.env.BIODIVERSIDAD_POOL_MAX; delete process.env.DB_POOL_MAX; process.env.DATABASE_URL = 'postgres://x'; });
 
 describe('pools de base de datos', () => {
   it('el Observatorio público tiene un pool propio y pequeño, aparte del de login y panel', async () => {
@@ -31,6 +31,26 @@ describe('pools de base de datos', () => {
     process.env.BIODIVERSIDAD_POOL_MAX = '500';
     await import('../src/config/database.js');
     expect(creados[1].opciones.max).toBe(10);
+  });
+});
+
+describe('tamaño del pool principal por entorno', () => {
+  it('DB_POOL_MAX fija el máximo del pool principal sin tocar el del Observatorio', async () => {
+    process.env.DB_POOL_MAX = '35';
+    await import('../src/config/database.js');
+    expect(creados.map((p) => p.opciones.max)).toEqual([35, 6]);
+  });
+
+  it.each(['0', '-4', 'abc', ''])('un valor inválido (%j) conserva el default de 20', async (valor) => {
+    process.env.DB_POOL_MAX = valor;
+    await import('../src/config/database.js');
+    expect(creados[0].opciones.max).toBe(20);
+  });
+
+  it('se acota a un tope para que una errata no abra cientos de conexiones', async () => {
+    process.env.DB_POOL_MAX = '100000';
+    await import('../src/config/database.js');
+    expect(creados[0].opciones.max).toBe(200);
   });
 });
 
