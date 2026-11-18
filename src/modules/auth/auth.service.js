@@ -90,10 +90,7 @@ export async function refreshTokens(rawToken, { ip, userAgent } = {}) {
     if (stolen[0]) {
       const revocadoHaceMs = stolen[0].revocado_en ? Date.now() - new Date(stolen[0].revocado_en).getTime() : Infinity;
       if (revocadoHaceMs > REUSE_GRACE_MS) {
-        await query(
-          'UPDATE refresh_tokens SET revocado = true, revocado_en = NOW() WHERE usuario_id = $1 AND revocado = false',
-          [stolen[0].usuario_id]
-        );
+        await revokeAllRefreshTokens(stolen[0].usuario_id);
         registrarAuditoria({
           accion:      'refresh_token_reuse',
           modulo:      'auth',
@@ -179,13 +176,10 @@ export async function login(email, password, ip, userAgent) {
     throw Object.assign(new Error(MENSAJE_CREDENCIALES), { status: 401 });
   }
 
-  // Bloqueo temporal por intentos fallidos
+  // Bloqueo temporal: misma respuesta y mismo coste que una cuenta inexistente, para no delatar qué correos existen.
   if (user.bloqueado_hasta && new Date() < new Date(user.bloqueado_hasta)) {
-    const minutos = Math.ceil((new Date(user.bloqueado_hasta) - new Date()) / 60_000);
-    throw Object.assign(
-      new Error(`Cuenta bloqueada temporalmente. Intenta de nuevo en ${minutos} minuto(s).`),
-      { status: 429, code: 'ACCOUNT_LOCKED' }
-    );
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw Object.assign(new Error(MENSAJE_CREDENCIALES), { status: 401 });
   }
 
   const valid = await bcrypt.compare(password, user.password_hash);
@@ -244,10 +238,7 @@ export async function login(email, password, ip, userAgent) {
       userAgent,
     });
     registrarFalloLogin(ip);
-    const msg = bloquear
-      ? `Cuenta bloqueada ${LOCKOUT_MINS} minutos por ${MAX_INTENTOS} intentos fallidos consecutivos.`
-      : MENSAJE_CREDENCIALES;
-    throw Object.assign(new Error(msg), { status: 401 });
+    throw Object.assign(new Error(MENSAJE_CREDENCIALES), { status: 401 });
   }
 
   // Login exitoso — resetear contador de intentos y registrar último acceso. Con 2FA activo el contador NO se

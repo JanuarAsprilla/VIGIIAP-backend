@@ -15,11 +15,11 @@ import {
   biodiversidadRateLimiter,
 } from '../src/middlewares/rateLimiter.js';
 
-function buildApp(limiter, { withUser = false } = {}) {
+function buildApp(limiter, { withUser = false, user = { id: 'user-rl-1' } } = {}) {
   const app = express();
   app.use(express.json());
   if (withUser) {
-    app.use((req, _res, next) => { req.user = { id: 'user-rl-1' }; next(); });
+    app.use((req, _res, next) => { req.user = user; next(); });
   }
   app.use(limiter);
   app.get('/ping', (_req, res) => res.status(200).json({ ok: true }));
@@ -42,6 +42,41 @@ describe('rateLimiter — límite dinámico anónimo vs. autenticado', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['ratelimit-limit']).toBe('500');
+  });
+});
+
+describe('rateLimiter — el token de visitante no da el cupo autenticado', () => {
+  it('un visitante (token gratuito) usa el límite anónimo, no el de 500', async () => {
+    const app = buildApp(rateLimiter, { withUser: true, user: { visitanteId: 'v-1', rol: 'visitante', tipo: 'visitante' } });
+    const res = await request(app).get('/ping');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit-limit']).toBe('300');
+  });
+});
+
+describe('limitadores por correo — clave acotada', () => {
+  const correoLargo = `${'a'.repeat(5000)}@x.org`;
+
+  it('un correo gigante o no textual no crea claves arbitrarias: cae a la clave por IP', async () => {
+    const app = buildApp(emailActionRateLimiter);
+    const largo = await request(app).post('/ping').send({ email: correoLargo });
+    const objeto = await request(app).post('/ping').send({ email: { $ne: 'x' } });
+
+    expect(largo.status).toBe(200);
+    expect(objeto.status).toBe(200);
+    // Ambas cuentan contra la misma clave de IP: el cupo (5) baja de forma compartida.
+    expect(largo.headers['ratelimit-remaining']).toBe('4');
+    expect(objeto.headers['ratelimit-remaining']).toBe('3');
+  });
+
+  it('mayúsculas y espacios del mismo correo comparten cupo', async () => {
+    const app = buildApp(passwordResetLimiter);
+    const a = await request(app).post('/ping').send({ email: 'Victima@IIAP.org' });
+    const b = await request(app).post('/ping').send({ email: '  victima@iiap.org ' });
+
+    expect(a.headers['ratelimit-remaining']).toBe('2');
+    expect(b.headers['ratelimit-remaining']).toBe('1');
   });
 });
 

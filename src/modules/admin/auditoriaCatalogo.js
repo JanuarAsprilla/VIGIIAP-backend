@@ -10,18 +10,27 @@ export const SEVERIDADES = ['critica', 'advertencia', 'info'];
  * (accesos anónimos, intentos contra correos inexistentes) SÍ son visibles: con un simple
  * `usuario_id NOT IN (...)` se descartaban, porque NULL NOT IN (...) no es verdadero.
  */
-export const EXCLUIR_SUPER_ADMIN =
-  `(usuario_id IS NULL OR usuario_id NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin'))`;
+export const excluirSuperAdminDe = (columna) =>
+  `(${columna} IS NULL OR ${columna} NOT IN (SELECT id FROM usuarios WHERE rol = 'super_admin'))`;
+
+export const EXCLUIR_SUPER_ADMIN = excluirSuperAdminDe('usuario_id');
+
+/**
+ * Para audit_log: además del actor, oculta las filas cuyo recurso afectado es una cuenta super_admin
+ * (p. ej. refresh_token_reuse se registra con entidad_id = la cuenta y sin usuario_id).
+ */
+export const EXCLUIR_SUPER_ADMIN_AUDITORIA =
+  `(${EXCLUIR_SUPER_ADMIN} AND (entidad_id IS NULL OR entidad_id NOT IN (SELECT id::text FROM usuarios WHERE rol = 'super_admin')))`;
 
 const CRITICAS = [
   'refresh_token_reuse', 'login_blocked', 'alerta_rafaga_login',
-  'delete_usuario', 'update_rol', 'update_permisos_modulo', 'create_admin', 'update_configuracion',
+  'delete_usuario', 'update_rol', 'batch_cambiar_rol', 'update_permisos_modulo', 'create_admin', 'update_configuracion',
   'create_conexion_geoserver', 'update_conexion_geoserver', 'delete_conexion_geoserver',
 ];
 
 const ADVERTENCIAS = [
   'login_failed', 'acceso_denegado', 'login_ubicacion_nueva', 'change_password', 'password_reset',
-  'sesion_revocada', 'todas_sesiones_revocadas', 'update_usuario', 'rate_limit_auto_scale',
+  'sesion_revocada', 'todas_sesiones_revocadas', 'update_usuario', 'batch_desactivar', 'rate_limit_auto_scale',
 ];
 
 // Toda eliminación y toda exportación de datos merece atención, aunque la acción sea nueva.

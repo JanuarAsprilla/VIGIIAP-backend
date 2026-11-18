@@ -722,8 +722,9 @@ describe('admin.controller → custodiaRecurso() — success', () => {
   it('retorna custodia de mapa', async () => {
     getCadenaCustodia.mockResolvedValueOnce([{ accion: 'ingreso' }]);
     const r = res();
-    await custodiaRecurso({ query: { tipo: 'mapa', id: 'uuid-m1' } }, r, mockNext);
+    await custodiaRecurso({ query: { tipo: 'mapa', id: 'uuid-m1' }, user: { rol: 'admin_sig' } }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith({ data: [{ accion: 'ingreso' }] });
+    expect(getCadenaCustodia).toHaveBeenCalledWith('mapa', 'uuid-m1', { viewerRol: 'admin_sig' });
   });
 
   it('retorna custodia de documento', async () => {
@@ -740,8 +741,9 @@ describe('admin.controller → descargasRecurso() — success', () => {
   it('retorna descargas de mapa', async () => {
     getDescargasRecurso.mockResolvedValueOnce([{ usuario_email: 'a@a.co' }]);
     const r = res();
-    await descargasRecurso({ query: { tipo: 'mapa', id: 'uuid-m1' } }, r, mockNext);
+    await descargasRecurso({ query: { tipo: 'mapa', id: 'uuid-m1' }, user: { rol: 'admin_sig' } }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith({ data: [{ usuario_email: 'a@a.co' }] });
+    expect(getDescargasRecurso).toHaveBeenCalledWith('mapa', 'uuid-m1', { viewerRol: 'admin_sig' });
   });
 
   it('retorna descargas de documento', async () => {
@@ -756,11 +758,20 @@ describe('admin.controller → descargasRecurso() — success', () => {
 
 describe('admin.controller → scanLog()', () => {
   beforeEach(() => vi.clearAllMocks());
+  const SUPER = { rol: 'super_admin' };
+
+  it('a un admin_sig le oculta los escaneos subidos por cuentas super_admin', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await scanLog({ user: { rol: 'admin_sig' }, query: { resultado: 'rejected' } }, res(), mockNext);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/uploaded_by IS NULL OR uploaded_by NOT IN \(SELECT id FROM usuarios WHERE rol = 'super_admin'\)/);
+    expect(params).toEqual(['rejected', 50]);
+  });
 
   it('retorna el log de escaneo sin filtros', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: 1, resultado: 'clean' }] });
     const r = res();
-    await scanLog({ query: {} }, r, mockNext);
+    await scanLog({ user: SUPER, query: {} }, r, mockNext);
     expect(r.json).toHaveBeenCalledWith({ data: [{ id: 1, resultado: 'clean' }] });
     const [sql, params] = query.mock.calls[0];
     expect(sql).not.toContain('WHERE');
@@ -770,7 +781,7 @@ describe('admin.controller → scanLog()', () => {
   it('filtra por resultado cuando es un valor permitido', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     const r = res();
-    await scanLog({ query: { resultado: 'rejected' } }, r, mockNext);
+    await scanLog({ user: SUPER, query: { resultado: 'rejected' } }, r, mockNext);
     const [sql, params] = query.mock.calls[0];
     expect(sql).toContain('WHERE resultado = $1');
     expect(params).toEqual(['rejected', 50]);
@@ -779,7 +790,7 @@ describe('admin.controller → scanLog()', () => {
   it('ignora resultado con valor no permitido', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     const r = res();
-    await scanLog({ query: { resultado: 'malware' } }, r, mockNext);
+    await scanLog({ user: SUPER, query: { resultado: 'malware' } }, r, mockNext);
     const [sql, params] = query.mock.calls[0];
     expect(sql).not.toContain('WHERE');
     expect(params).toEqual([50]);
@@ -788,7 +799,7 @@ describe('admin.controller → scanLog()', () => {
   it('limita el limit a un máximo de 200', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     const r = res();
-    await scanLog({ query: { limit: '9999' } }, r, mockNext);
+    await scanLog({ user: SUPER, query: { limit: '9999' } }, r, mockNext);
     const [, params] = query.mock.calls[0];
     expect(params).toEqual([200]);
   });
@@ -796,14 +807,14 @@ describe('admin.controller → scanLog()', () => {
   it('usa 50 como límite por defecto si limit no es numérico', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     const r = res();
-    await scanLog({ query: { limit: 'abc' } }, r, mockNext);
+    await scanLog({ user: SUPER, query: { limit: 'abc' } }, r, mockNext);
     const [, params] = query.mock.calls[0];
     expect(params).toEqual([50]);
   });
 
   it('llama next(err) si query lanza', async () => {
     query.mockRejectedValueOnce(new Error('db'));
-    await scanLog({ query: {} }, res(), mockNext);
+    await scanLog({ user: SUPER, query: {} }, res(), mockNext);
     expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
   });
 });
@@ -934,7 +945,7 @@ describe('admin.controller → batchUsuarios()', () => {
 
   it('activa usuarios en lote, notifica y registra auditoría', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }, { id: TARGET_2, rol: 'tecnico' }] })
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador', activo: true }, { id: TARGET_2, rol: 'tecnico', activo: true }] })
       .mockResolvedValueOnce({ rowCount: 2 })
       .mockResolvedValueOnce({ rows: [
         { email: 't1@iiap.org.co', nombre: 'T1', rol: 'investigador', activo: true },
@@ -948,7 +959,11 @@ describe('admin.controller → batchUsuarios()', () => {
     expect(r.json).toHaveBeenCalledWith({ message: '2 usuarios actualizados', afectados: 2 });
     expect(notifyUsuarioActivacion).toHaveBeenCalledTimes(2);
     expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
-    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'batch_activar' }));
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({
+      accion: 'batch_activar',
+      entidadTipo: 'usuario',
+      cambios: { [TARGET_1]: { antes: true, despues: true }, [TARGET_2]: { antes: true, despues: true } },
+    }));
   });
 
   it('desactiva usuarios en lote y notifica', async () => {

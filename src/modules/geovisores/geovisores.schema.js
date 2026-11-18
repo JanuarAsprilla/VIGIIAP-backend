@@ -78,7 +78,6 @@ const geovisorBase = z.object({
   // z.object(...).default(x) usa x tal cual, sin volver a pasarlo por el schema -- por eso el
   // default explícito repite los defaults internos en vez de confiar en un {} vacío.
   presentacion: presentacionSchema.default({ mostrarMetricas: true, mostrarImagenes: false, camposPopup: [] }),
-  thumbnailUrl: z.string().url().optional(),
 });
 
 export const createGeovisorSchema = geovisorBase;

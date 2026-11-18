@@ -15,7 +15,10 @@ vi.mock('../src/config/r2.js', () => ({
 }));
 
 // ─── Imports bajo prueba ───────────────────────────────────────────────────────
+vi.mock('../src/modules/admin/modulos.service.js', () => ({ tienePermisoModulo: vi.fn().mockResolvedValue(true) }));
+
 import { query } from '../src/config/database.js';
+import { tienePermisoModulo } from '../src/modules/admin/modulos.service.js';
 import { deleteFileByUrl } from '../src/config/r2.js';
 import {
   getAll,
@@ -75,6 +78,18 @@ describe('getAll()', () => {
     // La query no debe contener filtro activo=true cuando admin=true
     const dataQuerySql = query.mock.calls[0][0];
     expect(dataQuerySql).not.toContain('m.activo = true');
+  });
+
+  it('?admin=true sin permiso ver del módulo mapas NO abre la vista de gestión', async () => {
+    tienePermisoModulo.mockResolvedValueOnce(false);
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+    await getAll({ admin: 'true' }, adminUser);
+
+    expect(tienePermisoModulo).toHaveBeenCalledWith(adminUser, 'mapas', 'ver');
+    expect(query.mock.calls[0][0]).toContain('m.activo = true');
   });
 
   it('filtra por visibilidad ["publico"] para visitante', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { importarFichasSchema, MAX_FILAS_IMPORTACION } from '../src/modules/fichas/fichas.schema.js';
+import { configFichasSchema, importarFichasSchema, MAX_FILAS_IMPORTACION } from '../src/modules/fichas/fichas.schema.js';
 
 describe('importarFichasSchema', () => {
   it('acepta filas válidas y por defecto no sobrescribe', () => {
@@ -36,5 +36,17 @@ describe('importarFichasSchema', () => {
 
   it('rechaza una descripción de más de 10000 caracteres', () => {
     expect(() => importarFichasSchema.parse({ filas: [{ valor: 'EST-001', descripcion: 'a'.repeat(10001) }] })).toThrow();
+  });
+});
+
+describe('configFichasSchema — capaId', () => {
+  const base = { conexionId: '3f2b8c1e-4d5a-4e6f-8a7b-9c0d1e2f3a4b', campoIdentificador: 'id' };
+
+  it('acepta workspace:nombre', () => {
+    expect(configFichasSchema.parse({ ...base, capaId: 't_19_clima:estaciones' }).capaId).toBe('t_19_clima:estaciones');
+  });
+
+  it.each(['a:b,c:d', 'a:b c', 'sin_workspace'])('rechaza %j', (capaId) => {
+    expect(configFichasSchema.safeParse({ ...base, capaId }).success).toBe(false);
   });
 });

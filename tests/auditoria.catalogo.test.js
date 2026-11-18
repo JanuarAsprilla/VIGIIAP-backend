@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  severidadDeAccion, condicionSeveridad, EXCLUIR_SUPER_ADMIN, SEVERIDADES, ACCIONES_CRITICAS,
+  severidadDeAccion, condicionSeveridad, EXCLUIR_SUPER_ADMIN, EXCLUIR_SUPER_ADMIN_AUDITORIA, SEVERIDADES, ACCIONES_CRITICAS,
 } from '../src/modules/admin/auditoriaCatalogo.js';
 import { interpretarUserAgent } from '../src/utils/userAgent.js';
 import { enmascararEmail } from '../src/utils/auditLog.js';
@@ -21,6 +21,11 @@ describe('severidadDeAccion()', () => {
   it('toda eliminación o exportación es advertencia aunque la acción sea nueva', () => {
     expect(severidadDeAccion('delete_algo_nuevo')).toBe('advertencia');
     expect(severidadDeAccion('export_algo_nuevo')).toBe('advertencia');
+  });
+
+  it('el cambio de rol y la desactivación en lote no pasan como informativos', () => {
+    expect(severidadDeAccion('batch_cambiar_rol')).toBe('critica');
+    expect(severidadDeAccion('batch_desactivar')).toBe('advertencia');
   });
 
   it('lo demás es informativo', () => {
@@ -74,6 +79,13 @@ describe('condicionSeveridad()', () => {
 describe('EXCLUIR_SUPER_ADMIN', () => {
   it('conserva los eventos sin usuario (NULL) además de excluir super_admin', () => {
     expect(EXCLUIR_SUPER_ADMIN).toMatch(/usuario_id IS NULL OR usuario_id NOT IN/);
+  });
+});
+
+describe('EXCLUIR_SUPER_ADMIN_AUDITORIA', () => {
+  it('oculta también las filas cuyo recurso afectado (entidad_id) es una cuenta super_admin', () => {
+    expect(EXCLUIR_SUPER_ADMIN_AUDITORIA).toContain(EXCLUIR_SUPER_ADMIN);
+    expect(EXCLUIR_SUPER_ADMIN_AUDITORIA).toMatch(/entidad_id IS NULL OR entidad_id NOT IN \(SELECT id::text FROM usuarios WHERE rol = 'super_admin'\)/);
   });
 });
 

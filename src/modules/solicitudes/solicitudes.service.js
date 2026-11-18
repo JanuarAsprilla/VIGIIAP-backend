@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { query } from '../../config/database.js';
+import { query, getClient } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { validateFile, sha256, sanitizeFilename } from '../../middlewares/fileGuard.js';
 import { optimizeImage } from '../../utils/imageOptimize.js';
@@ -124,28 +124,41 @@ async function verificarPermisoPublico(userRol) {
   }
 }
 
+const MAX_SOLICITUDES_POR_DIA = 5;
+
 export async function create(data, userId, userRol) {
   await verificarPermisoPublico(userRol);
 
-  // Rate limit: máximo 5 solicitudes por usuario en las últimas 24 horas
-  const { rows: recent } = await query(
-    `SELECT COUNT(*) FROM solicitudes
-     WHERE usuario_id = $1 AND creado_en > NOW() - INTERVAL '24 hours'`,
-    [userId]
-  );
-  if (Number(recent[0].count) >= 5) {
-    throw Object.assign(
-      new Error('Límite alcanzado: máximo 5 solicitudes por día. Intenta mañana.'),
-      { status: 429 }
+  // El candado por usuario serializa contar+insertar: ráfagas en paralelo leían el mismo COUNT y pasaban el tope.
+  const cliente = await getClient();
+  try {
+    await cliente.query('BEGIN');
+    await cliente.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`solicitudes:${userId}`]);
+    const { rows: recent } = await cliente.query(
+      `SELECT COUNT(*) FROM solicitudes
+       WHERE usuario_id = $1 AND creado_en > NOW() - INTERVAL '24 hours'`,
+      [userId]
     );
-  }
+    if (Number(recent[0].count) >= MAX_SOLICITUDES_POR_DIA) {
+      throw Object.assign(
+        new Error(`Límite alcanzado: máximo ${MAX_SOLICITUDES_POR_DIA} solicitudes por día. Intenta mañana.`),
+        { status: 429 }
+      );
+    }
 
-  const { rows } = await query(
-    `INSERT INTO solicitudes (tipo, descripcion, usuario_id)
-     VALUES ($1,$2,$3) RETURNING *`,
-    [data.tipo, data.descripcion, userId]
-  );
-  return rows[0];
+    const { rows } = await cliente.query(
+      `INSERT INTO solicitudes (tipo, descripcion, usuario_id)
+       VALUES ($1,$2,$3) RETURNING *`,
+      [data.tipo, data.descripcion, userId]
+    );
+    await cliente.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await cliente.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    cliente.release();
+  }
 }
 
 export async function updateEstado(id, estado, nota, adminId) {

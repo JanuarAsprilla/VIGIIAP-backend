@@ -109,6 +109,25 @@ describe('descargarMapa()', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('retorna 403 para mapa de visibilidad usuarios con rol publico (alineado con los listados)', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...MAPA_PUBLICO, visibilidad: 'usuarios' }] });
+    const res = mockRes();
+    const req = mockReq({ params: { id: 'uuid-mapa-1' }, user: { rol: 'publico' } });
+    await descargarMapa(req, res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('un tecnico descarga un mapa acreditados, igual que lo ve en el listado', async () => {
+    query.mockResolvedValueOnce({ rows: [MAPA_ACREDITADOS] });
+    isPublicUrl.mockReturnValueOnce(false);
+    extractKey.mockReturnValueOnce('mapas/restricted.pdf');
+    const res = mockRes();
+    const req = mockReq({ params: { id: 'uuid-mapa-2' }, user: { rol: 'tecnico' } });
+    await descargarMapa(req, res, mockNext);
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(getFileStream).toHaveBeenCalled();
+  });
+
   it('retorna 403 para mapa acreditados con rol visitante', async () => {
     query.mockResolvedValueOnce({ rows: [MAPA_ACREDITADOS] });
     const res = mockRes();
@@ -191,14 +210,6 @@ describe('descargarMapa()', () => {
     expect(res.redirect).toHaveBeenCalledWith(302, mapaUsuarios.archivo_pdf_url);
   });
 
-  it('retorna 403 para mapa acreditados con rol tecnico (no elevado, requiere rol elevado)', async () => {
-    const mapaAcreditados = { ...MAPA_PUBLICO, visibilidad: 'acreditados' };
-    query.mockResolvedValueOnce({ rows: [mapaAcreditados] });
-    const res = mockRes();
-    const req = mockReq({ params: { id: 'uuid-mapa-1' }, user: { rol: 'tecnico' } });
-    await descargarMapa(req, res, mockNext);
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
 
   // Regresión: un mapa en papelera (deleted_at seteado) no debe seguir siendo
   // descargable vía enlace directo aunque su columna `activo` no haya cambiado
@@ -229,6 +240,13 @@ describe('descargarDocumento()', () => {
     const res = mockRes();
     await descargarDocumento(mockReq({ params: { id: 'uuid-doc-1' } }), res, mockNext);
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('retorna 403 para documento de visibilidad usuarios con rol publico', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...DOC_PUBLICO, visibilidad: 'usuarios' }] });
+    const res = mockRes();
+    await descargarDocumento(mockReq({ params: { id: 'uuid-doc-1' }, user: { rol: 'publico' } }), res, mockNext);
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('retorna 403 para documento acreditados sin auth', async () => {
