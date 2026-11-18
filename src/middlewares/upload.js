@@ -4,6 +4,7 @@ import { uploadFile } from '../config/r2.js';
 import { validateFile, sha256 } from './fileGuard.js';
 import { registrarScanArchivo } from '../utils/dataCustody.js';
 import { optimizeImage } from '../utils/imageOptimize.js';
+import { limitesMultipart, topeContentLength, guardaContentLength } from './multipartLimits.js';
 
 const storage = multer.memoryStorage();
 
@@ -16,36 +17,17 @@ const storage = multer.memoryStorage();
 export function uploadFields(fields) {
   const multerFields = fields.map(({ name }) => ({ name, maxCount: 1 }));
   const maxFieldBytes = Math.max(...fields.map(f => (f.maxSizeMB ?? 20))) * 1024 * 1024;
-  // Guardia de suma total: Content-Length de una request multipart con todos los campos
-  // al máximo. Rechaza antes de leer un solo byte — previene DoS de memoria.
-  // margen x3: overhead de boundary/headers multipart + campos de texto adicionales.
-  const totalRequestLimit = maxFieldBytes * fields.length * 3;
+  // Guardia de suma total: Content-Length de una request multipart con todos los campos al máximo.
+  const totalRequestLimit = topeContentLength({ fileSize: maxFieldBytes, files: fields.length });
 
   const upload = multer({
     storage,
-    // Además del tamaño por archivo: sin tope de campos/partes un multipart con miles de campos de texto
-    // se acumula en memoria y tumba el proceso (el límite de Content-Length no cubre Transfer-Encoding: chunked).
-    limits: {
-      fileSize: maxFieldBytes,
-      files: fields.length,
-      fields: 60,
-      fieldSize: 128 * 1024,
-      parts: fields.length + 60,
-      headerPairs: 100,
-    },
+    limits: limitesMultipart({ fileSize: maxFieldBytes, files: fields.length }),
   }).fields(multerFields);
 
   return [
     // 0. Guardia de Content-Length — descarta requests sobredimensionadas antes de parsear
-    (req, res, next) => {
-      const cl = parseInt(req.headers['content-length'] ?? '0', 10);
-      if (cl > totalRequestLimit) {
-        return res.status(413).json({
-          error: `Carga demasiado grande. Máximo por request: ${Math.round(totalRequestLimit / 1024 / 1024)} MB`,
-        });
-      }
-      next();
-    },
+    guardaContentLength(totalRequestLimit),
 
     // 1. Parsear multipart
     (req, res, next) => upload(req, res, (err) => {
