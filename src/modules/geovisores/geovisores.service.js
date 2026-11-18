@@ -8,6 +8,7 @@ import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
 import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
 import { esVistaAdmin } from '../../utils/vistaAdmin.js';
+import { validarCapaId } from './capaId.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -466,7 +467,9 @@ function normalizarQueryWms(queryParams) {
 export async function proxyWmsDeGeovisor(slug, consultaCruda, geometriaFiltro, user) {
   const geovisor = await getBySlug(slug, user);
   const queryParams = normalizarQueryWms(consultaCruda);
-  const capasPedidas = (queryParams.get('layers') ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+  const capasPedidas = (queryParams.get('layers') ?? '').split(',').map((c) => c.trim()).filter(Boolean).map(validarCapaId);
+  // Se reenvía la lista ya validada y normalizada, no el texto crudo que el cliente mandó.
+  if (capasPedidas.length > 0) queryParams.set('layers', capasPedidas.join(','));
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
   capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId, restricciones));
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
@@ -475,6 +478,7 @@ export async function proxyWmsDeGeovisor(slug, consultaCruda, geometriaFiltro, u
 
 /** Proxy WMS GetLegendGraphic de un geovisor -- resuelve su conexión, valida la capa y delega al conector. */
 export async function proxyLeyendaDeGeovisor(slug, capaId, user) {
+  validarCapaId(capaId);
   const geovisor = await getBySlug(slug, user);
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
   exigirCapaPermitida(geovisor, capaId, restricciones);
@@ -488,6 +492,7 @@ export async function proxyLeyendaDeGeovisor(slug, capaId, user) {
  * alimenta el popup de "click sobre una capa", separado del catálogo (que solo lista qué existe).
  */
 export async function consultarCapaDeGeovisor(slug, capaId, geometria, user) {
+  validarCapaId(capaId);
   const geovisor = await getBySlug(slug, user);
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
   exigirCapaPermitida(geovisor, capaId, restricciones);

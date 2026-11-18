@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { esCapaIdValido } from '../geovisores/capaId.js';
 
 // El identificador NO se decide aquí -- se elige del catálogo de atributos
 // reales de la capa (GET .../capas/:capaId/atributos), por eso solo se valida
 // como string no vacío, nunca contra una lista fija.
 export const configFichasSchema = z.object({
   conexionId: z.string().uuid(),
-  capaId: z.string().min(1).max(300),
+  capaId: z.string().min(1).max(300).refine(esCapaIdValido, 'capaId debe tener la forma workspace:nombre'),
   campoIdentificador: z.string().min(1).max(100),
   campoEtiqueta: z.string().min(1).max(100).optional(),
 });

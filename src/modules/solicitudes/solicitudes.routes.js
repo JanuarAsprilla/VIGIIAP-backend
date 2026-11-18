@@ -6,11 +6,18 @@ import { authenticate, authorize } from '../../middlewares/auth.js';
 import { requireModulo, requireModuloSiAdmin } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
 import { uploadRateLimiter, adminRateLimiter } from '../../middlewares/rateLimiter.js';
+import {
+  limitesMultipart, topeContentLength, guardaContentLength, multipartComoCliente,
+} from '../../middlewares/multipartLimits.js';
 
 const router = Router();
 
-// Multer en memoria para archivos adjuntos de solicitudes (max 10 MB)
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Multer en memoria para archivos adjuntos de solicitudes (max 10 MB), con los mismos topes de campos y partes que upload.js.
+const LIMITE_ADJUNTO = { fileSize: 10 * 1024 * 1024, files: 1 };
+const subirAdjunto = [
+  guardaContentLength(topeContentLength(LIMITE_ADJUNTO)),
+  multipartComoCliente(multer({ storage: multer.memoryStorage(), limits: limitesMultipart(LIMITE_ADJUNTO) }).single('archivo')),
+];
 
 // Roles verificados: únicos que pueden consumir/crear solicitudes.
 // 'publico' y 'visitante' (no verificados) quedan excluidos por completo.
@@ -29,7 +36,7 @@ router.post('/:id/responder', authenticate, authorize('admin_sig'), requireModul
 
 // Archivos adjuntos de solicitudes — solo roles verificados (ownership validado en el servicio)
 // csrfProtection ANTES de multer: rechaza la petición forjada antes de parsear el multipart.
-router.post('/:id/archivos', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'editar'), csrfProtection, uploadRateLimiter, upload.single('archivo'), uploadArchivo);
+router.post('/:id/archivos', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'editar'), csrfProtection, uploadRateLimiter, ...subirAdjunto, uploadArchivo);
 router.get('/:id/archivos', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'ver'), getArchivos);
 router.get('/:id/archivos/:archivoId/download', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'ver'), downloadArchivo);
 router.delete('/:id/archivos/:archivoId', authenticate, authorize('admin_sig', 'super_admin'), requireModulo('solicitudes', 'editar'), csrfProtection, deleteArchivo);
