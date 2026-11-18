@@ -22,6 +22,7 @@ const { version: APP_VERSION } = JSON.parse(
 
 import { query } from './config/database.js';
 import logger from './utils/logger.js';
+import { middlewareDegradacion } from './middlewares/degradacion.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { optionalAuthenticate } from './middlewares/auth.js';
 import { requestId } from './middlewares/requestId.js';
@@ -209,6 +210,9 @@ app.use(
     maxAge: 86_400, // preflight cacheado 24h
   }),
 );
+// Modo degradado (apagado salvo LOAD_SHEDDING=true): tras CORS para que el 503 llegue legible al navegador.
+const modoDegradado = middlewareDegradacion();
+if (modoDegradado) app.use(modoDegradado);
 app.use(compression());
 // Token personalizado que redacta tokens sensibles de la URL antes de loguear.
 // Previene que tokens de reset/verificación (64 chars hex) aparezcan en los logs de Render.
