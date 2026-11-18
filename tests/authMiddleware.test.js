@@ -8,7 +8,13 @@ vi.mock('../src/utils/tokenBlacklist.js', () => ({
   loadBlacklist: vi.fn(),
 }));
 
+vi.mock('../src/utils/politica2fa.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  incumplePolitica2fa: vi.fn().mockResolvedValue(false),
+}));
+
 import { isRevoked, isUserSessionRevoked } from '../src/utils/tokenBlacklist.js';
+import { incumplePolitica2fa } from '../src/utils/politica2fa.js';
 import { authenticate, optionalAuthenticate, authorize, requireSuperAdmin } from '../src/middlewares/auth.js';
 
 const VALID_TOKEN = jwt.sign({ id: 'u1', rol: 'investigador', scope: 'access' }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -55,13 +61,50 @@ describe('authenticate middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('acepta el token de visitante (sin scope) y uno de sesión anterior al scope (id + rol)', () => {
+  it('acepta el token de visitante (sin scope) y uno de sesión anterior al scope (id + rol)', async () => {
     const visitante = jwt.sign({ visitanteId: 'v1', rol: 'visitante', tipo: 'visitante' }, process.env.JWT_SECRET, { expiresIn: '1h' });
     for (const token of [visitante, ADMIN_TOKEN]) {
       const next = vi.fn();
-      authenticate({ cookies: { vigiiap_token: token }, headers: {} }, res(), next);
+      await authenticate({ cookies: { vigiiap_token: token }, headers: {} }, res(), next);
       expect(next).toHaveBeenCalledOnce();
     }
+  });
+
+  it('un administrador que incumple la política 2FA recibe 403 2FA_REQUIRED y no pasa', async () => {
+    incumplePolitica2fa.mockResolvedValueOnce(true);
+    const next = vi.fn();
+    const r = res();
+    await authenticate({ cookies: { vigiiap_token: ADMIN_TOKEN }, headers: {}, originalUrl: '/api/admin/stats', method: 'GET' }, r, next);
+
+    expect(r.status).toHaveBeenCalledWith(403);
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ code: '2FA_REQUIRED' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('en las rutas para activar el 2FA el mismo administrador sí pasa, sin consultar la política', async () => {
+    incumplePolitica2fa.mockClear();
+    const next = vi.fn();
+    await authenticate({ cookies: { vigiiap_token: ADMIN_TOKEN }, headers: {}, originalUrl: '/api/auth/2fa/setup', method: 'POST' }, res(), next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(incumplePolitica2fa).not.toHaveBeenCalled();
+  });
+
+  it('un error al consultar la política se propaga (no deja pasar en silencio)', async () => {
+    incumplePolitica2fa.mockRejectedValueOnce(new Error('BD caída'));
+    const next = vi.fn();
+    await authenticate({ cookies: { vigiiap_token: ADMIN_TOKEN }, headers: {}, originalUrl: '/api/admin/stats' }, res(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'BD caída' }));
+  });
+
+  it('un rol no administrativo no consulta la política y sigue siendo síncrono', () => {
+    incumplePolitica2fa.mockClear();
+    const next = vi.fn();
+    authenticate({ cookies: { vigiiap_token: VALID_TOKEN }, headers: {}, originalUrl: '/api/mapas' }, res(), next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(incumplePolitica2fa).not.toHaveBeenCalled();
   });
 
   it('optionalAuthenticate tampoco toma el state de OAuth como usuario', () => {
@@ -108,6 +151,25 @@ describe('authenticate middleware', () => {
 
 describe('optionalAuthenticate middleware', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('un administrador que incumple la política 2FA navega como anónimo (no obtiene vistas de administración)', async () => {
+    incumplePolitica2fa.mockResolvedValueOnce(true);
+    const next = vi.fn();
+    const req = { cookies: { vigiiap_token: ADMIN_TOKEN }, headers: {}, originalUrl: '/api/mapas?admin=true' };
+    await optionalAuthenticate(req, res(), next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.user).toBeUndefined();
+  });
+
+  it('un administrador que cumple la política conserva su identidad', async () => {
+    const next = vi.fn();
+    const req = { cookies: { vigiiap_token: ADMIN_TOKEN }, headers: {}, originalUrl: '/api/mapas' };
+    await optionalAuthenticate(req, res(), next);
+
+    expect(req.user?.id).toBe('admin1');
+    expect(next).toHaveBeenCalledOnce();
+  });
 
   it('pasa sin token (req.user undefined)', () => {
     const next = vi.fn();
