@@ -4,6 +4,6 @@
  */
 export function redactarUrl(url) {
   return String(url ?? '')
-    .replace(/(\/(?:reset-password|verificar-email)\/)[A-Fa-f0-9]{32,}/g, '$1[REDACTED]')
-    .replace(/([?&](?:code|state|id_token|access_token)=)[^&\s]+/gi, '$1[REDACTED]');
+    .replace(/(\/(?:reset-password|verificar-email)\/)[^/?#\s]+/g, '$1[REDACTED]')
+    .replace(/([?&](?:code|state|id_token|access_token|token)=)[^&\s]+/gi, '$1[REDACTED]');
 }
