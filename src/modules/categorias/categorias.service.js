@@ -1,6 +1,7 @@
 import { query, getClient } from '../../config/database.js';
 import { deleteFile, extractKey } from '../../config/r2.js';
 import logger from '../../utils/logger.js';
+import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 
 /** Mismo criterio que documentos/mapas/geovisores.service.js -- visitante/publico solo ven contenido público. */
 function visibilidadPermitida(user) {
@@ -25,7 +26,7 @@ function visibilidadPermitida(user) {
  * conteo completo (activo o no, cualquier visibilidad) para la gestión real.
  */
 export async function getAll(reqQuery = {}, user = null) {
-  const isAdminView = reqQuery.admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
+  const isAdminView = await esVistaAdmin(reqQuery.admin, user, 'categorias');
   const permitida = isAdminView ? null : visibilidadPermitida(user);
 
   const params = [];

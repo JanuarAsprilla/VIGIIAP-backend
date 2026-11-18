@@ -3,6 +3,7 @@ import { paginate } from '../../utils/paginate.js';
 import { slugify } from '../../utils/slugify.js';
 import logger from '../../utils/logger.js';
 import { deleteFileByUrl } from '../../config/r2.js';
+import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 
 /**
  * Devuelve los valores de visibilidad accesibles según el rol del usuario:
@@ -20,7 +21,7 @@ export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { tipo, anio, q, admin } = reqQuery;
   if (q && q.length > 200) throw Object.assign(new Error('Búsqueda demasiado larga (máx. 200 caracteres)'), { status: 400 });
-  const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
+  const isAdminView = await esVistaAdmin(admin, user, 'documentos');
   const conditions = isAdminView ? ['d.deleted_at IS NULL'] : ['d.activo = true', 'd.deleted_at IS NULL'];
   const params = [];
 
@@ -76,7 +77,7 @@ export async function getBySlug(slug, user) {
             u.nombre AS autor
      FROM documentos d
      LEFT JOIN usuarios u ON u.id = d.creado_por
-     WHERE d.slug = $1 AND d.activo = true ${visFilter}`,
+     WHERE d.slug = $1 AND d.activo = true AND d.deleted_at IS NULL ${visFilter}`,
     params,
   );
   if (!rows[0]) throw Object.assign(new Error('Documento no encontrado'), { status: 404 });

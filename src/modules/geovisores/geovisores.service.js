@@ -7,6 +7,7 @@ import { obtenerCapasNuevas } from './capasNuevas.service.js';
 import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
 import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
+import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -147,7 +148,7 @@ function visibilidadPermitida(user) {
 export async function getAll(reqQuery, user) {
   const { limit, offset, meta } = paginate(reqQuery);
   const { categoria, admin } = reqQuery;
-  const isAdminView = admin === 'true' && ['admin_sig', 'super_admin'].includes(user?.rol);
+  const isAdminView = await esVistaAdmin(admin, user, 'geovisores');
 
   const condiciones = isAdminView ? ['deleted_at IS NULL'] : ['activo = true', 'deleted_at IS NULL'];
   const params = [];
