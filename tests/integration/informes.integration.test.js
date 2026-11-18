@@ -97,6 +97,17 @@ describe('configuracionPublica', () => {
     expect(await informes.configuracionPublica('biodiversidad', CUENTA)).toBeNull();
   });
 
+  it('una herramienta restringida a usuarios no entrega plantilla ni formatos a un anónimo o visitante', async () => {
+    await query(`UPDATE herramientas SET visibilidad = 'usuarios' WHERE clave = 'biodiversidad'`);
+    try {
+      expect(await informes.configuracionPublica('biodiversidad', null)).toBeNull();
+      expect(await informes.configuracionPublica('biodiversidad', { rol: 'visitante' })).toBeNull();
+      expect(await informes.configuracionPublica('biodiversidad', CUENTA)).toMatchObject({ habilitado: true });
+    } finally {
+      await query(`UPDATE herramientas SET visibilidad = 'publico' WHERE clave = 'biodiversidad'`);
+    }
+  });
+
   it('entrega la plantilla; sin logo oficial solo hay nombre y colores', async () => {
     const { plantilla } = await informes.configuracionPublica('biodiversidad', CUENTA);
     expect(plantilla).toEqual({

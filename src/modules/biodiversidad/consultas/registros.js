@@ -4,6 +4,7 @@ import {
 import { alcance } from './alcance.js';
 import { codigosGbif } from './marcas.js';
 import { fotosPublicas } from './fotos.js';
+import { conAutoria } from './autoria.js';
 
 const COLUMNAS_REGISTRO = `
   v.gbif_id, v.especie, v.especie_clave, v.anio, v.fecha_evento, v.tipo_evidencia, v.licencia,
@@ -35,7 +36,7 @@ const ORDENES = {
  * Registros individuales por la vista pública: las coordenadas de especies amenazadas (y todas,
  * si no hay un cruce de conservación activo) llegan ocultas desde la propia base de datos.
  */
-export async function registros(filtros) {
+export async function registros(filtros, usuario = null) {
   const { pagina, tamano, orden = 'anio_desc' } = filtros;
   return conLimite(async (client) => {
     const lote = await loteActivo(client, filtros.grupo);
@@ -55,7 +56,7 @@ export async function registros(filtros) {
       ctx.params);
     return {
       grupo: lote.grupo, desde: lote.desde, hasta: lote.hasta, pagina, tamano, total: n,
-      registros: rows.map(({ _n, ...r }) => sinFotos(conFotos(r))),
+      registros: rows.map(({ _n, ...r }) => conAutoria(sinFotos(conFotos(r)), usuario)),
     };
   });
 }
@@ -75,7 +76,7 @@ const LIMITE_EXPORTACION_MS = 20_000;
  * de especies amenazadas siguen llegando ocultas desde la base de datos. Pide una fila de más para saber si hubo recorte,
  * sin pagar un conteo completo.
  */
-export async function registrosParaExportar(filtros, limite) {
+export async function registrosParaExportar(filtros, limite, usuario = null) {
   return conLimite(async (client) => {
     const lote = await loteActivo(client, filtros.grupo);
     if (!lote) return null;
@@ -93,7 +94,7 @@ export async function registrosParaExportar(filtros, limite) {
     const truncado = rows.length > limite;
     return {
       grupo: lote.grupo, desde: lote.desde, hasta: lote.hasta, limite, truncado,
-      registros: rows.slice(0, limite).map(({ _n, ...r }) => r),
+      registros: rows.slice(0, limite).map(({ _n, ...r }) => conAutoria(r, usuario)),
     };
   }, LIMITE_EXPORTACION_MS);
 }
@@ -101,7 +102,7 @@ export async function registrosParaExportar(filtros, limite) {
 const marcas = (texto) => (texto ?? '').split(';').map((m) => m.trim()).filter(Boolean);
 
 /** Un registro con todo su detalle; si está en varios municipios, el primero por código. */
-export async function registro(gbifId, grupo) {
+export async function registro(gbifId, grupo, usuario = null) {
   return conLimite(async (client) => {
     const lote = await loteActivo(client, grupo);
     if (!lote) return null;
@@ -116,7 +117,7 @@ export async function registro(gbifId, grupo) {
     if (!fila) return null;
     const {
       marcas_revision, marcas_gbif, reino, clase, orden, familia, genero, _fotos, ...resto
-    } = conFotos(fila);
+    } = conFotos(conAutoria(fila, usuario));
     return { ...resto, fotos: _fotos, marcas_revision: marcas(marcas_revision), marcas_gbif: codigosGbif(marcas_gbif), taxonomia: { reino, clase, orden, familia, genero } };
   });
 }

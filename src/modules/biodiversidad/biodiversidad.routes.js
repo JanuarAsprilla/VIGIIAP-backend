@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { optionalAuthenticate } from '../../middlewares/auth.js';
 import { cacheMiddleware } from '../../middlewares/cache.js';
 import { biodiversidadRateLimiter } from '../../middlewares/rateLimiter.js';
+import { limiteSimultaneasPorIp } from '../../middlewares/limiteSimultaneas.js';
 import { herramientaDisponible } from '../herramientas/herramientas.service.js';
 import * as controller from './biodiversidad.controller.js';
 
@@ -22,7 +23,10 @@ async function requiereHerramienta(req, res, next) {
 
 const router = Router();
 
-router.use(biodiversidadRateLimiter, optionalAuthenticate, requiereHerramienta);
+// Mismo estilo de aviso que `conectar` (consultas/comun.js) cuando el pool está saturado.
+const limiteSimultaneas = limiteSimultaneasPorIp({ mensaje: 'El Observatorio está muy solicitado. Intenta de nuevo en unos segundos.' });
+
+router.use(biodiversidadRateLimiter, limiteSimultaneas, optionalAuthenticate, requiereHerramienta);
 
 // Solo /estado usa cache: no tiene parámetros. La clave de cacheMiddleware sólo distingue una lista
 // blanca de parámetros (page, limit, q…) que no incluye grupo, departamento ni pagina; cachear

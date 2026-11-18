@@ -35,6 +35,11 @@ export async function main([orden, ...resto]) {
     salida(await servicio.registrar(idValido(resto[0]), resto[1], mensaje ? { mensaje } : {}));
   } else if (orden === 'frescura') {
     const medicion = JSON.parse(readFileSync(resto[1], 'utf8'));
+    const faltan = servicio.gruposSinConteo(medicion.grupos);
+    if (faltan.length) {
+      await servicio.registrar(idValido(resto[0]), 'error', { mensaje: `Medición incompleta: sin conteo válido para ${faltan.join(', ')}` });
+      throw new Error(`Medición de frescura incompleta: ${faltan.join(', ')}`);
+    }
     const calculo = servicio.calcularFrescura(medicion.grupos, await servicio.lineaBaseFrescura());
     salida(await servicio.registrar(idValido(resto[0]), 'ok', { generado: medicion.generado, ...calculo }));
   } else {

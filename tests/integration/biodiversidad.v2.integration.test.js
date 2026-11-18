@@ -106,6 +106,7 @@ beforeEach(limpiar);
 afterEach(limpiar);
 
 const base = (extra) => ({ grupo: 'anfibios', pagina: 1, tamano: 25, orden: 'anio_asc', ...extra });
+const INSTITUCIONAL = { id: 'u-1', rol: 'investigador' };
 const ids = (r) => r.registros.map((x) => x.gbif_id);
 
 describe('municipios() — especies', () => {
@@ -353,12 +354,12 @@ describe('especies() — foto representativa', () => {
     expect((await listar({ con_foto: true, departamento: 'Chocó', conservacion: 'amenazada' })).especies.map((e) => e.especie_clave)).toEqual(['1']);
   });
 
-  it('con_foto no altera el conteo de registros de la especie', async () => {
+  it('con_foto cuenta solo los registros y municipios con foto válida de la especie', async () => {
     await sembrar();
     const sin = porClave(await listar())['2'];
     const con = porClave(await listar({ con_foto: true }))['2'];
-    expect(con.registros).toBe(sin.registros);
-    expect(con.municipios).toBe(sin.municipios);
+    expect(sin).toMatchObject({ registros: 2, municipios: 2 });
+    expect(con).toMatchObject({ registros: 1, municipios: 1 });
   });
 
   it('en grupos agregados sin foto cargada foto=null y fotos_total=0; con_foto responde 422 «no aplica»', async () => {
@@ -418,7 +419,7 @@ describe('especies() — foto representativa', () => {
 describe('registros() — campos y filtros nuevos', () => {
   it('entrega fecha, observador, foto principal válida y el total de fotos válidas', async () => {
     await sembrar();
-    const r = await registros(base());
+    const r = await registros(base(), INSTITUCIONAL);
     const por = Object.fromEntries(r.registros.map((x) => [`${x.gbif_id}`, x]));
     expect(por.g1).toMatchObject({
       fecha_evento: '2020-03-04', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', fotos_total: 2,
@@ -512,10 +513,24 @@ describe('registros() — campos y filtros nuevos', () => {
   });
 });
 
+describe('privacidad de la autoría (registrado_por, identificado_por)', () => {
+  it('el anónimo y el visitante reciben null en listado y detalle; la cuenta institucional los ve', async () => {
+    await sembrar();
+    for (const usuario of [undefined, null, { rol: 'visitante' }, { rol: 'publico' }]) {
+      const lista = await registros(base(), usuario);
+      expect(lista.registros.every((x) => x.registrado_por === null && x.identificado_por === null)).toBe(true);
+      expect(await registro('g2', 'anfibios', usuario)).toMatchObject({ registrado_por: null, identificado_por: null });
+      expect(JSON.stringify(lista)).not.toMatch(/Ana Pérez|Beto Ruiz|Carla|Diego/);
+    }
+    const conCuenta = await registros(base(), INSTITUCIONAL);
+    expect(conCuenta.registros.find((x) => x.gbif_id === 'g1').registrado_por).toBe('Ana Pérez');
+  });
+});
+
 describe('registro() — detalle', () => {
   it('entrega el registro completo con todas las fotos válidas, marcas, procedencia y taxonomía', async () => {
     await sembrar();
-    const r = await registro('g2', 'anfibios');
+    const r = await registro('g2', 'anfibios', INSTITUCIONAL);
     expect(r).toMatchObject({
       gbif_id: 'g2', especie: 'Rhinella común', anio: 2021, registrado_por: 'Carla', identificado_por: null,
       codigo_municipal: '27001', municipio: 'Quibdó', departamento: 'Chocó', conjunto: 'Conjunto de prueba',
@@ -623,6 +638,14 @@ describe('series()', () => {
     expect(r.por_evidencia).toEqual([{ tipo: 'HUMAN_OBSERVATION', registros: 650 }, { tipo: 'MACHINE_OBSERVATION', registros: 50 }]);
     const ant = await series({ grupo: 'aves', departamento: 'Antioquia' });
     expect(ant.por_evidencia).toEqual([{ tipo: 'HUMAN_OBSERVATION', registros: 150 }, { tipo: 'MACHINE_OBSERVATION', registros: 50 }]);
+  });
+
+  it('agregados: cruzar año y tipo de evidencia responde 422 en vez de ignorar uno; por separado sí se admiten', async () => {
+    await sembrar();
+    await expect(series({ grupo: 'aves', anio_desde: 2020, tipo_evidencia: 'HUMAN_OBSERVATION' })).rejects.toMatchObject({ status: 422, message: expect.stringMatching(/año y el tipo de evidencia/) });
+    await expect(series({ grupo: 'aves', anio_hasta: 2024, tipo_evidencia: 'HUMAN_OBSERVATION' })).rejects.toBeInstanceOf(ConsultaInvalida);
+    expect((await series({ grupo: 'aves', anio_desde: 2024 })).por_anio).toEqual([{ anio: 2024, registros: 200 }]);
+    expect((await series({ grupo: 'aves', tipo_evidencia: 'MACHINE_OBSERVATION' })).por_evidencia).toEqual([{ tipo: 'MACHINE_OBSERVATION', registros: 50 }]);
   });
 
   it('null si el grupo no tiene lote activo', async () => {

@@ -2,7 +2,7 @@
  * Cargador de datos de biodiversidad. Lee el archivo NDJSON comprimido que genera
  * exportar_desde_sqlite.py y lo inserta en el esquema `biodiversidad`.
  *
- *   node scripts/biodiversidad/cargar.js cargar <archivo.ndjson.gz> [--activar]
+ *   node scripts/biodiversidad/cargar.js cargar <archivo.ndjson.gz> [--activar] [--permitir-regresion]
  *   node scripts/biodiversidad/cargar.js estado
  *   node scripts/biodiversidad/cargar.js encender | apagar     (fila `biodiversidad` de Herramientas)
  *
@@ -17,6 +17,9 @@ import { fileURLToPath } from 'url';
 import pool, { getClient, query } from '../../src/config/database.js';
 import { codigosGbif } from '../../src/modules/biodiversidad/consultas/marcas.js';
 import { invalidateCache } from '../../src/middlewares/cache.js';
+import {
+  MINIMOS_CRUCE, verificarManifiesto, verificarAgregado, verificarCruce, verificarRegresion,
+} from './validaciones_carga.js';
 
 const ROL_INGESTA = 'biodiversidad_ingesta';
 const TAMANO_LOTE = 2000;
@@ -63,13 +66,25 @@ const PERMITIDAS = new Set([
   'conservacion_importacion', 'conservacion_fuente', 'conservacion_afirmacion', 'conservacion_vinculo',
 ]);
 
+// Entidad y conjunto se corrigen en origen (título, licencia, DOI): al recargar se actualizan en vez de quedarse con lo viejo.
+const ACTUALIZABLES = {
+  entidad: { clave: 'clave', campos: ['nombre', 'metadatos', 'consultado_en'] },
+  conjunto: { clave: 'clave', campos: ['titulo', 'entidad_clave', 'doi', 'licencia', 'metadatos', 'consultado_en'] },
+};
+
+function clausulaConflicto(tabla, ignorarConflicto) {
+  const act = ACTUALIZABLES[tabla];
+  if (act) return `ON CONFLICT (${act.clave}) DO UPDATE SET ${act.campos.map((c) => `${c} = EXCLUDED.${c}`).join(', ')}`;
+  return ignorarConflicto ? 'ON CONFLICT DO NOTHING' : '';
+}
+
 async function insertarEnLote(client, tabla, columnas, filas, ignorarConflicto) {
   if (filas.length === 0) return 0;
   const lista = columnas.join(', ');
   const { rowCount } = await client.query(
     `INSERT INTO biodiversidad.${tabla} (${lista})
      SELECT ${lista} FROM jsonb_populate_recordset(NULL::biodiversidad.${tabla}, $1::jsonb)
-     ${ignorarConflicto ? 'ON CONFLICT DO NOTHING' : ''}`,
+     ${clausulaConflicto(tabla, ignorarConflicto)}`,
     [JSON.stringify(filas)],
   );
   return rowCount;
@@ -202,13 +217,11 @@ async function procesar(client, ruta) {
   await vaciar();
 
   if (manifiesto === null) throw new Error('El archivo está vacío: falta el manifiesto');
-  for (const [tabla, esperado] of Object.entries(manifiesto.conteos)) {
-    if ((leidas[tabla] ?? 0) !== esperado) {
-      throw new Error(`El manifiesto declara ${esperado} filas de ${tabla} y se leyeron ${leidas[tabla] ?? 0}`);
-    }
-  }
+  verificarManifiesto(manifiesto.conteos, leidas, PERMITIDAS);
   for (const lote of lotes.values()) {
-    if (lote.omitido || lote.metodo !== 'individual') continue;
+    if (lote.omitido) continue;
+    if (lote.metodo === 'agregado') await verificarAgregado(client, lote);
+    if (lote.metodo !== 'individual') continue;
     const { rows: [r] } = await client.query(
       `SELECT l.registros::int AS declarados, (SELECT count(*)::int FROM biodiversidad.registro WHERE lote_id = l.id) AS cargados
          FROM biodiversidad.lote l WHERE l.id = $1`, [lote.id]);
@@ -227,7 +240,9 @@ async function procesar(client, ruta) {
 }
 
 /** Publica los cortes del archivo: reemplaza al corte activo del mismo grupo y al cruce activo anterior. */
-async function activarCortes(client, lotes, cruces) {
+async function activarCortes(client, lotes, cruces, { permitirRegresion = false, minimosCruce = MINIMOS_CRUCE } = {}) {
+  for (const lote of lotes) await verificarRegresion(client, lote, permitirRegresion);
+  for (const { id } of cruces) await verificarCruce(client, id, minimosCruce);
   for (const { id, grupo } of lotes) {
     await client.query('UPDATE biodiversidad.lote SET activo = false WHERE grupo = $1 AND activo AND id <> $2', [grupo, id]);
     await client.query('UPDATE biodiversidad.lote SET activo = true WHERE id = $1', [id]);
@@ -263,7 +278,7 @@ async function analizarTablas(ejecutar) {
   return { analizado, avisos_analisis: avisos };
 }
 
-async function cargarAtomico(ruta, activar) {
+async function cargarAtomico(ruta, activar, opcionesActivacion) {
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -271,7 +286,7 @@ async function cargarAtomico(ruta, activar) {
     const resumen = await procesar(client, ruta);
     if (activar) {
       await client.query('RESET ROLE'); // activar toca lote/cruce como dueño; el resto de la carga fue con el rol aislado
-      await activarCortes(client, resumen.lotes, resumen.cruces);
+      await activarCortes(client, resumen.lotes, resumen.cruces, opcionesActivacion);
     }
     await client.query('COMMIT');
     const { lotes, cruces, ...publico } = resumen;
@@ -284,8 +299,10 @@ async function cargarAtomico(ruta, activar) {
   }
 }
 
-export async function cargarDatos(ruta, { activar = false, ejecutarAnalisis = (sql) => query(sql) } = {}) {
-  const resultado = await cargarAtomico(ruta, activar);
+export async function cargarDatos(ruta, {
+  activar = false, permitirRegresion = false, minimosCruce = MINIMOS_CRUCE, ejecutarAnalisis = (sql) => query(sql),
+} = {}) {
+  const resultado = await cargarAtomico(ruta, activar, { permitirRegresion, minimosCruce });
   return { ...resultado, ...(await analizarTablas(ejecutarAnalisis)) };
 }
 
@@ -318,8 +335,8 @@ async function main(argumentos) {
   const salida = (obj) => process.stdout.write(`${JSON.stringify(obj, null, 2)}\n`);
   if (orden === 'cargar') {
     const ruta = resto.find((a) => !a.startsWith('--'));
-    if (!ruta) throw new Error('Uso: cargar <archivo.ndjson.gz> [--activar]');
-    salida(await cargarDatos(ruta, { activar: resto.includes('--activar') }));
+    if (!ruta) throw new Error('Uso: cargar <archivo.ndjson.gz> [--activar] [--permitir-regresion]');
+    salida(await cargarDatos(ruta, { activar: resto.includes('--activar'), permitirRegresion: resto.includes('--permitir-regresion') }));
   } else if (orden === 'estado') {
     salida(await estadoCarga());
   } else if (orden === 'encender' || orden === 'apagar') {

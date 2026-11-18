@@ -4,9 +4,13 @@
  */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { query } from '../../src/config/database.js';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as s from '../../src/modules/biodiversidad/actualizacion/actualizacion.service.js';
 
 process.env.BIODIVERSIDAD_ENCRYPTION_KEY = 'ab'.repeat(32);
+const { main } = await import('../../scripts/biodiversidad/actualizar.js');
 
 const PREFIJO = 'bio-act-test-';
 const crearUsuario = async (nombre) => {
@@ -51,7 +55,7 @@ describe('credencial de GBIF', () => {
   it('se guarda cifrada y ninguna respuesta del servicio contiene la clave', async () => {
     await s.guardarCredencial(ana, cred());
     const { rows: [fila] } = await query('SELECT clave_cifrada FROM bio_actualizacion_credenciales WHERE usuario_id = $1', [ana]);
-    expect(fila.clave_cifrada).toMatch(/^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/);
+    expect(fila.clave_cifrada).toMatch(/^v1:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/);
     expect(fila.clave_cifrada).not.toContain('clave-super-secreta');
     const e = await s.estado({ usuarioId: ana, esSuperAdmin: true });
     expect(JSON.stringify(e)).not.toContain('clave-super-secreta');
@@ -171,5 +175,51 @@ describe('proceso aislado: pendientes → iniciar → registrar', () => {
     await s.iniciar(f.id);
     await s.registrar(f.id, 'ok', s.calcularFrescura({ aves: 100 }, null));
     expect(await s.lineaBaseFrescura()).toEqual({ aves: 100 });
+  });
+});
+
+describe('modo «cuenta» sin responsable', () => {
+  it('borrar al usuario designado devuelve el modo a «publico» y el CHECK impide dejarlo sin responsable', async () => {
+    await s.guardarCredencial(beto, cred());
+    await s.actualizarAjustes(ana, { modo: 'cuenta', credencial_usuario_id: beto });
+    await query('DELETE FROM usuarios WHERE id = $1', [beto]);
+    const { rows: [a] } = await query('SELECT modo, credencial_usuario_id FROM bio_actualizacion_ajustes WHERE id = 1');
+    expect(a).toEqual({ modo: 'publico', credencial_usuario_id: null });
+    await expect(query(`UPDATE bio_actualizacion_ajustes SET modo = 'cuenta', credencial_usuario_id = NULL WHERE id = 1`))
+      .resolves.toBeDefined();
+    const { rows: [b] } = await query('SELECT modo FROM bio_actualizacion_ajustes WHERE id = 1');
+    expect(b.modo).toBe('publico');
+    await expect(query(`INSERT INTO bio_actualizacion_ajustes (id, modo) VALUES (2, 'cuenta')`)).rejects.toThrow();
+  });
+});
+
+describe('actualizar.js frescura', () => {
+  const GRUPOS_OK = { aves: 10, mamiferos: 9, anfibios: 8, reptiles: 7, insectos: 6, plantas: 5, hongos: 4 };
+  const archivo = (grupos) => {
+    const ruta = join(mkdtempSync(join(tmpdir(), 'frescura-')), 'f.json');
+    writeFileSync(ruta, JSON.stringify({ generado: '2026-01-01', grupos }));
+    return ruta;
+  };
+  const solicitada = async () => {
+    await s.solicitar(ana, 'frescura');
+    const [p] = (await s.pendientes()).filter((x) => x.tarea === 'frescura');
+    await s.iniciar(p.id);
+    return p.id;
+  };
+  const ultima = async (id) => (await query('SELECT estado, resumen FROM bio_actualizacion_ejecuciones WHERE id = $1', [id])).rows[0];
+
+  it('una medición completa se registra como ok', async () => {
+    const id = await solicitada();
+    await main(['frescura', String(id), archivo(GRUPOS_OK)]);
+    expect((await ultima(id)).estado).toBe('ok');
+  });
+
+  it.each([{}, { ...GRUPOS_OK, hongos: 0 }, { aves: 1 }])('una medición vacía, con ceros o incompleta (%j) queda como error y falla', async (grupos) => {
+    const id = await solicitada();
+    await expect(main(['frescura', String(id), archivo(grupos)])).rejects.toThrow(/incompleta/);
+    const e = await ultima(id);
+    expect(e.estado).toBe('error');
+    expect(e.resumen.mensaje).toMatch(/sin conteo válido/);
+    expect(await s.lineaBaseFrescura()).toBeNull();
   });
 });

@@ -11,7 +11,9 @@ export const LIMITE_OPCIONES = 100;
 export const LIMITE_OPCIONES_MAXIMO = 200;
 
 const grupo = z.enum(GRUPOS);
-const entero = (min, max) => z.coerce.number().int().min(min).max(max);
+/** Solo dígitos decimales: `z.coerce` aceptaría `0x7E0`, `1e3` o espacios. */
+const entero = (min, max) => z.string().regex(/^\d{1,9}$/, 'Debe ser un número entero')
+  .transform(Number).pipe(z.number().int().min(min).max(max));
 const verdadero = () => z.enum(['true']).transform(() => true).optional();
 
 // strictObject: cualquier parámetro no declarado (incluidos intentos de ordenar o filtrar
