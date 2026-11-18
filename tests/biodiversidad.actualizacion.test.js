@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   cifrarClaveGbif, descifrarClaveGbif, cifradoDisponible,
 } from '../src/utils/biodiversidadEncryption.js';
-import { calcularFrescura } from '../src/modules/biodiversidad/actualizacion/actualizacion.service.js';
+import { calcularFrescura, gruposSinConteo } from '../src/modules/biodiversidad/actualizacion/actualizacion.service.js';
 
 describe('cifrado de la clave de GBIF', () => {
   const original = process.env.BIODIVERSIDAD_ENCRYPTION_KEY;
@@ -80,5 +80,21 @@ describe('calcularFrescura()', () => {
   it('ignora valores que no son enteros no negativos (nada de NaN ni textos)', () => {
     const r = calcularFrescura({ aves: 'mil', hongos: -1, reptiles: 1.5, ok: 7 }, null);
     expect(Object.keys(r.grupos)).toEqual(['ok']);
+  });
+});
+
+describe('gruposSinConteo', () => {
+  const completo = { aves: 1, mamiferos: 2, anfibios: 3, reptiles: 4, insectos: 5, plantas: 6, hongos: 7 };
+
+  it('una medición con los 7 grupos y valores positivos no tiene faltantes', () => {
+    expect(gruposSinConteo(completo)).toEqual([]);
+  });
+
+  it.each([undefined, null, {}])('sin grupos (%j) faltan los siete', (grupos) => {
+    expect(gruposSinConteo(grupos)).toHaveLength(7);
+  });
+
+  it('cero, negativos, decimales y textos cuentan como faltantes', () => {
+    expect(gruposSinConteo({ ...completo, aves: 0, hongos: -1, plantas: 1.5, insectos: '9' })).toEqual(['aves', 'insectos', 'plantas', 'hongos']);
   });
 });

@@ -72,7 +72,7 @@ describe('credenciales', () => {
     await s.guardarCredencial('u1', { gbif_usuario: 'persona', gbif_correo: 'p@x.co', clave: 'clave-ficticia' });
     const [sql, params] = db.query.mock.calls.at(-1);
     expect(sql).toContain('ON CONFLICT (usuario_id) DO UPDATE');
-    expect(params[3]).toMatch(/^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/);
+    expect(params[3]).toMatch(/^v1:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/);
     expect(JSON.stringify(db.query.mock.calls)).not.toContain('clave-ficticia');
   });
 
