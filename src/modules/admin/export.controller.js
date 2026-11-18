@@ -5,7 +5,7 @@
  */
 import { query } from '../../config/database.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
-import { EXCLUIR_SUPER_ADMIN, SEVERIDADES, condicionSeveridad } from './auditoriaCatalogo.js';
+import { EXCLUIR_SUPER_ADMIN, EXCLUIR_SUPER_ADMIN_AUDITORIA, SEVERIDADES, condicionSeveridad } from './auditoriaCatalogo.js';
 import { lineaCsv, transmitirCsv } from './exportCsv.js';
 
 // Tope de las exportaciones que se arman en memoria (JSON y las tablas pequeñas). El CSV de los
@@ -139,7 +139,7 @@ export async function exportAudit(req, res, next) {
     // Excluir acciones del super_admin — nunca visibles para admin_sig, pero
     // SÍ visibles cuando quien exporta es otro super_admin (ver mismo
     // criterio en getAuditLog, admin.service.js).
-    const params = [], conditions = req.user?.rol === 'super_admin' ? [] : [EXCLUIR_SUPER_ADMIN];
+    const params = [], conditions = req.user?.rol === 'super_admin' ? [] : [EXCLUIR_SUPER_ADMIN_AUDITORIA];
     dateFilter(req.query.desde, req.query.hasta, 'creado_en', params, conditions);
     filtrosAuditoria(req.query, params, conditions);
     const auditar = (total) => registrarAuditoria({

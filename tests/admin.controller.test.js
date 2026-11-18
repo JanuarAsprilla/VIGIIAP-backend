@@ -945,7 +945,7 @@ describe('admin.controller → batchUsuarios()', () => {
 
   it('activa usuarios en lote, notifica y registra auditoría', async () => {
     query
-      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador' }, { id: TARGET_2, rol: 'tecnico' }] })
+      .mockResolvedValueOnce({ rows: [{ id: TARGET_1, rol: 'investigador', activo: true }, { id: TARGET_2, rol: 'tecnico', activo: true }] })
       .mockResolvedValueOnce({ rowCount: 2 })
       .mockResolvedValueOnce({ rows: [
         { email: 't1@iiap.org.co', nombre: 'T1', rol: 'investigador', activo: true },
@@ -959,7 +959,11 @@ describe('admin.controller → batchUsuarios()', () => {
     expect(r.json).toHaveBeenCalledWith({ message: '2 usuarios actualizados', afectados: 2 });
     expect(notifyUsuarioActivacion).toHaveBeenCalledTimes(2);
     expect(revokeAllRefreshTokens).not.toHaveBeenCalled();
-    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ accion: 'batch_activar' }));
+    expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({
+      accion: 'batch_activar',
+      entidadTipo: 'usuario',
+      cambios: { [TARGET_1]: { antes: true, despues: true }, [TARGET_2]: { antes: true, despues: true } },
+    }));
   });
 
   it('desactiva usuarios en lote y notifica', async () => {

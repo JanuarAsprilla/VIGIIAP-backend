@@ -15,7 +15,7 @@ import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, n
 import { SUPER_ADMIN_ONLY_KEYS, CONFIG_LABELS } from './configSchema.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
 import { interpretarUserAgent } from '../../utils/userAgent.js';
-import { EXCLUIR_SUPER_ADMIN, ACCIONES_CRITICAS, condicionSeveridad, severidadDeAccion } from './auditoriaCatalogo.js';
+import { EXCLUIR_SUPER_ADMIN_AUDITORIA, ACCIONES_CRITICAS, condicionSeveridad, severidadDeAccion } from './auditoriaCatalogo.js';
 import { setMaintenanceState } from '../../middlewares/maintenanceMode.js';
 import { clearDynamicConfigCache, getAdminEmailFallback } from '../../config/dynamicConfig.js';
 
@@ -354,7 +354,7 @@ export async function getAuditLog(reqQuery, viewerRol) {
   const conditions = [];
   const params = [];
 
-  if (viewerRol !== 'super_admin') conditions.push(EXCLUIR_SUPER_ADMIN);
+  if (viewerRol !== 'super_admin') conditions.push(EXCLUIR_SUPER_ADMIN_AUDITORIA);
   if (modulo) { params.push(modulo); conditions.push(`modulo = $${params.length}`); }
   if (accion) { params.push(accion); conditions.push(`accion = $${params.length}`); }
   if (severidad) conditions.push(condicionSeveridad(severidad, params));
@@ -403,7 +403,7 @@ function enriquecerEventoAuditoria({ user_agent: userAgent, ...evento }) {
  * que el listado: un admin_sig no ve cuentas super_admin.
  */
 export async function getAuditResumen(viewerRol) {
-  const visibilidad = viewerRol === 'super_admin' ? 'TRUE' : EXCLUIR_SUPER_ADMIN;
+  const visibilidad = viewerRol === 'super_admin' ? 'TRUE' : EXCLUIR_SUPER_ADMIN_AUDITORIA;
   const { rows } = await query(
     `SELECT
        COUNT(*) FILTER (WHERE creado_en >= date_trunc('day', NOW()))                  AS eventos_hoy,
