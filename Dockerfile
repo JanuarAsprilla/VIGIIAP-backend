@@ -31,6 +31,11 @@ EXPOSE 4000
 
 ENV NODE_ENV=production
 
+# Pool de hilos de libuv (4 por defecto): bcrypt, sharp y la resolución DNS lo comparten, así que un pico de
+# inicios de sesión se encolaba. libuv lo lee al arrancar el proceso, por eso va aquí y no en el JS.
+# Sobrescribible con `-e UV_THREADPOOL_SIZE=...` en docker run / compose.
+ENV UV_THREADPOOL_SIZE=16
+
 # Migraciones antes de servir tráfico: db/migrate.js es idempotente (tabla
 # _migraciones), así que correrlo en cada arranque es seguro. Si una migración
 # nueva falla, el contenedor no llega a levantar el servidor — el healthcheck
