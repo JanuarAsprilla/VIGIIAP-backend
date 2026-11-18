@@ -13,7 +13,7 @@ import {
 
 const CONFIG = {
   retrasoNoCriticoMs: 200, retrasoTodoMs: 1000, enVueloNoCritico: 400, enVueloTodo: 1500,
-  retryAfterS: 5, intervaloMs: 1000, histeresis: 0.7,
+  retryAfterS: 5, intervaloMs: 1000, histeresis: 0.7, mantenerMs: 0,
 };
 
 describe('clasificarRuta()', () => {
@@ -70,7 +70,7 @@ describe('leerConfigDegradacion()', () => {
   afterEach(() => { vi.unstubAllEnvs(); });
 
   it('usa los valores por defecto y acepta sobrescribirlos por entorno', () => {
-    expect(leerConfigDegradacion({})).toMatchObject({ retrasoNoCriticoMs: 200, retrasoTodoMs: 1000, retryAfterS: 5 });
+    expect(leerConfigDegradacion({})).toMatchObject({ retrasoNoCriticoMs: 200, retrasoTodoMs: 1000, retryAfterS: 5, mantenerMs: 10_000 });
     expect(leerConfigDegradacion({ LOAD_SHED_RETRASO_NO_CRITICO_MS: '350', LOAD_SHED_RETRY_AFTER_S: '9' }))
       .toMatchObject({ retrasoNoCriticoMs: 350, retryAfterS: 9 });
   });
@@ -156,6 +156,39 @@ describe('middleware de degradación', () => {
     degradacion.middleware({ method: 'GET', path: '/api/v1/mapas' }, res, next);
     degradacion.evaluar();
     expect(degradacion.estado().nivel).toBe(NIVEL.DEGRADADO);
+  });
+});
+
+describe('tiempo mínimo en modo degradado', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('no sale del modo antes de mantenerMs aunque la carga ya haya bajado (evita oscilar)', () => {
+    vi.useFakeTimers();
+    const medidas = { retrasoMs: 300 };
+    const degradacion = crearDegradacion({
+      config: { ...CONFIG, mantenerMs: 10_000 }, medirRetraso: () => medidas.retrasoMs, aleatorio: () => 0, iniciarTemporizador: false,
+    });
+    degradacion.evaluar();
+    expect(degradacion.estado().nivel).toBe(NIVEL.DEGRADADO);
+    medidas.retrasoMs = 5;
+    vi.advanceTimersByTime(5_000);
+    degradacion.evaluar();
+    expect(degradacion.estado().nivel).toBe(NIVEL.DEGRADADO);
+    vi.advanceTimersByTime(6_000);
+    degradacion.evaluar();
+    expect(degradacion.estado().nivel).toBe(NIVEL.NORMAL);
+  });
+
+  it('subir de nivel no espera: pasa a extremo de inmediato', () => {
+    vi.useFakeTimers();
+    const medidas = { retrasoMs: 300 };
+    const degradacion = crearDegradacion({
+      config: { ...CONFIG, mantenerMs: 10_000 }, medirRetraso: () => medidas.retrasoMs, aleatorio: () => 0, iniciarTemporizador: false,
+    });
+    degradacion.evaluar();
+    medidas.retrasoMs = 1500;
+    degradacion.evaluar();
+    expect(degradacion.estado().nivel).toBe(NIVEL.EXTREMO);
   });
 });
 
