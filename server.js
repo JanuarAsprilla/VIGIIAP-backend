@@ -11,6 +11,7 @@ import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportSche
 import { startRateLimitAutoScaler, stopRateLimitAutoScaler } from './src/utils/rateLimitAutoScaler.js';
 import { startOutboxCorreos, stopOutboxCorreos } from './src/utils/correosPendientes.js';
 import { enviarDirecto } from './src/utils/mailer.js';
+import { detenerDegradacion } from './src/middlewares/degradacion.js';
 import { vaciarColaAnalitica } from './src/modules/analitica/analitica.service.js';
 import logger from './src/utils/logger.js';
 
@@ -175,6 +176,7 @@ async function start() {
     stopRetencionAuditoria();
     stopOutboxCorreos();
     stopSincronizacionRevocados();
+    detenerDegradacion();
     server.close(async () => {
       try {
         await vaciarColaAnalitica();
