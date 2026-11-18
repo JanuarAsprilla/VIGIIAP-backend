@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   obtenerCapacidadesWfs, proxyWms, consultarWfs,
-  obtenerAtributosCapa, contarFeaturesCapa, listarFeaturesCapa,
+  obtenerAtributosCapa, contarFeaturesCapa, listarFeaturesCapa, proxyLeyenda,
   MAX_FEATURES_CONSULTA, MAX_BYTES_CONSULTA,
 } from '../src/modules/geovisores/geoserver.connector.js';
 
@@ -440,5 +440,23 @@ describe('listarFeaturesCapa', () => {
 
     const url = new URL(fetchMock.mock.calls.at(-1)[0]);
     expect(url.searchParams.get('propertyName')).toBe('codigo,nombre,geom_punto');
+  });
+});
+
+describe('capaId inválido — ninguna operación llega a GeoServer', () => {
+  const malo = 't_19_clima:Capa,t_32_areas_reglamentacion_especial:resguardos';
+
+  it.each([
+    ['consultarWfs', () => consultarWfs(conexion, malo, poligono)],
+    ['obtenerAtributosCapa', () => obtenerAtributosCapa(conexion, malo)],
+    ['contarFeaturesCapa', () => contarFeaturesCapa(conexion, malo)],
+    ['listarFeaturesCapa', () => listarFeaturesCapa(conexion, malo, 'id', 'nombre')],
+    ['proxyLeyenda', () => proxyLeyenda(conexion, malo)],
+  ])('%s lanza 400', async (_nombre, llamar) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(llamar()).rejects.toMatchObject({ status: 400, code: 'CAPA_ID_INVALIDO' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
