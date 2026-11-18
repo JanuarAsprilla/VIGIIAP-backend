@@ -1,0 +1,134 @@
+# EJEMPLO de despliegue horizontal de VIGIIAP-backend. NO se aplica a ningún servidor: es un punto de partida
+# para revisar y probar en un entorno aparte (ver docs/ESCALADO.md). Cifras de memoria y CPU son ilustrativas.
+#
+#   cd deploy/escala
+#   cp ../../.env.example .env        # completar secretos reales; nunca subir este archivo
+#   docker compose -f docker-compose.escala.yml up -d --build --scale app=3
+#
+# Tras cambiar el número de réplicas, recargar el balanceador para que vuelva a resolver `app`:
+#   docker compose -f docker-compose.escala.yml exec balanceador nginx -s reload
+#
+# Variables que usa este archivo (además de las de la aplicación, que van en .env):
+#   DB_NAME, DB_USER, DB_PASSWORD   credenciales de PostgreSQL (la BD NO se define aquí: se supone gestionada aparte)
+#   DB_HOST                         host real de PostgreSQL (PgBouncer se conecta a él)
+#   No definir DATABASE_URL en .env: tiene prioridad sobre DB_HOST/DB_PORT y saltaría PgBouncer.
+#   REPLICAS_APP                    réplicas del backend (por defecto 3)
+
+x-app-env: &app-env
+  # Cada réplica abre hasta DB_POOL_MAX conexiones hacia PgBouncer, no hacia PostgreSQL: lo que importa para
+  # max_connections es DEFAULT_POOL_SIZE de PgBouncer. Ver «Cómo dimensionar» en docs/ESCALADO.md.
+  DB_HOST: pgbouncer
+  DB_PORT: "6432"
+  DB_POOL_MAX: "10"
+  DB_SSL: "false"
+  REDIS_URL: redis://redis:6379
+  UV_THREADPOOL_SIZE: "16"
+  # Opciones nuevas, apagadas por defecto. Activarlas de una en una y medir (docs/ESCALADO.md, sección 8).
+  ANALITICA_COLA: "false"
+  CDN_CACHE_HEADERS: "false"
+  LOAD_SHEDDING: "false"
+  READY_REDIS_OBLIGATORIO: "false"
+
+services:
+  # Migraciones una sola vez y directo a PostgreSQL (no por PgBouncer). db/migrate.js no toma candado: si varias
+  # réplicas arrancaran a la vez con una migración pendiente, competirían por ella.
+  migrar:
+    build:
+      context: ../..
+    env_file: .env
+    environment:
+      DB_HOST: ${DB_HOST:?indicar el host de PostgreSQL}
+      DB_PORT: "5432"
+    command: ["node", "db/migrate.js"]
+    restart: "no"
+
+  app:
+    build:
+      context: ../..
+    env_file: .env
+    environment: *app-env
+    # El Dockerfile ya migra al arrancar; aquí solo se sirve (las migraciones las hace `migrar`).
+    command: ["node", "server.js"]
+    depends_on:
+      migrar:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      pgbouncer:
+        condition: service_started
+    expose:
+      - "4000"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    deploy:
+      replicas: ${REPLICAS_APP:-3}
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+        reservations:
+          memory: 256M
+    healthcheck:
+      # /health/live no consulta dependencias: reiniciar el contenedor no arregla una BD caída.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  balanceador:
+    image: nginx:1.29.8-alpine
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-balanceador.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+  redis:
+    image: redis:7-alpine
+    # Caché pública y contadores del limitador de tráfico. Todas las claves llevan TTL: con volatile-lru, si se
+    # llena la memoria se expulsan antes las más antiguas. Sin persistencia: son datos recuperables.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
+
+  pgbouncer:
+    # Verificar nombres de variables y versión contra la documentación vigente de la imagen antes de usarla.
+    image: edoburu/pgbouncer:v1.26.1-p0
+    environment:
+      DB_HOST: ${DB_HOST:?indicar el host de PostgreSQL}
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:?}
+      DB_USER: ${DB_USER:?}
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      AUTH_TYPE: scram-sha-256
+      # Modo transacción: una conexión real solo se ocupa mientras dura una transacción. El código lo tolera:
+      # no usa LISTEN/NOTIFY, sentencias preparadas con nombre ni SET de sesión; solo SET LOCAL y candados de
+      # asesoría de transacción (pg_try_advisory_xact_lock), válidos en este modo.
+      POOL_MODE: transaction
+      # Conexiones reales hacia PostgreSQL por base/usuario: el presupuesto total que consume el backend.
+      DEFAULT_POOL_SIZE: "20"
+      RESERVE_POOL_SIZE: "5"
+      # Conexiones de clientes (las réplicas) que PgBouncer acepta: réplicas x DB_POOL_MAX con holgura.
+      MAX_CLIENT_CONN: "200"
+      SERVER_IDLE_TIMEOUT: "300"
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+    expose:
+      - "6432"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
