@@ -29,7 +29,7 @@ router.post('/:id/responder', authenticate, authorize('admin_sig'), requireModul
 
 // Archivos adjuntos de solicitudes — solo roles verificados (ownership validado en el servicio)
 // csrfProtection ANTES de multer: rechaza la petición forjada antes de parsear el multipart.
-router.post('/:id/archivos', authenticate, authorize(...VERIFICADOS), csrfProtection, uploadRateLimiter, upload.single('archivo'), uploadArchivo);
+router.post('/:id/archivos', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'editar'), csrfProtection, uploadRateLimiter, upload.single('archivo'), uploadArchivo);
 router.get('/:id/archivos', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'ver'), getArchivos);
 router.get('/:id/archivos/:archivoId/download', authenticate, authorize(...VERIFICADOS), requireModuloSiAdmin('solicitudes', 'ver'), downloadArchivo);
 router.delete('/:id/archivos/:archivoId', authenticate, authorize('admin_sig', 'super_admin'), requireModulo('solicitudes', 'editar'), csrfProtection, deleteArchivo);

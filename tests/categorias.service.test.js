@@ -13,7 +13,10 @@ vi.mock('../src/config/r2.js', () => ({
   isPublicUrl: vi.fn(),
 }));
 
+vi.mock('../src/modules/admin/modulos.service.js', () => ({ tienePermisoModulo: vi.fn().mockResolvedValue(true) }));
+
 import { query, getClient } from '../src/config/database.js';
+import { tienePermisoModulo } from '../src/modules/admin/modulos.service.js';
 import { deleteFile } from '../src/config/r2.js';
 import { getAll, upsert, remove, rename, updateModulos } from '../src/modules/categorias/categorias.service.js';
 
@@ -74,12 +77,21 @@ describe('categorias.service → getAll()', () => {
   });
 
   it('admin_sig con ?admin=true ve todo -- sin filtro de activo ni de visibilidad', async () => {
+    tienePermisoModulo.mockResolvedValue(true);
     query.mockResolvedValueOnce({ rows: [] });
     await getAll({ admin: 'true' }, { rol: 'admin_sig' });
     const [sql, params] = query.mock.calls[0];
     expect(sql).not.toMatch(/activo = true/);
     expect(sql).not.toMatch(/visibilidad = ANY/);
     expect(params).toEqual([]);
+  });
+
+  it('?admin=true sin permiso ver del módulo categorias NO abre el conteo completo', async () => {
+    tienePermisoModulo.mockResolvedValueOnce(false);
+    query.mockResolvedValueOnce({ rows: [] });
+    await getAll({ admin: 'true' }, { rol: 'admin_sig' });
+    expect(tienePermisoModulo).toHaveBeenCalledWith({ rol: 'admin_sig' }, 'categorias', 'ver');
+    expect(query.mock.calls[0][0]).toMatch(/activo = true/);
   });
 
   it('?admin=true sin ser admin_sig/super_admin se ignora -- sigue restringido como anónimo', async () => {
