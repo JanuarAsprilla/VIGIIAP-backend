@@ -1,6 +1,7 @@
 import { query } from '../../config/database.js';
 import { REFRESH_COOKIE_NAME } from '../../utils/cookieOptions.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { invalidarAccesoDeUsuario } from '../../utils/tokenBlacklist.js';
 import crypto from 'node:crypto';
 
 function hashToken(token) {
@@ -65,6 +66,8 @@ export async function revokeAllSessions(req, res, next) {
       'UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1 AND revocado = false',
       [req.user.id]
     );
+    // Sin el corte, los access JWT ya emitidos seguirían válidos hasta 15 min.
+    await invalidarAccesoDeUsuario(req.user.id);
     registrarAuditoria({
       accion: 'todas_sesiones_revocadas',
       modulo: 'auth',

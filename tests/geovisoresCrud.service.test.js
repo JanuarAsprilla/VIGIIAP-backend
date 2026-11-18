@@ -24,7 +24,7 @@ vi.mock('../src/utils/slugify.js', () => ({
 }));
 vi.mock('../src/config/r2.js', () => ({
   deleteFile: vi.fn().mockResolvedValue(undefined),
-  extractKey: vi.fn((url) => url ? url.split('/').pop() : null),
+  extractKey: vi.fn((url) => (url ? url.replace('https://files.test.local/', '') : null)),
 }));
 
 import { query } from '../src/config/database.js';
@@ -141,8 +141,8 @@ describe('updateThumbnail() — reemplaza la miniatura y borra la anterior de R2
   beforeEach(() => { vi.mocked(deleteFile).mockClear().mockResolvedValue(undefined); });
 
   it('actualiza thumbnail_url y borra la anterior de R2 si cambió', async () => {
-    const OLD_URL = 'https://files.test.local/old.jpg';
-    const NEW_URL = 'https://files.test.local/new.jpg';
+    const OLD_URL = 'https://files.test.local/geovisores/thumbnails/old.jpg';
+    const NEW_URL = 'https://files.test.local/geovisores/thumbnails/new.jpg';
     query
       .mockResolvedValueOnce({ rows: [{ thumbnail_url: OLD_URL }] })              // SELECT anterior
       .mockResolvedValueOnce({ rows: [filaGeovisor({ thumbnail_url: NEW_URL })] }); // UPDATE (vía update())
@@ -150,7 +150,18 @@ describe('updateThumbnail() — reemplaza la miniatura y borra la anterior de R2
     const result = await updateThumbnail('geovisor-uuid-1', NEW_URL);
 
     expect(deleteFile).toHaveBeenCalledOnce();
+    expect(deleteFile).toHaveBeenCalledWith('geovisores/thumbnails/old.jpg');
     expect(result.thumbnailUrl ?? result.thumbnail_url).toBe(NEW_URL);
+  });
+
+  it('no borra objetos de otros módulos aunque thumbnail_url apunte a ellos', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ thumbnail_url: 'https://files.test.local/documentos/informe.pdf' }] })
+      .mockResolvedValueOnce({ rows: [filaGeovisor({ thumbnail_url: 'https://files.test.local/geovisores/thumbnails/new.jpg' })] });
+
+    await updateThumbnail('geovisor-uuid-1', 'https://files.test.local/geovisores/thumbnails/new.jpg');
+
+    expect(deleteFile).not.toHaveBeenCalled();
   });
 
   it('no borra R2 si no había thumbnail anterior', async () => {
