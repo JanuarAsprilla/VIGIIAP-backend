@@ -54,7 +54,7 @@ export async function registrosBiodiversidad(req, res, next) {
     enCurso += 1;
     let resultado;
     try {
-      resultado = await biodiversidad.registrosParaExportar(filtros, decision.maxFilas);
+      resultado = await biodiversidad.registrosParaExportar(filtros, decision.maxFilas, req.user);
     } finally {
       enCurso -= 1;
     }
@@ -64,6 +64,7 @@ export async function registrosBiodiversidad(req, res, next) {
       accion: 'informe_registros', modulo: 'informes', entidadId: HERRAMIENTA,
       descripcion: `Descarga de registros de ${resultado.grupo}: ${resultado.registros.length}${resultado.truncado ? ' (recortada al tope)' : ''}`,
       usuarioId: req.user?.id, usuarioEmail: req.user?.email, ip: req.ip,
+      cambios: { filtros },
     });
     res.set('Cache-Control', 'no-store');
     return res.json(resultado);

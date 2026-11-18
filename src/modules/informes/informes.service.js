@@ -1,4 +1,5 @@
 import { query } from '../../config/database.js';
+import { herramientaDisponible } from '../herramientas/herramientas.service.js';
 
 export const FORMATOS = Object.freeze(['pdf', 'xlsx', 'csv']);
 
@@ -83,6 +84,8 @@ export async function actualizarHerramienta(clave, cambios) {
  * puede descargar y la plantilla del informe. null si la herramienta no existe o está oculta.
  */
 export async function configuracionPublica(clave, user) {
+  // Misma regla de visibilidad que la propia herramienta: quien no puede verla no ve su plantilla ni sus formatos.
+  if (!(await herramientaDisponible(clave, user))) return null;
   const { rows } = await query(
     `SELECT g.institucion, g.subtitulo, g.pie, g.aviso, g.color_primario, g.color_acento, g.logo_url, g.acceso,
             g.formatos AS formatos_generales, i.activo, i.formatos AS formatos_herramienta, i.max_filas

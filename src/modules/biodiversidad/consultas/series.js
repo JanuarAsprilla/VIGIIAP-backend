@@ -1,6 +1,7 @@
 import { conLimite, loteActivo, crearContexto, condicionesTerritorio } from './comun.js';
 import { alcance } from './alcance.js';
 import { validarInventario } from './reglas_inventario.js';
+import { ConsultaInvalida } from '../biodiversidad.errores.js';
 
 const UNIR_MUNICIPIO = (alias) => `JOIN biodiversidad.municipio m ON m.territorio_huella = ${alias}.territorio_huella AND m.codigo = ${alias}.codigo`;
 const FACETAS_INVENTARIO = ['anio_desde', 'anio_hasta', 'tipo_evidencia'];
@@ -20,6 +21,9 @@ async function individuales(client, lote, filtros) {
 /** Facetas del municipio: el rango de años acota la serie por año y el tipo de evidencia la serie por evidencia. */
 async function agregados(client, lote, filtros) {
   validarInventario(filtros, { facetas: FACETAS_INVENTARIO, soloTerritorio: true });
+  if ((filtros.anio_desde != null || filtros.anio_hasta != null) && filtros.tipo_evidencia != null) {
+    throw new ConsultaInvalida('En inventario agregado el año y el tipo de evidencia no se pueden cruzar entre sí: use uno solo.');
+  }
   const consulta = (faceta, extra, valor) => {
     const ctx = crearContexto();
     const idLote = ctx.p(lote.id);

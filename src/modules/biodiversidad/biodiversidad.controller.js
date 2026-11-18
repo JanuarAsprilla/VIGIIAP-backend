@@ -35,7 +35,7 @@ export async function estado(_req, res, next) {
 }
 
 export const municipios = consulta(municipiosQuerySchema, (filtros) => servicio.municipios(filtros));
-export const registros = consulta(registrosQuerySchema, (filtros) => servicio.registros(filtros));
+export const registros = consulta(registrosQuerySchema, (filtros, req) => servicio.registros(filtros, req.user));
 export const resumen = consulta(resumenQuerySchema, (filtros) => servicio.resumen(filtros));
 export const especies = consulta(especiesQuerySchema, (filtros) => servicio.especies(filtros));
 export const series = consulta(seriesQuerySchema, (filtros) => servicio.series(filtros));
@@ -43,6 +43,6 @@ export const puntos = consulta(puntosQuerySchema, (filtros) => servicio.puntos(f
 export const opciones = consulta(opcionesQuerySchema, (filtros) => servicio.opciones(filtros));
 export const registro = consulta(
   detalleQuerySchema,
-  ({ grupo }, req) => servicio.registro(registroParamsSchema.parse(req.params).gbif_id, grupo),
+  ({ grupo }, req) => servicio.registro(registroParamsSchema.parse(req.params).gbif_id, grupo, req.user),
   SIN_REGISTRO,
 );

@@ -86,6 +86,17 @@ async function fotoDe(clave) {
   return null;
 }
 
+const UMBRAL_FALLOS = 0.2;
+
+/** Motivo por el que la corrida no debe darse por buena (código de salida distinto de 0), o null. */
+export function motivoDeFallo({ fotos, fallos, intentadas }) {
+  if (fotos === 0) return 'la lista de fotos quedó vacía';
+  if (intentadas > 0 && fallos / intentadas > UMBRAL_FALLOS) {
+    return `fallaron ${fallos} de ${intentadas} especies (más del ${UMBRAL_FALLOS * 100} %)`;
+  }
+  return null;
+}
+
 async function main() {
   const salida = argumento('salida');
   if (!salida) throw new Error('Falta --salida <archivo.ndjson>');
@@ -132,6 +143,8 @@ async function main() {
 
   const lineas = readFileSync(parcial, 'utf8').split('\n').filter(Boolean).filter((l) => !JSON.parse(l).sin_foto);
   writeFileSync(salida, `${lineas.join('\n')}\n`);
+  const motivo = motivoDeFallo({ fotos: lineas.length, fallos, intentadas: hechos + fallos });
+  if (motivo) throw new Error(`Corrida no válida: ${motivo}`);
   process.stdout.write(`Listo: ${lineas.length} fotos en ${salida}${fallos ? `; ${fallos} especies sin resolver por fallos de GBIF (se reintentan al repetir)` : ''}\n`);
 }
 

@@ -8,6 +8,7 @@
  */
 import { query } from '../../../config/database.js';
 import { cifrarClaveGbif, cifradoDisponible } from '../../../utils/biodiversidadEncryption.js';
+import { GRUPOS } from '../biodiversidad.schema.js';
 
 export const TAREAS = ['fotos', 'frescura', 'datos'];
 export const ESTADOS_FINALES = ['ok', 'error', 'omitida'];
@@ -143,6 +144,11 @@ export async function pendientes() {
   const { rows } = await query(
     `SELECT id, tarea, disparador FROM bio_actualizacion_ejecuciones WHERE estado = 'solicitada' ORDER BY id`);
   return rows;
+}
+
+/** Grupos que no traen un conteo entero mayor que 0: una medición así no es una frescura válida. */
+export function gruposSinConteo(grupos) {
+  return GRUPOS.filter((g) => !(Number.isInteger(grupos?.[g]) && grupos[g] > 0));
 }
 
 /**

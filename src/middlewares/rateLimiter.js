@@ -216,6 +216,16 @@ export const adminRateLimiter = limitador('admin', {
   message: { error: 'Demasiadas operaciones administrativas.' },
 });
 
+/** Guardar la cuenta de GBIF: cifra y escribe una credencial, no es una operación frecuente (10 por hora por persona). */
+export const credencialGbifRateLimiter = limitador('bio_credencial', {
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.user?.id ?? normalizeIp(req),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados cambios de la cuenta de GBIF. Intenta de nuevo en una hora.' },
+});
+
 /**
  * Proxy de tiles WMS/leyenda de un geovisor (visor público y vista previa
  * admin). Ventana corta y cupo alto a propósito: un solo pan/zoom del mapa

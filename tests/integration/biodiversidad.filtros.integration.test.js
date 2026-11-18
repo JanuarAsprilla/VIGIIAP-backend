@@ -78,6 +78,13 @@ describe.each(CASOS)('filtro %s', (_n, filtros, pred) => {
     const claves = new Set(esp.map(especieDe).filter(Boolean));
     expect(r.especies.map((e) => e.especie_clave).sort()).toEqual([...claves].sort());
     expect(r.total).toBe(claves.size);
+    const permitido = (codigo) => MUNICIPIOS.some((m) => m[0] === codigo
+      && (!filtros.departamento || m[2] === filtros.departamento) && (!filtros.codigo_municipal || m[0] === filtros.codigo_municipal));
+    for (const e of r.especies) {
+      const deEsp = esp.filter((x) => especieDe(x) === e.especie_clave);
+      expect(e.registros, `registros ${e.especie_clave}`).toBe(deEsp.length);
+      expect(e.municipios, `municipios ${e.especie_clave}`).toBe(new Set(deEsp.flatMap((x) => x.m).filter(permitido)).size);
+    }
   });
 
   it('series cuenta por año y evidencia el subconjunto', async () => {
@@ -104,6 +111,30 @@ describe.each(CASOS)('filtro %s', (_n, filtros, pred) => {
     const r = await puntos({ ...G, limite: 1500, ...filtros });
     expect(r.puntos.map((p) => p.id).sort()).toEqual(idsDe(esp.filter(publico)));
     expect(r).toMatchObject({ total: esp.filter(publico).length, ocultos: esp.filter((x) => !publico(x)).length, muestreado: false });
+  });
+});
+
+describe('departamento sin distinguir mayúsculas ni acentos', () => {
+  it.each(['choco', 'CHOCÓ', 'chocó', ' Choco'.trim()])('«%s» equivale a «Chocó» en todas las rutas', async (depto) => {
+    const exacto = await registros({ ...G, ...PAG, departamento: 'Chocó' });
+    expect(exacto.total).toBeGreaterThan(0);
+    expect((await registros({ ...G, ...PAG, departamento: depto })).total).toBe(exacto.total);
+    expect((await resumen({ ...G, departamento: depto })).registros).toBe(exacto.total);
+    expect((await puntos({ ...G, limite: 10, departamento: depto })).total).toBe((await puntos({ ...G, limite: 10, departamento: 'Chocó' })).total);
+    expect((await municipios({ ...G, departamento: depto })).municipios.map((m) => m.codigo_municipal).sort()).toEqual(['27001', '27099']);
+  });
+});
+
+describe('/especies con_foto', () => {
+  it('cuenta solo los registros con foto válida y los municipios de esos registros, sin cambiar el total de especies', async () => {
+    const con = await especies({ ...G, ...PAG, orden: 'registros', con_foto: true });
+    const sin = await especies({ ...G, ...PAG, orden: 'registros' });
+    const sp2 = con.especies.find((e) => e.especie_clave === '2');
+    expect(sp2).toMatchObject({ registros: 1, municipios: 1 });
+    expect(sin.especies.find((e) => e.especie_clave === '2')).toMatchObject({ registros: 2, municipios: 2 });
+    const conFoto = (await resumen({ ...G, con_foto: true })).registros;
+    expect(con.especies.reduce((t, e) => t + e.registros, 0)).toBe(conFoto);
+    expect(con.total).toBe(con.especies.length);
   });
 });
 

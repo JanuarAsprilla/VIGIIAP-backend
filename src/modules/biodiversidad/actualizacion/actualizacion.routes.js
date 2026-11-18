@@ -3,6 +3,7 @@ import * as c from './actualizacion.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../../middlewares/auth.js';
 import { requireModulo } from '../../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../../middlewares/csrf.js';
+import { credencialGbifRateLimiter } from '../../../middlewares/rateLimiter.js';
 
 const router = Router();
 const MODULO = 'biodiversidad_datos';
@@ -16,7 +17,7 @@ router.put('/ajustes', authenticate, requireSuperAdmin, csrfProtection, c.cambia
 
 // Pedir una ejecución y gestionar la cuenta de GBIF propia: módulo en «editar». La de otra persona, solo super_admin (en el controlador).
 router.post('/ejecuciones', authenticate, authorize('admin_sig'), requireModulo(MODULO, 'editar'), csrfProtection, c.solicitar);
-router.put('/credencial', authenticate, authorize('admin_sig'), requireModulo(MODULO, 'editar'), csrfProtection, c.guardarCredencial);
+router.put('/credencial', authenticate, authorize('admin_sig'), requireModulo(MODULO, 'editar'), csrfProtection, credencialGbifRateLimiter, c.guardarCredencial);
 router.delete('/credencial', authenticate, authorize('admin_sig'), requireModulo(MODULO, 'editar'), csrfProtection, c.borrarCredencial);
 
 export default router;

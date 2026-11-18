@@ -4,6 +4,19 @@ import {
   detalleQuerySchema, registroParamsSchema, GRUPOS, TAMANO_MAXIMO, PROFUNDIDAD_MAXIMA,
 } from '../src/modules/biodiversidad/biodiversidad.schema.js';
 
+describe('enteros de la query string', () => {
+  it.each(['0x7E0', '1e3', ' 5', '5 ', '-1', '1.5', '', '+3', '٣'])('rechaza «%s»', (valor) => {
+    expect(() => registrosQuerySchema.parse({ grupo: 'aves', pagina: valor })).toThrow();
+    expect(() => registrosQuerySchema.parse({ grupo: 'aves', anio_desde: valor })).toThrow();
+  });
+
+  it('acepta dígitos decimales (con ceros a la izquierda) y mantiene los rangos', () => {
+    expect(registrosQuerySchema.parse({ grupo: 'aves', pagina: '007' }).pagina).toBe(7);
+    expect(() => registrosQuerySchema.parse({ grupo: 'aves', anio_desde: '1899' })).toThrow();
+    expect(() => registrosQuerySchema.parse({ grupo: 'aves', anio_desde: '2101' })).toThrow();
+  });
+});
+
 describe('registrosQuerySchema', () => {
   it('aplica valores por defecto y convierte números de la query string', () => {
     expect(registrosQuerySchema.parse({ grupo: 'anfibios' })).toEqual({ grupo: 'anfibios', pagina: 1, tamano: 25, orden: 'anio_desc' });
