@@ -96,7 +96,7 @@ describe('filtros comunes en las rutas existentes', () => {
     servicio[ruta].mockResolvedValue({ ok: true });
     const res = await get(`/${ruta}?grupo=anfibios&familia=Bufonidae&con_ubicacion=true&anio_desde=2000`);
     expect(res.status).toBe(200);
-    expect(servicio[ruta]).toHaveBeenCalledWith(expect.objectContaining({ grupo: 'anfibios', familia: 'Bufonidae', con_ubicacion: true, anio_desde: 2000 }));
+    expect(servicio[ruta].mock.calls[0][0]).toMatchObject({ grupo: 'anfibios', familia: 'Bufonidae', con_ubicacion: true, anio_desde: 2000 });
   });
 
   it('un 422 del servicio por reglas de agregados llega con su mensaje', async () => {
