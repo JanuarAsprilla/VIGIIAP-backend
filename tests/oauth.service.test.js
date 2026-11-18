@@ -368,7 +368,10 @@ describe('handleCallback()', () => {
 
     expect(query.mock.calls[2][0]).toMatch(/INSERT INTO usuarios/);
     expect(query.mock.calls[2][0]).toMatch(/email_verification_token/);
-    // 'publico', activo=true, email_verified=false son literales en el VALUES — solo
+    // La cuenta nueva respeta requireApproval como register(): activa solo si la política vale exactamente 'false'.
+    expect(query.mock.calls[2][0]).toMatch(/clave = 'requireApproval'/);
+    expect(query.mock.calls[2][0]).not.toMatch(/'publico', true, false/);
+    // 'publico' y email_verified=false son literales en el VALUES — solo
     // nombre/email/token-hasheado/expiración/provider/providerId/avatarUrl son placeholders.
     expect(query.mock.calls[2][1]).toEqual([
       'Nueva Persona', 'nueva@gmail.com',
