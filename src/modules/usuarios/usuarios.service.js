@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../config/database.js';
 import { paginate } from '../../utils/paginate.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
+import { reservarIntentoSegundoFactor, limpiarFallosSegundoFactor } from '../auth/twoFactorBloqueo.js';
 import { notifyRolCambiado } from '../../utils/mailer.js';
 import { deleteFileByUrl, extractKey } from '../../config/r2.js';
 
@@ -133,11 +134,14 @@ export async function updateAvatar(userId, avatarUrl) {
 }
 
 export async function updatePassword(userId, currentPassword, newPassword) {
+  // Con una sesión robada la contraseña actual sería adivinable sin tope: se comparte el bloqueo por cuenta del login.
+  await reservarIntentoSegundoFactor(userId);
   const { rows } = await query('SELECT password_hash FROM usuarios WHERE id=$1', [userId]);
   if (!rows[0]) throw Object.assign(new Error('Usuario no encontrado'), { status: 404 });
 
   const valid = await bcrypt.compare(currentPassword, rows[0].password_hash);
   if (!valid) throw Object.assign(new Error('Contraseña actual incorrecta'), { status: 401 });
+  await limpiarFallosSegundoFactor(userId);
 
   const hash = await bcrypt.hash(newPassword, 12);
   await query(
