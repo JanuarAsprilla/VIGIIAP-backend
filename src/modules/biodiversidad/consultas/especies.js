@@ -14,13 +14,15 @@ const ORDENES = {
 
 function consultaEspecies(lote, filtros, ctx) {
   const individual = lote.metodo === 'individual';
-  // con_foto en la lista de especies es «tiene al menos un registro con foto» (HAVING), no un filtro por fila.
+  // con_foto se aplica por agregado (ver abajo), no como condición por fila.
   const f = alcance(ctx, lote, filtros, ['con_foto']);
   const donde = `${f.where} AND t.especie_clave IS NOT NULL`;
-  const registros = individual ? 'count(DISTINCT v.gbif_id)' : 'sum(ie.registros)';
-  // con_foto (solo individuales): la especie debe tener al menos un registro del alcance con foto válida.
-  const conFoto = filtros.con_foto
-    ? `HAVING bool_or(${sqlTieneFoto('v.fotos', ctx.p(PATRON_IMAGEN), ctx.p(PATRON_REFERENCIA))})` : '';
+  // con_foto (solo individuales): cuenta solo los registros con foto válida; la especie sin ninguno queda fuera (HAVING).
+  const foto = filtros.con_foto ? sqlTieneFoto('v.fotos', ctx.p(PATRON_IMAGEN), ctx.p(PATRON_REFERENCIA)) : null;
+  const solo = (expresion) => (foto ? `${expresion} FILTER (WHERE ${foto})` : expresion);
+  const registros = individual ? solo('count(DISTINCT v.gbif_id)') : 'sum(ie.registros)';
+  const municipios = solo(`count(DISTINCT ${f.codigo})`);
+  const conFoto = foto ? `HAVING bool_or(${foto})` : '';
   const agrupado = `
     ${f.desde} WHERE ${donde}
     GROUP BY t.especie_clave, ec.amenaza_orden, ec.endemica_colombia, ec.endemica_choco, ec.introducida, ec.invasora
@@ -29,7 +31,7 @@ function consultaEspecies(lote, filtros, ctx) {
     seleccion: `
       SELECT t.especie_clave, min(t.especie) AS especie, min(t.reino) AS reino, min(t.clase) AS clase,
              min(t.orden) AS orden, min(t.familia) AS familia, min(t.genero) AS genero,
-             ${registros}::int AS registros, count(DISTINCT ${f.codigo})::int AS municipios,
+             ${registros}::int AS registros, ${municipios}::int AS municipios,
              ${COLUMNAS_CONSERVACION},
              count(*) OVER ()::int AS total
       ${agrupado}`,
