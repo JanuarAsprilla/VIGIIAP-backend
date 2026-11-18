@@ -106,6 +106,7 @@ beforeEach(limpiar);
 afterEach(limpiar);
 
 const base = (extra) => ({ grupo: 'anfibios', pagina: 1, tamano: 25, orden: 'anio_asc', ...extra });
+const INSTITUCIONAL = { id: 'u-1', rol: 'investigador' };
 const ids = (r) => r.registros.map((x) => x.gbif_id);
 
 describe('municipios() — especies', () => {
@@ -418,7 +419,7 @@ describe('especies() — foto representativa', () => {
 describe('registros() — campos y filtros nuevos', () => {
   it('entrega fecha, observador, foto principal válida y el total de fotos válidas', async () => {
     await sembrar();
-    const r = await registros(base());
+    const r = await registros(base(), INSTITUCIONAL);
     const por = Object.fromEntries(r.registros.map((x) => [`${x.gbif_id}`, x]));
     expect(por.g1).toMatchObject({
       fecha_evento: '2020-03-04', registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz', fotos_total: 2,
@@ -512,10 +513,24 @@ describe('registros() — campos y filtros nuevos', () => {
   });
 });
 
+describe('privacidad de la autoría (registrado_por, identificado_por)', () => {
+  it('el anónimo y el visitante reciben null en listado y detalle; la cuenta institucional los ve', async () => {
+    await sembrar();
+    for (const usuario of [undefined, null, { rol: 'visitante' }, { rol: 'publico' }]) {
+      const lista = await registros(base(), usuario);
+      expect(lista.registros.every((x) => x.registrado_por === null && x.identificado_por === null)).toBe(true);
+      expect(await registro('g2', 'anfibios', usuario)).toMatchObject({ registrado_por: null, identificado_por: null });
+      expect(JSON.stringify(lista)).not.toMatch(/Ana Pérez|Beto Ruiz|Carla|Diego/);
+    }
+    const conCuenta = await registros(base(), INSTITUCIONAL);
+    expect(conCuenta.registros.find((x) => x.gbif_id === 'g1').registrado_por).toBe('Ana Pérez');
+  });
+});
+
 describe('registro() — detalle', () => {
   it('entrega el registro completo con todas las fotos válidas, marcas, procedencia y taxonomía', async () => {
     await sembrar();
-    const r = await registro('g2', 'anfibios');
+    const r = await registro('g2', 'anfibios', INSTITUCIONAL);
     expect(r).toMatchObject({
       gbif_id: 'g2', especie: 'Rhinella común', anio: 2021, registrado_por: 'Carla', identificado_por: null,
       codigo_municipal: '27001', municipio: 'Quibdó', departamento: 'Chocó', conjunto: 'Conjunto de prueba',

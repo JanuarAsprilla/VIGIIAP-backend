@@ -129,7 +129,7 @@ describe('GET /registros', () => {
     servicio.registros.mockResolvedValue({ registros: [], total: 0 });
     const res = await request(app).get('/api/biodiversidad/registros?grupo=anfibios&anio_desde=2010&pagina=2&tamano=10');
     expect(res.status).toBe(200);
-    expect(servicio.registros).toHaveBeenCalledWith({ grupo: 'anfibios', anio_desde: 2010, pagina: 2, tamano: 10, orden: 'anio_desc' });
+    expect(servicio.registros).toHaveBeenCalledWith({ grupo: 'anfibios', anio_desde: 2010, pagina: 2, tamano: 10, orden: 'anio_desc' }, undefined);
   });
 
   it('devuelve 404 si el grupo no tiene datos cargados', async () => {
@@ -159,7 +159,7 @@ describe('GET /registros — filtros nuevos', () => {
     await request(app).get('/api/biodiversidad/registros?grupo=hongos&buscar=amanita&con_foto=true&conservacion=endemica&amenaza=VU&especie_clave=77');
     expect(servicio.registros).toHaveBeenCalledWith({
       grupo: 'hongos', buscar: 'amanita', con_foto: true, conservacion: 'endemica', amenaza: 'VU', especie_clave: '77', pagina: 1, tamano: 25, orden: 'anio_desc',
-    });
+    }, undefined);
   });
 
   it('rechaza valores inválidos sin tocar el servicio', async () => {
@@ -176,7 +176,7 @@ describe('GET /registros/:gbif_id', () => {
     servicio.registro.mockResolvedValue({ gbif_id: '123', fotos: [] });
     const res = await request(app).get('/api/biodiversidad/registros/123?grupo=anfibios');
     expect(res.status).toBe(200);
-    expect(servicio.registro).toHaveBeenCalledWith('123', 'anfibios');
+    expect(servicio.registro).toHaveBeenCalledWith('123', 'anfibios', undefined);
   });
 
   it('404 si no existe el registro y 404 si el grupo no tiene datos', async () => {

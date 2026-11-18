@@ -64,11 +64,12 @@ describe('registrosBiodiversidad', () => {
     informes.configuracionPublica.mockResolvedValue(config({ maxFilas: 777 }));
     const res = respuesta();
     await registrosBiodiversidad(peticion({ query: { grupo: 'anfibios', familia: 'Bufonidae' } }), res, vi.fn());
-    expect(servicioBio.registrosParaExportar).toHaveBeenCalledWith({ grupo: 'anfibios', familia: 'Bufonidae' }, 777);
+    expect(servicioBio.registrosParaExportar).toHaveBeenCalledWith({ grupo: 'anfibios', familia: 'Bufonidae' }, 777, CUENTA);
     expect(res.headers['Cache-Control']).toBe('no-store');
     expect(res.body).toEqual(RESULTADO);
     expect(auditoria).toHaveBeenCalledWith(expect.objectContaining({
       accion: 'informe_registros', modulo: 'informes', entidadId: 'biodiversidad', usuarioId: 'u-1', descripcion: expect.stringContaining('2'),
+      cambios: { filtros: { grupo: 'anfibios', familia: 'Bufonidae' } },
     }));
   });
 

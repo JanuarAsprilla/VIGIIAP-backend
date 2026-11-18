@@ -142,6 +142,21 @@ describe('qué rechaza', () => {
   });
 });
 
+describe('autoría en la exportación', () => {
+  afterEach(() => query(`UPDATE biodiversidad.registro_detalle SET registrado_por = NULL, identificado_por = NULL`));
+
+  it('solo la cuenta institucional recibe observador e identificador; el anónimo recibe null', async () => {
+    await query(`UPDATE biodiversidad.registro_detalle SET registrado_por = 'Ana Pérez', identificado_por = 'Beto Ruiz' WHERE gbif_id = 'g2'`);
+    const con = await registrosParaExportar({ grupo: 'anfibios' }, 100, { id: 'u', rol: 'investigador' });
+    expect(con.registros.find((r) => r.gbif_id === 'g2')).toMatchObject({ registrado_por: 'Ana Pérez', identificado_por: 'Beto Ruiz' });
+    const sin = await registrosParaExportar({ grupo: 'anfibios' }, 100, null);
+    expect(sin.registros.find((r) => r.gbif_id === 'g2')).toMatchObject({ registrado_por: null, identificado_por: null });
+    await query(`UPDATE informes_config SET acceso = 'publico' WHERE id = 1`);
+    const http = await pedir(undefined, null);
+    expect(JSON.stringify(http.body)).not.toMatch(/Ana Pérez|Beto Ruiz/);
+  });
+});
+
 describe('tope de filas', () => {
   it('trae una fila de más para saber si hubo recorte y entrega solo hasta el tope', async () => {
     const corto = await registrosParaExportar({ grupo: 'anfibios' }, 3);
