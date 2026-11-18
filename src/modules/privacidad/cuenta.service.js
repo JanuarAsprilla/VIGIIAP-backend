@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { query, getClient } from '../../config/database.js';
 import { deleteFileByUrl } from '../../config/r2.js';
 import logger from '../../utils/logger.js';
+import { invalidarAccesoDeUsuario } from '../../utils/tokenBlacklist.js';
 
 export const FRASE_CONFIRMACION = 'ELIMINAR';
 const ROLES_PROTEGIDOS = new Set(['super_admin', 'admin_sig']);
@@ -141,6 +142,9 @@ export async function eliminarMiCuenta({ usuarioId, confirmacion, password }) {
   } finally {
     cliente.release();
   }
+
+  // Los refresh se borraron arriba; el corte cierra también los access JWT vigentes.
+  await invalidarAccesoDeUsuario(usuarioId);
 
   // Los archivos se borran después de confirmar: si fallan, la cuenta ya quedó anonimizada y solo se avisa.
   await Promise.all(urlsArchivos.map((url) =>

@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../../config/database.js';
 import { revokeAllRefreshTokens } from '../auth/auth.service.js';
+import { invalidarAccesoDeUsuario } from '../../utils/tokenBlacklist.js';
 import { paginate } from '../../utils/paginate.js';
 import { diffCambios } from '../../utils/cambios.js';
 import { notifyUsuarioCreado, notifyUsuarioActivacion, notifyAdminNewRegistro, notifyRolCambiado, clearMailConfigCache, notifyCambioConfigCritica } from '../../utils/mailer.js';
@@ -224,6 +225,8 @@ export async function eliminarUsuario({ id, adminId, adminRol, adminEmail }) {
     throw Object.assign(new Error('Solo el Super Administrador puede eliminar cuentas de administrador'), { status: 403 });
   }
 
+  // Antes del DELETE: sus access JWT siguen siendo válidos hasta 15 min si no se fija el corte.
+  await invalidarAccesoDeUsuario(id);
   const { rows } = await query(
     'DELETE FROM usuarios WHERE id = $1 RETURNING id, nombre, email',
     [id]

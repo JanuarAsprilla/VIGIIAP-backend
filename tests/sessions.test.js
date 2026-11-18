@@ -11,9 +11,13 @@ vi.mock('../src/config/database.js', () => ({
 vi.mock('../src/utils/auditLog.js', () => ({
   registrarAuditoria: vi.fn(),
 }));
+vi.mock('../src/utils/tokenBlacklist.js', () => ({
+  invalidarAccesoDeUsuario: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { query } from '../src/config/database.js';
 import { registrarAuditoria } from '../src/utils/auditLog.js';
+import { invalidarAccesoDeUsuario } from '../src/utils/tokenBlacklist.js';
 import { getSessions, revokeSession, revokeAllSessions } from '../src/modules/auth/sessions.controller.js';
 
 function mockRes() {
@@ -134,6 +138,7 @@ describe('revokeAllSessions()', () => {
     expect(query).toHaveBeenCalledOnce();
     const sql = query.mock.calls[0][0];
     expect(sql).toMatch(/UPDATE refresh_tokens/i);
+    expect(invalidarAccesoDeUsuario).toHaveBeenCalledWith(USER.id);
     expect(res.json).toHaveBeenCalledWith({ message: expect.stringContaining('cerradas') });
     expect(registrarAuditoria).toHaveBeenCalledWith(
       expect.objectContaining({ accion: 'todas_sesiones_revocadas', usuarioId: USER.id, usuarioEmail: USER.email })
