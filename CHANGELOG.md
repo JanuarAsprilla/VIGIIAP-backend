@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.11.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.10.0...v1.11.0) (2026-11-19)
+
+
+### Features
+
+* **escala:** /health/ready (readiness) y /health/live para balanceadores ([#358](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/358)) ([ebcaf57](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/ebcaf57da92d9c13f5f87ce1707b9618709f2323))
+* **escala:** analítica pública por lotes con cola acotada ([#354](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/354)) ([d58fcd4](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d58fcd457f2f3faf25b06aa75caf7eda823acc22))
+* **escala:** cabeceras de caché para CDN en respuestas públicas ([#356](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/356)) ([86a4214](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/86a4214e6949f08c7e90bf7620001ef2e3755d5f))
+* **escala:** hilos de libuv y pool de Postgres configurables ([#353](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/353)) ([055926d](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/055926d5f0918d436f49c80bd7ba7ed167b75ab4))
+* **escala:** modo degradado (load shedding) activable por LOAD_SHEDDING ([#357](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/357)) ([a0ec11e](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/a0ec11ef713ba17e63fd27f6c3eec66a9023d01c))
+
+
+### Bug Fixes
+
+* **descargas:** destruir el origen S3 si el cliente aborta la descarga ([#355](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/355)) ([d0baece](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/d0baecea22e75f1c7f51ccc512733cda0a168e4a))
+* **migraciones:** candado de asesoría para aplicar migraciones entre réplicas ([#363](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/363)) ([5adbc22](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5adbc22bff2c8e297d83223b7053b0a3f89389eb))
+
 ## [1.10.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.9.0...v1.10.0) (2026-11-18)
 
 
