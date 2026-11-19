@@ -139,7 +139,7 @@ Si el modo degradado se activa a menudo, no es un ajuste de umbrales: es la señ
 
 ## 10. Riesgos conocidos al escalar horizontalmente
 
-- **Migraciones sin candado.** `db/migrate.js` se ejecuta al arrancar cada réplica (el `Dockerfile` y `server.js`). Con varias réplicas arrancando a la vez y una migración nueva pendiente, compiten: una gana y la otra falla y se reinicia. El ejemplo de compose lo evita con un servicio `migrar` previo; en cualquier otro despliegue, actualizar réplica por réplica. Candado de asesoría en el ejecutor de migraciones: mejora pendiente (no se toca aquí).
+- **Migraciones con candado.** `db/migrate.js` se ejecuta al arrancar cada réplica (el `Dockerfile` y `server.js`). Cada migración se aplica en una transacción que toma un candado de asesoría (`pg_advisory_xact_lock`) y vuelve a comprobar con el candado tomado si ya se aplicó, así que varias réplicas pueden arrancar a la vez sin competir: una aplica y las demás esperan y la omiten. El ejemplo de compose mantiene un servicio `migrar` previo para no migrar en cada arranque, y recomienda conectarlo directo a PostgreSQL.
 - **Límite de peticiones simultáneas por IP** (`limiteSimultaneas.js`, Observatorio de biodiversidad): es por instancia; con N instancias el límite efectivo se multiplica por N.
 - **`memoizar` de analítica** es por instancia (desfase aceptado de 30 s).
 - **`/health`** (existente) consulta BD, Redis y almacenamiento y devuelve 503 si la BD cae: sirve para monitoreo, no como *liveness* de contenedor (use `/health/live`).

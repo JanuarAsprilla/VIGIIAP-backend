@@ -7,14 +7,34 @@ import logger from '../src/utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Clave del candado de asesoría que serializa las migraciones entre réplicas (constante, no cambia entre versiones).
+export const MIGRACIONES_LOCK_KEY = 7_302_025_001;
+
+/** Ejecuta `trabajo(client)` en una transacción con el candado de migraciones; se libera sola al terminar (xact). */
+async function enTransaccionBloqueada(trabajo) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1)', [MIGRACIONES_LOCK_KEY]);
+    const resultado = await trabajo(client);
+    await client.query('COMMIT');
+    return resultado;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function runMigrations() {
-  await query(`
+  await enTransaccionBloqueada((client) => client.query(`
     CREATE TABLE IF NOT EXISTS _migraciones (
       id        SERIAL PRIMARY KEY,
       nombre    VARCHAR(255) UNIQUE NOT NULL,
       ejecutado TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
+  `));
 
   const files = readdirSync(join(__dirname, 'migrations'))
     .filter((f) => f.endsWith('.sql'))
@@ -26,18 +46,15 @@ export async function runMigrations() {
     if (rows.length) continue;
 
     const sql = readFileSync(join(__dirname, 'migrations', file), 'utf8');
-    const client = await getClient();
-    try {
-      await client.query('BEGIN');
+    // Se vuelve a comprobar con el candado tomado: otra réplica pudo aplicarla mientras esperábamos.
+    const aplicada = await enTransaccionBloqueada(async (client) => {
+      const { rows: yaEsta } = await client.query('SELECT id FROM _migraciones WHERE nombre=$1', [file]);
+      if (yaEsta.length) return false;
       await client.query(sql);
       await client.query('INSERT INTO _migraciones (nombre) VALUES ($1)', [file]);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return true;
+    });
+    if (!aplicada) continue;
     logger.info(`[migration] ${file}`);
     ran++;
   }
