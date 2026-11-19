@@ -30,8 +30,8 @@ x-app-env: &app-env
   READY_REDIS_OBLIGATORIO: "false"
 
 services:
-  # Migraciones una sola vez y directo a PostgreSQL (no por PgBouncer). db/migrate.js no toma candado: si varias
-  # réplicas arrancaran a la vez con una migración pendiente, competirían por ella.
+  # Migraciones una sola vez y directo a PostgreSQL (no por PgBouncer). db/migrate.js toma un candado de asesoría por
+  # migración, así que no compite con las réplicas; aun así se hace una sola vez, antes de arrancarlas.
   migrar:
     build:
       context: ../..
