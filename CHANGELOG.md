@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.11.0...v1.11.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **geovisores:** los visores no se quedan sin capas cuando GeoServer rechaza la clave guardada ([#371](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/371)) ([4811994](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/4811994a0e534ba64f77ff6c178e6ad3ccce2c8b))
+
 ## [1.11.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.10.0...v1.11.0) (2026-11-19)
 
 
