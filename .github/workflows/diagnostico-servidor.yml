@@ -1,0 +1,110 @@
+name: Diagnóstico del servidor (temporal, solo lectura, salida cifrada)
+
+# Flujo TEMPORAL: se borra al terminar. Ejecuta comandos de solo lectura en el servidor y cifra TODA la salida con un
+# certificado público antes de imprimirla, porque los registros de este repositorio son públicos. Solo se ejecuta
+# para el dueño y únicamente cuando cambia este mismo archivo.
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - '.github/workflows/diagnostico-servidor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    name: Diagnóstico cifrado
+    if: github.actor == 'JanuarAsprilla'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ejecutar diagnóstico de solo lectura y cifrar la salida
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            t=$(mktemp)
+            cat > "$t" <<'CERT'
+            -----BEGIN CERTIFICATE-----
+            MIIDujCCAiICCQDg0PfMPPWP6jANBgkqhkiG9w0BAQsFADAfMR0wGwYDVQQDDBRk
+            aWFnbm9zdGljby10ZW1wb3JhbDAeFw0yNjExMjMxNzQ3MzZaFw0yNjExMjYxNzQ3
+            MzZaMB8xHTAbBgNVBAMMFGRpYWdub3N0aWNvLXRlbXBvcmFsMIIBojANBgkqhkiG
+            9w0BAQEFAAOCAY8AMIIBigKCAYEAzuh9OMevNNgcdw18fNmfsCcBOj01i66S+F80
+            MKk4yi8E0DMkGACMqU52LyosSOMTXbEo77lNDGlNSyW04K96WGGB9ma1AvJMBmek
+            FFJfb3j8d9No7Oj+HUZ3V6F/lcOJ9oypGXTFt07qQWHGOFlk08fYoJeZkoCQxMot
+            2An6MIOatgK+r7aAHriym8vroyItkef4q2DB+sVoJd0hKfotYa/jfdHKNn7vqVqg
+            ODF9RkWSuHj/Uk1ihtft9fIDyzfmVga/GmxfgX8ZbbV0STiRnnB6hNnjxDnrxow7
+            EaGZJ+G5iriGlofYpUXW4kpBrTC7UcK7qF3Z8/aRJ/hJr2ICj33Wh8aiGgmUtQ9/
+            2FXGNpe/fkrJ0dulyJ4tvlVnLZEglBvHpXUCY10ty34+BBVEeK4yiDfLibTtDxJV
+            OJ7tJ6Zlz7CJPLnGcr8RNgadLFXD6Rh62GRNBnVouQTd9dOA801z9poER4PjgbtE
+            g1YwLeAn9CqC8X1PUjuITZS6gvJ9AgMBAAEwDQYJKoZIhvcNAQELBQADggGBALkB
+            89krTlj5Lqz5xcBga6JS9zoyNZmxU9kBK5y8cP7ZRvjAX/3dTiLBoAU4x0r0ggFY
+            KpMCar/WKYwC5ufVG1W4jE0k+F82USuRqFcu04VHjwzyR9en/0JZChx23WIv0qi+
+            OWOQ0n230G8nGnaAUj/Q7KWLLIVnvsA9h+s+iHyGvdaH37LlehAuknpTUac+Ovom
+            UOjUbLPEztw4K6enlb6CQAus8XpJGmw8r5chVVADpWp662Zp2Dg6dTCrsRVRwPxq
+            JkQhXZubqnBoRv5QhHiMTSyUcseSwi3KRKV0RR+bAXc2mIIPymev1oEZnU/1gmJ7
+            zPDx1pBHhosYHARA3DqDxAbJlDQ0/4TNTJDClJgJIGDjKVvIoy76cVuD8O4j9Xh8
+            eICMS1He4a6FL5ZhBgB/xThkj2KwFXpiJZ5NU3qR+HCJKfYdcK97CCGDuWa+hem3
+            5bhiLmnNHKYAraWPRFI5yaadP2zHkPVNM+9heuJpLVrgySSk1i9Z3xwsSs7bHQ==
+            -----END CERTIFICATE-----
+            CERT
+            {
+              seccion() { printf '\n===== %s =====\n' "$1"; }
+              BD=$(docker ps --format '{{.Names}}' | grep -iE 'postgres|postgis' | head -1)
+              psql_en() { docker exec -i "$BD" sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -At -F " | "'; }
+
+              seccion "Sistema, procesador y memoria"
+              uname -srm; nproc; free -h; df -h / /var/lib/docker 2>/dev/null
+
+              seccion "Velocidad del enlace de red en Mb/s"
+              for f in /sys/class/net/*/speed; do printf '%s ' "$f"; cat "$f" 2>/dev/null || echo "-"; done
+
+              seccion "Contenedores y consumo ahora"
+              docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+              docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}'
+
+              seccion "Limites por contenedor (0 = sin limite)"
+              for c in $(docker ps -q); do
+                docker inspect "$c" --format '{{.Name}} memoria={{.HostConfig.Memory}} cpus={{.HostConfig.NanoCpus}} reinicio={{.HostConfig.RestartPolicy.Name}}'
+              done
+
+              seccion "Variables relevantes (solo NODE_ENV, JWT_EXPIRES_IN, MICROSOFT_TENANT_ID)"
+              for c in $(docker ps -q); do
+                docker inspect "$c" --format '{{.Name}}{{range .Config.Env}} {{.}}{{end}}' 2>/dev/null | tr ' ' '\n' | grep -E '^/|^NODE_ENV=|^JWT_EXPIRES_IN=|^MICROSOFT_TENANT_ID=' | paste -sd' ' -
+              done
+
+              seccion "nginx"
+              for c in $(docker ps --format '{{.Names}}' | grep -iE 'nginx|front|web|proxy'); do
+                echo "-- contenedor $c"
+                docker exec "$c" nginx -T 2>/dev/null | grep -E 'worker_processes|worker_connections|listen|http2|gzip |brotli|limit_req|limit_conn|client_max_body_size' | head -30
+              done
+              nginx -T 2>/dev/null | grep -E 'worker_processes|worker_connections|listen|http2|gzip |brotli|limit_req|limit_conn|client_max_body_size' | head -30
+
+              if [ -n "$BD" ]; then
+                seccion "PostgreSQL: tablas (r) y vistas (v) sin RLS"
+                echo "SELECT relname, relkind FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r','v') AND NOT relrowsecurity ORDER BY 2,1;" | psql_en
+                seccion "PostgreSQL: roles anon/authenticated/service_role"
+                echo "SELECT rolname FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role');" | psql_en
+                seccion "PostgreSQL: administradores con y sin 2FA"
+                echo "SELECT rol, count(*) AS total, count(*) FILTER (WHERE totp_enabled) AS con_2fa FROM usuarios WHERE rol IN ('admin_sig','super_admin') GROUP BY rol;" | psql_en
+                seccion "PostgreSQL: conexiones maximas, en uso y tamano"
+                echo "SELECT current_setting('max_connections'), (SELECT count(*) FROM pg_stat_activity), pg_size_pretty(pg_database_size(current_database()));" | psql_en
+                seccion "Analitica: filas con token en la ruta (conteo)"
+                echo "SELECT count(*) FROM analytics_pageviews WHERE ruta ~* '(reset-password|verificar-email)/[A-Za-z0-9]{16,}';" | psql_en
+                seccion "Geovisores: configuracion de capas"
+                echo "SELECT slug, visibilidad, activo, incluir_capas_nuevas, coalesce(array_length(workspaces_geoserver,1),0) AS ws, coalesce(array_length(capas_seleccionadas,1),0) AS sel FROM geovisores WHERE deleted_at IS NULL ORDER BY slug;" | psql_en
+                seccion "Capas vistas por GeoServer: resumen por conexion"
+                echo "SELECT conexion_id, count(*) AS total, count(*) FILTER (WHERE es_linea_base) AS linea_base, count(*) FILTER (WHERE NOT es_linea_base) AS nuevas, max(primera_vez_vista) AS ultima_vez FROM capas_geoserver_vistas GROUP BY conexion_id;" | psql_en
+                seccion "Capas nuevas descubiertas (ultimas 40)"
+                echo "SELECT primera_vez_vista, capa_id FROM capas_geoserver_vistas WHERE NOT es_linea_base ORDER BY primera_vez_vista DESC LIMIT 40;" | psql_en
+              fi
+
+              seccion "Puertos y cortafuegos"
+              ss -tlnp 2>/dev/null | awk 'NR==1 || /LISTEN/' | head -20
+              ufw status 2>/dev/null | head -15
+            } 2>&1 | openssl smime -encrypt -aes256 -binary -outform PEM "$t"
+            rm -f "$t"
