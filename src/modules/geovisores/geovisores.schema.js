@@ -100,6 +100,7 @@ export const createConexionGeoserverSchema = z.object({
   usuarioLectura: z.string().min(1).max(100).optional(),
   password: z.string().min(1).max(500).optional(),
   timeoutMs: z.coerce.number().int().positive().max(120_000).default(20_000),
+  capasNuevasAuto: z.boolean().default(true),
 }).refine(
   (d) => d.tipo === 'externo' || (!!d.usuarioLectura && !!d.password),
   { message: 'Usuario y contraseña son obligatorios para una conexión propia', path: ['usuarioLectura'] },
@@ -113,6 +114,7 @@ export const updateConexionGeoserverSchema = z.object({
   password: z.string().min(1).max(500).optional(), // solo si se está rotando la contraseña
   timeoutMs: z.coerce.number().int().positive().max(120_000).optional(),
   activo: z.coerce.boolean().optional(),
+  capasNuevasAuto: z.boolean().optional(),
 }).refine(
   (d) => Object.values(d).some((v) => v !== undefined),
   { message: 'Debe enviar al menos un campo a actualizar' },
