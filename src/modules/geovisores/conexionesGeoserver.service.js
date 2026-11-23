@@ -5,7 +5,7 @@ import * as geoserver from './geoserver.connector.js';
 
 // Nunca se selecciona password_cifrado en las lecturas de listado/detalle expuestas por la API —
 // solo internamente (obtenerConexionParaConector) para armar la conexión real hacia GeoServer.
-const COLUMNAS_PUBLICAS = 'id, nombre, url, tipo, usuario_lectura, timeout_ms, activo, creado_en, actualizado_en';
+const COLUMNAS_PUBLICAS = 'id, nombre, url, tipo, usuario_lectura, timeout_ms, activo, capas_nuevas_auto, creado_en, actualizado_en';
 
 export async function getAll() {
   const { rows } = await query(`SELECT ${COLUMNAS_PUBLICAS} FROM conexiones_geoserver ORDER BY nombre`, []);
@@ -13,12 +13,13 @@ export async function getAll() {
 }
 
 /**
- * Lo mínimo para ELEGIR una conexión al armar un geovisor: nunca URL, usuario ni credenciales.
+ * Lo mínimo para ELEGIR una conexión al armar un geovisor: nunca URL, usuario ni credenciales
+ * (capas_nuevas_auto es un booleano inocuo que el constructor muestra).
  * Quien tiene el módulo Geovisores pero no el de Conexiones GeoServer puede usar las conexiones
  * existentes sin poder verlas ni administrarlas.
  */
 export async function getSeleccionables() {
-  const { rows } = await query('SELECT id, nombre, tipo, activo FROM conexiones_geoserver ORDER BY nombre', []);
+  const { rows } = await query('SELECT id, nombre, tipo, activo, capas_nuevas_auto FROM conexiones_geoserver ORDER BY nombre', []);
   return rows;
 }
 
@@ -60,14 +61,15 @@ export async function create(data) {
     });
   }
   const { rows } = await query(
-    `INSERT INTO conexiones_geoserver (nombre, url, tipo, usuario_lectura, password_cifrado, timeout_ms)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO conexiones_geoserver (nombre, url, tipo, usuario_lectura, password_cifrado, timeout_ms, capas_nuevas_auto)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING ${COLUMNAS_PUBLICAS}`,
     [
       data.nombre, data.url, data.tipo ?? 'propio',
       data.usuarioLectura ?? null,
       data.password ? encryptGeoserverPassword(data.password) : null,
       data.timeoutMs,
+      data.capasNuevasAuto ?? true,
     ],
   );
   return rows[0];
@@ -111,12 +113,26 @@ export async function update(id, data) {
   if (data.password !== undefined) asignar('password_cifrado', encryptGeoserverPassword(data.password));
   if (data.timeoutMs !== undefined) asignar('timeout_ms', data.timeoutMs);
   if (data.activo !== undefined) asignar('activo', data.activo);
+  if (data.capasNuevasAuto !== undefined) asignar('capas_nuevas_auto', data.capasNuevasAuto);
   campos.push('actualizado_en = NOW()');
 
   valores.push(id);
   const { rows } = await query(
     `UPDATE conexiones_geoserver SET ${campos.join(', ')} WHERE id = $${indice} RETURNING ${COLUMNAS_PUBLICAS}`,
     valores,
+  );
+  if (!rows[0]) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });
+  return rows[0];
+}
+
+/** Cambia SOLO capas_nuevas_auto; devuelve el valor anterior para auditar, sin credenciales. */
+export async function actualizarCapasNuevasAuto(id, valor) {
+  const { rows } = await query(
+    `WITH antes AS (SELECT id, capas_nuevas_auto FROM conexiones_geoserver WHERE id = $2)
+     UPDATE conexiones_geoserver c SET capas_nuevas_auto = $1, actualizado_en = NOW()
+       FROM antes WHERE c.id = antes.id
+     RETURNING c.id, c.nombre, c.tipo, c.activo, c.capas_nuevas_auto, antes.capas_nuevas_auto AS capas_nuevas_auto_anterior`,
+    [valor, id],
   );
   if (!rows[0]) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });
   return rows[0];
@@ -141,7 +157,7 @@ export async function remove(id) {
  */
 export async function obtenerConexionParaConector(id) {
   const { rows } = await query(
-    'SELECT id, url, tipo, usuario_lectura, password_cifrado, timeout_ms, activo FROM conexiones_geoserver WHERE id = $1',
+    'SELECT id, url, tipo, usuario_lectura, password_cifrado, timeout_ms, activo, capas_nuevas_auto FROM conexiones_geoserver WHERE id = $1',
     [id],
   );
   const fila = rows[0];
@@ -170,6 +186,7 @@ export async function obtenerConexionParaConector(id) {
     // Authorization cuando ambas están presentes (ver solicitarConTimeout()).
     passwordDescifrada: fila.password_cifrado ? decryptGeoserverPassword(fila.password_cifrado) : null,
     timeoutMs: fila.timeout_ms,
+    capasNuevasAuto: fila.capas_nuevas_auto === true,
   };
 }
 

@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import logger from '../../utils/logger.js';
+import { invalidarLineaBase } from './lineaBaseCapas.js';
 
 // Una capa cuenta como "nueva" durante este tiempo desde que la plataforma la vio por primera vez.
 export const DIAS_CAPA_NUEVA = 7;
@@ -29,7 +30,10 @@ export async function obtenerCapasNuevas(conexionId, capaIds) {
        ON CONFLICT (conexion_id, capa_id) DO NOTHING`,
       [conexionId, capaIds, esLineaBase],
     );
-    if (esLineaBase) return new Set();
+    if (esLineaBase) {
+      invalidarLineaBase(conexionId);
+      return new Set();
+    }
 
     const { rows } = await query(
       `SELECT capa_id FROM capas_geoserver_vistas
