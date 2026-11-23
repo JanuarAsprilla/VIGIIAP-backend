@@ -214,3 +214,17 @@ curaduría admin pasa por `getAll(?admin=true)` + PATCH por id). El proxy WMS ta
 parser-differential: construía los parámetros reenviados desde `req.query` (ya interpretado por
 `qs`) en vez de la cadena cruda, dos parsers distintos sobre la misma entrada. Ambos corregidos;
 ver el comentario en el PR #103 para el detalle completo.
+
+## 8. Capas nuevas automáticas por conexión
+
+Cuando alguien publica una capa nueva en GeoServer, los geovisores curados la muestran sola, sin destapar las antiguas que el administrador dejó ocultas a propósito.
+
+- **Línea base.** La primera vez que la plataforma descubre una conexión, todas las capas que ya existen se guardan como línea base (`capas_geoserver_vistas.es_linea_base = true`). Lo que aparece después es «nuevo» para siempre (la insignia «Nueva» del visor sí dura 7 días; la regla de acceso no caduca). Una conexión sin línea base todavía no tiene capas nuevas: no se expone nada hasta que se descubra.
+- **Qué ve cada visor.**
+  - Geovisor curado (con `capasSeleccionadas`) y sin «incluir capas nuevas»: sus capas elegidas, más las capas nuevas de sus workspaces (`workspacesGeoserver` o los de las capas elegidas). Las antiguas no elegidas siguen ocultas.
+  - Geovisor con «incluir capas nuevas»: sin cambios, muestra todo su workspace.
+  - Geovisor sin capas elegidas (modo legado): sin cambios, todo su workspace.
+  - Siempre mandan la exclusión de `t_32_areas_reglamentacion_especial` y las reservas de un geovisor hermano más restrictivo.
+- **Dónde se aplica.** Con la misma regla en el catálogo y en los proxies de WMS, leyenda y consulta, para que una capa nueva se pueda listar y pintar.
+- **Cómo apagarlo.** Cada conexión tiene la opción `capasNuevasAuto` (columna `conexiones_geoserver.capas_nuevas_auto`, encendida por omisión). Se cambia con `PATCH /admin/conexiones-geoserver/:id` con `{ "capasNuevasAuto": false }`; hoy lo puede hacer solo `super_admin`, y el cambio queda en la auditoría con el valor anterior y el nuevo.
+- **Caché.** La línea base se guarda en memoria 60 s por conexión y se descarta al registrarse una nueva; si no se puede leer, se asume vacía (no se destapa nada).
