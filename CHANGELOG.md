@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.11.1...v1.12.0) (2026-11-23)
+
+
+### Features
+
+* **geovisores:** capas nuevas automáticas por conexión de GeoServer ([#375](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/375)) ([3f19489](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/3f19489bf48c6e324a5810c0863c93ed4596ae46))
+
 ## [1.11.1](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.11.0...v1.11.1) (2026-11-23)
 
 
