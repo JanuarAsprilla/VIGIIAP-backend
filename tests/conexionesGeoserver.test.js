@@ -8,6 +8,7 @@ vi.mock('../src/modules/geovisores/conexionesGeoserver.service.js', () => ({
   getById:             vi.fn(),
   create:              vi.fn(),
   update:              vi.fn(),
+  actualizarCapasNuevasAuto: vi.fn(),
   remove:              vi.fn(),
   proxyWmsDeConexion:  vi.fn(),
   proxyLeyendaDeConexion: vi.fn(),
@@ -309,6 +310,68 @@ describe('Conexiones GeoServer routes — auth guards via supertest', () => {
         .set('Authorization', `Bearer ${superToken}`)
         .send({ nombre: 'GeoServer', url: 'https://geo.iiap.org.co', tipo: 'externo' });
       expect(conexionService.create).toHaveBeenCalledWith(expect.objectContaining({ capasNuevasAuto: true }));
+    });
+  });
+
+  describe('PATCH /:id/capas-nuevas (estrecho)', () => {
+    const url = '/api/admin/conexiones-geoserver/conexion-1/capas-nuevas';
+    const permisos = (habilitados) => (_sql, params = []) =>
+      Promise.resolve({ rows: params.some((p) => habilitados.includes(p)) ? [{ puede_ver: true, puede_editar: true }] : [] });
+
+    beforeEach(() => {
+      conexionService.actualizarCapasNuevasAuto.mockResolvedValue({
+        id: 'conexion-1', nombre: 'GS', tipo: 'propio', activo: true,
+        capas_nuevas_auto: false, capas_nuevas_auto_anterior: true,
+      });
+    });
+
+    it('admin_sig con el módulo geovisores la cambia; responde sin credenciales y audita antes/después', async () => {
+      query.mockImplementation(permisos(['geovisores']));
+      const res = await request(app).patch(url).set('Authorization', `Bearer ${adminToken}`).send({ capasNuevasAuto: false });
+      expect(res.status).toBe(200);
+      expect(conexionService.actualizarCapasNuevasAuto).toHaveBeenCalledWith('conexion-1', false);
+      expect(res.body).toEqual({ id: 'conexion-1', nombre: 'GS', tipo: 'propio', activo: true, capas_nuevas_auto: false });
+      expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({
+        accion: 'update_conexion_geoserver',
+        cambios: { capasNuevasAuto: { antes: true, despues: false } },
+      }));
+    });
+
+    it('admin_sig sin el módulo geovisores recibe 403', async () => {
+      query.mockImplementation(permisos(['conexiones_geoserver']));
+      const res = await request(app).patch(url).set('Authorization', `Bearer ${adminToken}`).send({ capasNuevasAuto: false });
+      expect(res.status).toBe(403);
+      expect(conexionService.actualizarCapasNuevasAuto).not.toHaveBeenCalled();
+    });
+
+    it('super_admin pasa siempre', async () => {
+      const res = await request(app).patch(url).set('Authorization', `Bearer ${superToken}`).send({ capasNuevasAuto: true });
+      expect(res.status).toBe(200);
+    });
+
+    it('rol publico y sin token no pasan', async () => {
+      expect((await request(app).patch(url).send({ capasNuevasAuto: true })).status).toBe(401);
+      expect((await request(app).patch(url).set('Authorization', `Bearer ${pubToken}`).send({ capasNuevasAuto: true })).status).toBe(403);
+    });
+
+    it('rechaza url, usuario, clave u otro campo por esta vía y no escribe', async () => {
+      for (const extra of [{ url: 'https://x.test' }, { usuarioLectura: 'u' }, { password: 'p' }, { activo: false }]) {
+        const res = await request(app).patch(url).set('Authorization', `Bearer ${superToken}`).send({ capasNuevasAuto: true, ...extra });
+        expect(res.status).toBe(422);
+      }
+      const vacio = await request(app).patch(url).set('Authorization', `Bearer ${superToken}`).send({});
+      expect(vacio.status).toBe(422);
+      expect(conexionService.actualizarCapasNuevasAuto).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un valor que no es booleano', async () => {
+      const res = await request(app).patch(url).set('Authorization', `Bearer ${superToken}`).send({ capasNuevasAuto: 'no' });
+      expect(res.status).toBe(422);
+    });
+
+    it('el PATCH completo sigue siendo solo de super_admin', async () => {
+      const res = await request(app).patch('/api/admin/conexiones-geoserver/conexion-1').set('Authorization', `Bearer ${adminToken}`).send({ capasNuevasAuto: false });
+      expect(res.status).toBe(403);
     });
   });
 });
