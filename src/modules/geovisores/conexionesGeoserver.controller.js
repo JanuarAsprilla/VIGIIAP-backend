@@ -1,4 +1,4 @@
-import { createConexionGeoserverSchema, updateConexionGeoserverSchema } from './geovisores.schema.js';
+import { createConexionGeoserverSchema, updateConexionGeoserverSchema, capasNuevasAutoSchema } from './geovisores.schema.js';
 import * as conexionService from './conexionesGeoserver.service.js';
 import { listarWorkspacesDeConexion } from './geovisores.service.js';
 import { listarAtributos } from '../fichas/fichas.service.js';
@@ -59,6 +59,25 @@ export async function update(req, res, next) {
       // Nunca se registra la contraseña en el log de auditoría, ni siquiera cifrada.
       descripcion: `Conexión GeoServer actualizada: ${conexion.nombre}`,
       cambios,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+    });
+    res.json(conexion);
+  } catch (err) { next(err); }
+}
+
+/** PATCH /admin/conexiones-geoserver/:id/capas-nuevas — solo la opción de capas nuevas automáticas. */
+export async function actualizarCapasNuevas(req, res, next) {
+  try {
+    const { capasNuevasAuto } = capasNuevasAutoSchema.parse(req.body);
+    const { capas_nuevas_auto_anterior: anterior, ...conexion } = await conexionService.actualizarCapasNuevasAuto(req.params.id, capasNuevasAuto);
+    registrarAuditoria({
+      accion: 'update_conexion_geoserver',
+      modulo: 'geovisores',
+      entidadId: conexion.id,
+      descripcion: `Capas nuevas automáticas de la conexión GeoServer: ${conexion.nombre}`,
+      cambios: diffCambios({ capasNuevasAuto: anterior }, { capasNuevasAuto: conexion.capas_nuevas_auto }),
       usuarioId: req.user.id,
       usuarioEmail: req.user.email,
       ip: req.ip,
