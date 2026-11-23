@@ -76,7 +76,7 @@ describe('conexionesGeoserver.service → create()', () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'propio' }] });
     await create({ nombre: 'GeoServer IIAP', url: 'https://geo.iiap.org.co', tipo: 'propio', usuarioLectura: 'lector', password: 'secreto', timeoutMs: 20000 });
     const [, params] = query.mock.calls[0];
-    expect(params).toEqual(['GeoServer IIAP', 'https://geo.iiap.org.co', 'propio', 'lector', 'enc:secreto', 20000]);
+    expect(params).toEqual(['GeoServer IIAP', 'https://geo.iiap.org.co', 'propio', 'lector', 'enc:secreto', 20000, true]);
     expect(encryptGeoserverPassword).toHaveBeenCalledWith('secreto');
   });
 
@@ -84,7 +84,7 @@ describe('conexionesGeoserver.service → create()', () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo', usuario_lectura: null, password_cifrado: null }] });
     await create({ nombre: 'WMS Externo', url: 'https://wms.otrainstitucion.gov.co', tipo: 'externo', timeoutMs: 20000 });
     const [, params] = query.mock.calls[0];
-    expect(params).toEqual(['WMS Externo', 'https://wms.otrainstitucion.gov.co', 'externo', null, null, 20000]);
+    expect(params).toEqual(['WMS Externo', 'https://wms.otrainstitucion.gov.co', 'externo', null, null, 20000, true]);
     expect(encryptGeoserverPassword).not.toHaveBeenCalled();
   });
 
@@ -99,6 +99,15 @@ describe('conexionesGeoserver.service → create()', () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo' }] });
     await create({ nombre: 'WMS', url: 'https://wms.test', tipo: 'externo', timeoutMs: 20000 });
     expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
+  });
+
+  it('guarda capasNuevasAuto=true por defecto y respeta un false explícito', async () => {
+    query.mockResolvedValue({ rows: [FILA] });
+    await create({ nombre: 'X', url: 'https://x.test', usuarioLectura: 'u', password: 'p', timeoutMs: 20000 });
+    expect(query.mock.calls[0][0]).toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[0][1].at(-1)).toBe(true);
+    await create({ nombre: 'X', url: 'https://x.test', usuarioLectura: 'u', password: 'p', timeoutMs: 20000, capasNuevasAuto: false });
+    expect(query.mock.calls[1][1].at(-1)).toBe(false);
   });
 
   it('sin tipo explícito, por defecto es "propio"', async () => {
@@ -165,9 +174,37 @@ describe('conexionesGeoserver.service → update()', () => {
     expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
   });
 
+  it('apaga y enciende capasNuevasAuto sin comprobar credenciales', async () => {
+    query.mockResolvedValue({ rows: [{ ...FILA, capas_nuevas_auto: false }] });
+    await update('conexion-uuid-1', { capasNuevasAuto: false });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/capas_nuevas_auto = \$1/);
+    expect(params[0]).toBe(false);
+    expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
+  });
+
   it('lanza 404 si la conexión no existe', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     await expect(update('no-existe', { nombre: 'X' })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('conexionesGeoserver.service → capas_nuevas_auto', () => {
+  it('getAll y getById la exponen; getSeleccionables no', async () => {
+    query.mockResolvedValue({ rows: [] });
+    await getAll();
+    await getById('x').catch(() => {});
+    await getSeleccionables();
+    expect(query.mock.calls[0][0]).toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[1][0]).toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[2][0]).not.toMatch(/capas_nuevas_auto/);
+  });
+
+  it('obtenerConexionParaConector devuelve capasNuevasAuto', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, capas_nuevas_auto: true }] });
+    expect((await obtenerConexionParaConector('conexion-uuid-1')).capasNuevasAuto).toBe(true);
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, capas_nuevas_auto: false }] });
+    expect((await obtenerConexionParaConector('conexion-uuid-1')).capasNuevasAuto).toBe(false);
   });
 });
 
