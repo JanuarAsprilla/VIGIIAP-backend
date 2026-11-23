@@ -119,3 +119,6 @@ export const updateConexionGeoserverSchema = z.object({
   (d) => Object.values(d).some((v) => v !== undefined),
   { message: 'Debe enviar al menos un campo a actualizar' },
 );
+
+// Vía estrecha para quien edita geovisores: solo esta opción, nunca URL ni credenciales.
+export const capasNuevasAutoSchema = z.object({ capasNuevasAuto: z.boolean() }).strict();
