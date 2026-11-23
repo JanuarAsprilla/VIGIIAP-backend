@@ -15,6 +15,7 @@ vi.mock('../src/utils/geoserverEncryption.js', () => ({
 vi.mock('../src/modules/geovisores/geoserver.connector.js', () => ({
   proxyWms: vi.fn(),
   proxyLeyenda: vi.fn(),
+  probarCredenciales: vi.fn(),
 }));
 // Sin este mock, obtenerConexionParaConector() haría resolución DNS real
 // (ver ssrfGuard.js) contra el hostname de prueba en cada test -- lento y no
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.mocked(query).mockReset();
   vi.mocked(geoserver.proxyWms).mockReset();
   vi.mocked(geoserver.proxyLeyenda).mockReset();
+  vi.mocked(geoserver.probarCredenciales).mockReset();
 });
 
 describe('conexionesGeoserver.service → getSeleccionables()', () => {
@@ -86,6 +88,19 @@ describe('conexionesGeoserver.service → create()', () => {
     expect(encryptGeoserverPassword).not.toHaveBeenCalled();
   });
 
+  it('no crea la conexión si GeoServer rechaza el usuario o la clave', async () => {
+    geoserver.probarCredenciales.mockResolvedValueOnce(401);
+    await expect(create({ nombre: 'X', url: 'https://x.test', tipo: 'propio', usuarioLectura: 'u', password: 'mala', timeoutMs: 20000 }))
+      .rejects.toMatchObject({ status: 422, code: 'GEOSERVER_CREDENCIALES_RECHAZADAS' });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('una conexión externa sin credenciales no se prueba', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo' }] });
+    await create({ nombre: 'WMS', url: 'https://wms.test', tipo: 'externo', timeoutMs: 20000 });
+    expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
+  });
+
   it('sin tipo explícito, por defecto es "propio"', async () => {
     query.mockResolvedValueOnce({ rows: [FILA] });
     await create({ nombre: 'X', url: 'https://x.test', usuarioLectura: 'u', password: 'p', timeoutMs: 20000 });
@@ -95,12 +110,59 @@ describe('conexionesGeoserver.service → create()', () => {
 });
 
 describe('conexionesGeoserver.service → update()', () => {
+  const ACTUAL = {
+    url: 'https://geoserver.test.local/geoserver', tipo: 'propio', usuario_lectura: 'lector',
+    password_cifrado: 'enc:clave-buena', timeout_ms: 20000,
+  };
+
   it('actualiza el tipo cuando se envía', async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo' }] });
+    query
+      .mockResolvedValueOnce({ rows: [{ ...ACTUAL, tipo: 'externo' }] })
+      .mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo' }] });
     await update('conexion-uuid-1', { tipo: 'externo' });
-    const [sql, params] = query.mock.calls[0];
+    const [sql, params] = query.mock.calls[1];
     expect(sql).toMatch(/tipo = \$1/);
     expect(params[0]).toBe('externo');
+  });
+
+  it('no guarda una clave que GeoServer rechaza con 401 y conserva la anterior', async () => {
+    query.mockResolvedValueOnce({ rows: [ACTUAL] });
+    geoserver.probarCredenciales.mockResolvedValueOnce(401);
+
+    await expect(update('conexion-uuid-1', { password: 'clave-mal-escrita' }))
+      .rejects.toMatchObject({ status: 422, code: 'GEOSERVER_CREDENCIALES_RECHAZADAS' });
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(geoserver.probarCredenciales).toHaveBeenCalledWith(
+      expect.objectContaining({ usuarioLectura: 'lector', passwordDescifrada: 'clave-mal-escrita' }),
+    );
+  });
+
+  it('guarda la clave nueva cuando GeoServer la acepta', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [ACTUAL] })
+      .mockResolvedValueOnce({ rows: [FILA] });
+    geoserver.probarCredenciales.mockResolvedValueOnce(200);
+
+    await update('conexion-uuid-1', { password: 'clave-buena-nueva' });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(encryptGeoserverPassword).toHaveBeenCalledWith('clave-buena-nueva');
+  });
+
+  it('guarda igual cuando GeoServer no responde: no se puede afirmar que la clave esté mal', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [ACTUAL] })
+      .mockResolvedValueOnce({ rows: [FILA] });
+    geoserver.probarCredenciales.mockRejectedValueOnce(new Error('sin respuesta'));
+
+    await expect(update('conexion-uuid-1', { password: 'otra' })).resolves.toBeDefined();
+  });
+
+  it('no comprueba credenciales cuando el cambio no toca la conexión (solo el nombre)', async () => {
+    query.mockResolvedValueOnce({ rows: [FILA] });
+    await update('conexion-uuid-1', { nombre: 'Nuevo nombre' });
+    expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
   });
 
   it('lanza 404 si la conexión no existe', async () => {
