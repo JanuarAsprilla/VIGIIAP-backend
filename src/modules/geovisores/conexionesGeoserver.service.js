@@ -28,7 +28,37 @@ export async function getById(id) {
   return rows[0];
 }
 
+const ESTADOS_CREDENCIALES_RECHAZADAS = new Set([401, 403]);
+const TIMEOUT_MS_POR_DEFECTO = 20_000;
+
+/**
+ * Rechaza guardar una conexión cuyo usuario y clave GeoServer no acepta: una clave mal escrita dejaba sin capas a
+ * todos los visores. Si GeoServer no responde no se afirma nada y se guarda.
+ */
+async function exigirCredencialesValidas(candidata) {
+  if (!candidata.usuarioLectura || !candidata.passwordDescifrada) return;
+  if (await urlApuntaARedPrivada(candidata.url)) return;
+  let estado;
+  try {
+    estado = await geoserver.probarCredenciales(candidata);
+  } catch {
+    return;
+  }
+  if (ESTADOS_CREDENCIALES_RECHAZADAS.has(estado)) {
+    throw Object.assign(
+      new Error('GeoServer rechazó el usuario o la clave: no se guardó el cambio. Revisa las credenciales.'),
+      { status: 422, code: 'GEOSERVER_CREDENCIALES_RECHAZADAS' },
+    );
+  }
+}
+
 export async function create(data) {
+  if ((data.tipo ?? 'propio') === 'propio') {
+    await exigirCredencialesValidas({
+      id: 'nueva', url: data.url, usuarioLectura: data.usuarioLectura,
+      passwordDescifrada: data.password, timeoutMs: data.timeoutMs ?? TIMEOUT_MS_POR_DEFECTO,
+    });
+  }
   const { rows } = await query(
     `INSERT INTO conexiones_geoserver (nombre, url, tipo, usuario_lectura, password_cifrado, timeout_ms)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -44,6 +74,26 @@ export async function create(data) {
 }
 
 export async function update(id, data) {
+  if (['url', 'tipo', 'usuarioLectura', 'password'].some((campo) => data[campo] !== undefined)) {
+    const { rows: actuales } = await query(
+      'SELECT url, tipo, usuario_lectura, password_cifrado, timeout_ms FROM conexiones_geoserver WHERE id = $1',
+      [id],
+    );
+    const actual = actuales[0];
+    if (!actual) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });
+    if ((data.tipo ?? actual.tipo) === 'propio') {
+      await exigirCredencialesValidas({
+        id,
+        url: data.url ?? actual.url,
+        usuarioLectura: data.usuarioLectura !== undefined ? data.usuarioLectura : actual.usuario_lectura,
+        passwordDescifrada: data.password !== undefined
+          ? data.password
+          : (actual.password_cifrado ? decryptGeoserverPassword(actual.password_cifrado) : null),
+        timeoutMs: data.timeoutMs ?? actual.timeout_ms,
+      });
+    }
+  }
+
   const campos = [];
   const valores = [];
   let indice = 1;

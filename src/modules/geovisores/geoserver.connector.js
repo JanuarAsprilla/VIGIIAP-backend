@@ -11,9 +11,11 @@
 import { Agent } from 'undici';
 import { geometriaAWkt } from '../../utils/geometry.js';
 import { dnsLookupSeguro } from '../../utils/ssrfGuard.js';
+import logger from '../../utils/logger.js';
 import { validarCapaId } from './capaId.js';
 
 const MAX_REINTENTOS = 1;
+const INTERVALO_AVISO_CREDENCIALES_MS = 60_000;
 
 // La consulta por geometría es pública: sin tope, un polígono sobre todo el territorio vuelca la capa
 // entera (con todos sus atributos) y la respuesta se bufferiza en memoria.
@@ -25,6 +27,18 @@ function credencialesBasicAuth(conexion) {
   return Buffer.from(credenciales).toString('base64');
 }
 
+const tieneCredenciales = (conexion) => Boolean(conexion.usuarioLectura && conexion.passwordDescifrada);
+
+const ultimoAvisoCredenciales = new Map(); // clave: conexion.id
+
+// Una clave mal guardada hace fallar cada petición: se avisa una vez por minuto, no en cada una.
+function avisarCredencialesRechazadas(conexion, estado) {
+  const ahora = Date.now();
+  if (ahora - (ultimoAvisoCredenciales.get(conexion.id) ?? 0) < INTERVALO_AVISO_CREDENCIALES_MS) return;
+  ultimoAvisoCredenciales.set(conexion.id, ahora);
+  logger.warn(`[geoserver] ${estado} rechazó las credenciales de la conexión ${conexion.id}: se atiende sin credenciales. Revisa el usuario y la clave de la conexión.`);
+}
+
 // Agent propio con una resolución DNS fijada a dnsLookupSeguro -- sin esto,
 // ssrfGuard valida una resolución DNS y fetch() hace la SUYA por separado
 // para conectar; dos consultas al mismo resolver (controlado por el dueño
@@ -33,7 +47,12 @@ function credencialesBasicAuth(conexion) {
 // el socket usa para conectar son literalmente la misma llamada.
 const agenteSsrfSeguro = new Agent({ connect: { lookup: dnsLookupSeguro } });
 
-async function solicitarConTimeout(conexion, url, aceptar = 'application/json', intento = 0) {
+/**
+ * `credenciales`: 'auto' (por defecto) manda las de la conexión y, si GeoServer las rechaza con 401/403, repite UNA vez
+ * sin ellas -- lo público sigue sirviéndose aunque la clave guardada esté mal; 'estricto' las manda sin reintentar
+ * (para comprobarlas); 'ninguna' no manda Authorization.
+ */
+async function solicitarConTimeout(conexion, url, aceptar = 'application/json', intento = 0, credenciales = 'auto') {
   const controlador = new AbortController();
   const temporizador = setTimeout(() => controlador.abort(), conexion.timeoutMs);
 
@@ -48,7 +67,7 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
       // Ninguna operación WMS/WFS/WCS legítima necesita redirigir.
       redirect: 'manual',
       headers: {
-        ...(conexion.usuarioLectura && conexion.passwordDescifrada
+        ...(credenciales !== 'ninguna' && tieneCredenciales(conexion)
           ? { Authorization: `Basic ${credencialesBasicAuth(conexion)}` }
           : {}),
         ...(aceptar ? { Accept: aceptar } : {}),
@@ -62,8 +81,13 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
       );
     }
 
+    if (credenciales === 'auto' && (respuesta.status === 401 || respuesta.status === 403) && tieneCredenciales(conexion)) {
+      avisarCredencialesRechazadas(conexion, respuesta.status);
+      return solicitarConTimeout(conexion, url, aceptar, intento, 'ninguna');
+    }
+
     if (!respuesta.ok && respuesta.status >= 500 && intento < MAX_REINTENTOS) {
-      return solicitarConTimeout(conexion, url, aceptar, intento + 1);
+      return solicitarConTimeout(conexion, url, aceptar, intento + 1, credenciales);
     }
 
     return respuesta;
@@ -73,7 +97,7 @@ async function solicitarConTimeout(conexion, url, aceptar = 'application/json', 
     // que la respuesta fue una redirección fuera del dominio ya validado.
     if (error.code === 'GEOSERVER_REDIRECT_RECHAZADO') throw error;
     if (intento < MAX_REINTENTOS) {
-      return solicitarConTimeout(conexion, url, aceptar, intento + 1);
+      return solicitarConTimeout(conexion, url, aceptar, intento + 1, credenciales);
     }
     // undici esconde el motivo real (ECONNRESET, timeout, DNS...) en error.cause.
     const detalle = error.cause?.code ?? error.cause?.message;
@@ -331,6 +355,19 @@ function extraerBbox(bloque) {
   const norte = superior[1] ?? NaN;
   if ([oeste, sur, este, norte].some(Number.isNaN)) return undefined;
   return { oeste, sur, este, norte };
+}
+
+/**
+ * Prueba las credenciales de la conexión tal cual (sin el reintento anónimo): devuelve el estado HTTP que da GeoServer
+ * a un WFS GetCapabilities. Sirve para rechazar al guardar una clave que GeoServer no acepta.
+ */
+export async function probarCredenciales(conexion) {
+  const url = new URL(`${conexion.url}/wfs`);
+  url.searchParams.set('service', 'WFS');
+  url.searchParams.set('version', '2.0.0');
+  url.searchParams.set('request', 'GetCapabilities');
+  const respuesta = await solicitarConTimeout(conexion, url, 'application/json', 0, 'estricto');
+  return respuesta.status;
 }
 
 /**

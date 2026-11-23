@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   obtenerCapacidadesWfs, proxyWms, consultarWfs,
-  obtenerAtributosCapa, contarFeaturesCapa, listarFeaturesCapa, proxyLeyenda,
+  obtenerAtributosCapa, contarFeaturesCapa, listarFeaturesCapa, proxyLeyenda, probarCredenciales,
   MAX_FEATURES_CONSULTA, MAX_BYTES_CONSULTA,
 } from '../src/modules/geovisores/geoserver.connector.js';
 
@@ -458,5 +458,61 @@ describe('capaId inválido — ninguna operación llega a GeoServer', () => {
 
     await expect(llamar()).rejects.toMatchObject({ status: 400, code: 'CAPA_ID_INVALIDO' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('credenciales rechazadas por GeoServer (401/403)', () => {
+  const XML_CAPAS = '<FeatureTypeList><FeatureType><Name>ws:capa</Name><Title>Capa</Title></FeatureType></FeatureTypeList>';
+  const respuesta = (status, cuerpo = '') => ({
+    ok: status < 400, status, type: 'basic', text: () => Promise.resolve(cuerpo), headers: { get: () => 'application/xml' },
+  });
+  const conAutorizacion = (mock) => mock.mock.calls.map(([, opciones]) => Boolean(opciones?.headers?.Authorization));
+
+  it('con 401 repite UNA vez sin credenciales y sirve lo público', async () => {
+    const mock = vi.fn(async (_url, opciones) => (opciones.headers.Authorization ? respuesta(401) : respuesta(200, XML_CAPAS)));
+    vi.stubGlobal('fetch', mock);
+
+    const capas = await obtenerCapacidadesWfs(conexion);
+
+    expect(capas.map((c) => c.id)).toEqual(['ws:capa']);
+    expect(conAutorizacion(mock)).toEqual([true, false]);
+  });
+
+  it('con 403 también repite sin credenciales', async () => {
+    const mock = vi.fn(async (_url, opciones) => (opciones.headers.Authorization ? respuesta(403) : respuesta(200, XML_CAPAS)));
+    vi.stubGlobal('fetch', mock);
+
+    await expect(obtenerCapacidadesWfs({ ...conexion, id: 'conexion-test-403' })).resolves.toHaveLength(1);
+    expect(conAutorizacion(mock)).toEqual([true, false]);
+  });
+
+  it('si tampoco acepta sin credenciales (GeoServer privado) sigue fallando como antes', async () => {
+    const mock = vi.fn(async () => respuesta(401));
+    vi.stubGlobal('fetch', mock);
+
+    await expect(obtenerCapacidadesWfs({ ...conexion, id: 'conexion-test-privada' }))
+      .rejects.toMatchObject({ status: 502, code: 'GEOSERVER_NO_DISPONIBLE' });
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it('una conexión sin credenciales hace una sola petición', async () => {
+    const mock = vi.fn(async () => respuesta(401));
+    vi.stubGlobal('fetch', mock);
+
+    await expect(obtenerCapacidadesWfs({ ...conexion, usuarioLectura: null, passwordDescifrada: null })).rejects.toBeDefined();
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it('probarCredenciales devuelve el 401 sin reintento anónimo para poder rechazar la clave al guardar', async () => {
+    const mock = vi.fn(async () => respuesta(401));
+    vi.stubGlobal('fetch', mock);
+
+    await expect(probarCredenciales(conexion)).resolves.toBe(401);
+    expect(conAutorizacion(mock)).toEqual([true]);
+  });
+
+  it('probarCredenciales devuelve 200 cuando GeoServer acepta las credenciales', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respuesta(200, XML_CAPAS)));
+    await expect(probarCredenciales(conexion)).resolves.toBe(200);
   });
 });
