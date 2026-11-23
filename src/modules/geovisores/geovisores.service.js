@@ -4,6 +4,7 @@ import { slugify } from '../../utils/slugify.js';
 import { deleteFile, extractKey } from '../../config/r2.js';
 import { obtenerConexionParaConector } from './conexionesGeoserver.service.js';
 import { obtenerCapasNuevas } from './capasNuevas.service.js';
+import { obtenerLineaBase } from './lineaBaseCapas.js';
 import * as geoserver from './geoserver.connector.js';
 import logger from '../../utils/logger.js';
 import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
@@ -46,7 +47,8 @@ function temaDesdeWorkspace(workspace) {
  *   2. capasSeleccionadas no vacío → allow-list exacta por capa, sin importar el workspace
  *      (esto es lo que permite mezclar capas de temas distintos en un mismo geovisor). Con
  *      incluirCapasNuevas, además se admite cualquier capa de los workspaces ya usados -- así una
- *      capa publicada después en GeoServer aparece sola, sin editar el geovisor.
+ *      capa publicada después en GeoServer aparece sola, sin editar el geovisor. Sin esa bandera,
+ *      la conexión con capasNuevasAuto admite solo las capas posteriores a su línea base.
  *   3. Si no, comportamiento legado: workspacesGeoserver vacío = toda la conexión; si no,
  *      cualquier capa de esos workspaces.
  */
@@ -84,7 +86,30 @@ async function obtenerRestriccionesDeHermanos(conexionGeoserverId, geovisorId, v
   return { workspaces, capas };
 }
 
-function capaPermitidaEnGeovisor(geovisor, capaId, restricciones = SIN_RESTRICCIONES_DE_HERMANOS) {
+const SIN_LINEA_BASE = new Set();
+
+function workspaceEsDelGeovisor(geovisor, workspace) {
+  return geovisor.workspacesGeoserver.includes(workspace)
+    || geovisor.capasSeleccionadas.some((c) => workspaceDeCapa(c) === workspace);
+}
+
+/**
+ * Línea base que activa la regla de capas nuevas automáticas, o vacía si no aplica. Vacía también
+ * significa "ninguna capa es nueva": una conexión sin línea base aún no sabe qué es antiguo.
+ */
+async function lineaBaseParaCapasNuevas(geovisor, conexion) {
+  const aplica = conexion.capasNuevasAuto === true
+    && geovisor.capasSeleccionadas.length > 0
+    && !geovisor.incluirCapasNuevas;
+  return aplica ? obtenerLineaBase(geovisor.conexionGeoserverId) : SIN_LINEA_BASE;
+}
+
+function capaPermitidaEnGeovisor(
+  geovisor,
+  capaId,
+  restricciones = SIN_RESTRICCIONES_DE_HERMANOS,
+  lineaBaseCapasNuevas = SIN_LINEA_BASE,
+) {
   const workspace = workspaceDeCapa(capaId);
   if (WORKSPACES_SIEMPRE_EXCLUIDOS.includes(workspace)) return false;
   // Reserva explícita de un hermano más restrictivo: gana siempre, sin
@@ -93,16 +118,17 @@ function capaPermitidaEnGeovisor(geovisor, capaId, restricciones = SIN_RESTRICCI
   if (restricciones.capas.has(capaId) || restricciones.workspaces.has(workspace)) return false;
   if (geovisor.capasSeleccionadas.length > 0) {
     if (geovisor.capasSeleccionadas.includes(capaId)) return true;
-    if (!geovisor.incluirCapasNuevas) return false;
-    return geovisor.workspacesGeoserver.includes(workspace)
-      || geovisor.capasSeleccionadas.some((c) => workspaceDeCapa(c) === workspace);
+    if (geovisor.incluirCapasNuevas) return workspaceEsDelGeovisor(geovisor, workspace);
+    // Capa publicada después de la línea base: aparece sola sin destapar las antiguas que se ocultaron.
+    const esNueva = lineaBaseCapasNuevas.size > 0 && !lineaBaseCapasNuevas.has(capaId);
+    return esNueva && workspaceEsDelGeovisor(geovisor, workspace);
   }
   if (geovisor.workspacesGeoserver.length === 0) return true;
   return geovisor.workspacesGeoserver.includes(workspace);
 }
 
-function exigirCapaPermitida(geovisor, capaId, restricciones = SIN_RESTRICCIONES_DE_HERMANOS) {
-  if (!capaPermitidaEnGeovisor(geovisor, capaId, restricciones)) {
+function exigirCapaPermitida(geovisor, capaId, restricciones = SIN_RESTRICCIONES_DE_HERMANOS, lineaBaseCapasNuevas = SIN_LINEA_BASE) {
+  if (!capaPermitidaEnGeovisor(geovisor, capaId, restricciones, lineaBaseCapasNuevas)) {
     throw Object.assign(
       new Error(`La capa "${capaId}" no está disponible en este geovisor`),
       { status: 403, code: 'CAPA_NO_PERMITIDA' },
@@ -375,9 +401,11 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
   // Se registran TODAS las capas de la conexión (no solo las de este geovisor): la línea base de
   // "qué ya existía" es por conexión, y varios geovisores comparten la misma.
   const nuevas = await obtenerCapasNuevas(geovisor.conexionGeoserverId, descubiertas.map((capa) => capa.id));
+  // Después de registrar: así una conexión recién descubierta ya cuenta con su línea base.
+  const lineaBase = await lineaBaseParaCapasNuevas(geovisor, conexion);
 
   const capas = descubiertas
-    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id, restricciones))
+    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id, restricciones, lineaBase))
     .map((capa) => ({ ...capa, nueva: nuevas.has(capa.id), tema: temaDesdeWorkspace(workspaceDeCapa(capa.id)).id }));
 
   const temasPorId = new Map();
@@ -471,8 +499,9 @@ export async function proxyWmsDeGeovisor(slug, consultaCruda, geometriaFiltro, u
   // Se reenvía la lista ya validada y normalizada, no el texto crudo que el cliente mandó.
   if (capasPedidas.length > 0) queryParams.set('layers', capasPedidas.join(','));
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
-  capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId, restricciones));
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
+  const lineaBase = await lineaBaseParaCapasNuevas(geovisor, conexion);
+  capasPedidas.forEach((capaId) => exigirCapaPermitida(geovisor, capaId, restricciones, lineaBase));
   return geoserver.proxyWms(conexion, queryParams, geometriaFiltro);
 }
 
@@ -481,8 +510,8 @@ export async function proxyLeyendaDeGeovisor(slug, capaId, user) {
   validarCapaId(capaId);
   const geovisor = await getBySlug(slug, user);
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
-  exigirCapaPermitida(geovisor, capaId, restricciones);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
+  exigirCapaPermitida(geovisor, capaId, restricciones, await lineaBaseParaCapasNuevas(geovisor, conexion));
   return geoserver.proxyLeyenda(conexion, capaId);
 }
 
@@ -495,8 +524,8 @@ export async function consultarCapaDeGeovisor(slug, capaId, geometria, user) {
   validarCapaId(capaId);
   const geovisor = await getBySlug(slug, user);
   const restricciones = await obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad);
-  exigirCapaPermitida(geovisor, capaId, restricciones);
   const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
+  exigirCapaPermitida(geovisor, capaId, restricciones, await lineaBaseParaCapasNuevas(geovisor, conexion));
   const coleccion = await geoserver.consultarWfs(conexion, capaId, geometria);
 
   // Capas sin el modo "fichas por punto" no cambian -- compatibilidad hacia

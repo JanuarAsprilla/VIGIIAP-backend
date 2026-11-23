@@ -30,7 +30,7 @@ import { encryptGeoserverPassword } from '../src/utils/geoserverEncryption.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
 import { urlApuntaARedPrivada } from '../src/utils/ssrfGuard.js';
 import {
-  getAll, getSeleccionables, getById, create, update, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
+  getAll, getSeleccionables, getById, create, update, actualizarCapasNuevasAuto, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
 } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 
 const FILA = {
@@ -52,7 +52,7 @@ describe('conexionesGeoserver.service → getSeleccionables()', () => {
     const filas = await getSeleccionables();
 
     const [sql] = query.mock.calls.at(-1);
-    expect(sql).toMatch(/SELECT id, nombre, tipo, activo FROM conexiones_geoserver/);
+    expect(sql).toMatch(/SELECT id, nombre, tipo, activo, capas_nuevas_auto FROM conexiones_geoserver/);
     expect(sql).not.toMatch(/url|usuario_lectura|password/i);
     expect(filas).toEqual([{ id: 'c1', nombre: 'GeoServer IIAP', tipo: 'propio', activo: true }]);
   });
@@ -76,7 +76,7 @@ describe('conexionesGeoserver.service → create()', () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'propio' }] });
     await create({ nombre: 'GeoServer IIAP', url: 'https://geo.iiap.org.co', tipo: 'propio', usuarioLectura: 'lector', password: 'secreto', timeoutMs: 20000 });
     const [, params] = query.mock.calls[0];
-    expect(params).toEqual(['GeoServer IIAP', 'https://geo.iiap.org.co', 'propio', 'lector', 'enc:secreto', 20000]);
+    expect(params).toEqual(['GeoServer IIAP', 'https://geo.iiap.org.co', 'propio', 'lector', 'enc:secreto', 20000, true]);
     expect(encryptGeoserverPassword).toHaveBeenCalledWith('secreto');
   });
 
@@ -84,7 +84,7 @@ describe('conexionesGeoserver.service → create()', () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo', usuario_lectura: null, password_cifrado: null }] });
     await create({ nombre: 'WMS Externo', url: 'https://wms.otrainstitucion.gov.co', tipo: 'externo', timeoutMs: 20000 });
     const [, params] = query.mock.calls[0];
-    expect(params).toEqual(['WMS Externo', 'https://wms.otrainstitucion.gov.co', 'externo', null, null, 20000]);
+    expect(params).toEqual(['WMS Externo', 'https://wms.otrainstitucion.gov.co', 'externo', null, null, 20000, true]);
     expect(encryptGeoserverPassword).not.toHaveBeenCalled();
   });
 
@@ -99,6 +99,15 @@ describe('conexionesGeoserver.service → create()', () => {
     query.mockResolvedValueOnce({ rows: [{ ...FILA, tipo: 'externo' }] });
     await create({ nombre: 'WMS', url: 'https://wms.test', tipo: 'externo', timeoutMs: 20000 });
     expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
+  });
+
+  it('guarda capasNuevasAuto=true por defecto y respeta un false explícito', async () => {
+    query.mockResolvedValue({ rows: [FILA] });
+    await create({ nombre: 'X', url: 'https://x.test', usuarioLectura: 'u', password: 'p', timeoutMs: 20000 });
+    expect(query.mock.calls[0][0]).toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[0][1].at(-1)).toBe(true);
+    await create({ nombre: 'X', url: 'https://x.test', usuarioLectura: 'u', password: 'p', timeoutMs: 20000, capasNuevasAuto: false });
+    expect(query.mock.calls[1][1].at(-1)).toBe(false);
   });
 
   it('sin tipo explícito, por defecto es "propio"', async () => {
@@ -165,9 +174,54 @@ describe('conexionesGeoserver.service → update()', () => {
     expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
   });
 
+  it('apaga y enciende capasNuevasAuto sin comprobar credenciales', async () => {
+    query.mockResolvedValue({ rows: [{ ...FILA, capas_nuevas_auto: false }] });
+    await update('conexion-uuid-1', { capasNuevasAuto: false });
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/capas_nuevas_auto = \$1/);
+    expect(params[0]).toBe(false);
+    expect(geoserver.probarCredenciales).not.toHaveBeenCalled();
+  });
+
   it('lanza 404 si la conexión no existe', async () => {
     query.mockResolvedValueOnce({ rows: [] });
     await expect(update('no-existe', { nombre: 'X' })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('conexionesGeoserver.service → capas_nuevas_auto', () => {
+  it('getAll, getById y getSeleccionables la exponen', async () => {
+    query.mockResolvedValue({ rows: [] });
+    await getAll();
+    await getById('x').catch(() => {});
+    await getSeleccionables();
+    expect(query.mock.calls[0][0]).toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[1][0]).toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[2][0]).toMatch(/capas_nuevas_auto/);
+  });
+
+  it('obtenerConexionParaConector devuelve capasNuevasAuto', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, capas_nuevas_auto: true }] });
+    expect((await obtenerConexionParaConector('conexion-uuid-1')).capasNuevasAuto).toBe(true);
+    query.mockResolvedValueOnce({ rows: [{ ...FILA, capas_nuevas_auto: false }] });
+    expect((await obtenerConexionParaConector('conexion-uuid-1')).capasNuevasAuto).toBe(false);
+  });
+});
+
+describe('conexionesGeoserver.service → actualizarCapasNuevasAuto()', () => {
+  it('actualiza solo capas_nuevas_auto y devuelve valor anterior y nuevo sin credenciales', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'c1', nombre: 'GS', tipo: 'propio', activo: true, capas_nuevas_auto: false, capas_nuevas_auto_anterior: true }] });
+    const fila = await actualizarCapasNuevasAuto('c1', false);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/SET capas_nuevas_auto = \$1/);
+    expect(sql).not.toMatch(/url =|password|usuario_lectura =|nombre =/);
+    expect(params).toEqual([false, 'c1']);
+    expect(fila).toEqual({ id: 'c1', nombre: 'GS', tipo: 'propio', activo: true, capas_nuevas_auto: false, capas_nuevas_auto_anterior: true });
+  });
+
+  it('lanza 404 si la conexión no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(actualizarCapasNuevasAuto('x', true)).rejects.toMatchObject({ status: 404 });
   });
 });
 

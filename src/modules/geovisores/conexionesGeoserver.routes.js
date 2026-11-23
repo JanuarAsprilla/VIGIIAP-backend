@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import {
-  index, seleccionables, show, store, update, destroy, workspaces, wmsPreview, leyendaPreview, atributosCapa,
+  index, seleccionables, show, store, update, destroy, actualizarCapasNuevas, workspaces, wmsPreview, leyendaPreview, atributosCapa,
 } from './conexionesGeoserver.controller.js';
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
-import { tileRateLimiter } from '../../middlewares/rateLimiter.js';
+import { tileRateLimiter, adminRateLimiter } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 
@@ -30,6 +30,8 @@ router.get('/:id/capas/:capaId/atributos', authenticate, authorize('admin_sig'),
 
 router.post('/', authenticate, requireSuperAdmin, csrfProtection, store);
 router.patch('/:id', authenticate, requireSuperAdmin, csrfProtection, update);
+// Vía estrecha: quien edita geovisores puede apagar solo las capas nuevas automáticas, sin tocar URL ni credenciales.
+router.patch('/:id/capas-nuevas', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, adminRateLimiter, actualizarCapasNuevas);
 router.delete('/:id', authenticate, requireSuperAdmin, csrfProtection, destroy);
 
 export default router;

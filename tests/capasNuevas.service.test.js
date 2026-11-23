@@ -6,6 +6,7 @@ vi.mock('../src/config/database.js', () => ({
 }));
 
 import { query } from '../src/config/database.js';
+import { obtenerLineaBase } from '../src/modules/geovisores/lineaBaseCapas.js';
 import { obtenerCapasNuevas, DIAS_CAPA_NUEVA } from '../src/modules/geovisores/capasNuevas.service.js';
 
 const CONEXION = 'conexion-uuid-1';
@@ -33,6 +34,19 @@ describe('obtenerCapasNuevas', () => {
     expect(nuevas.size).toBe(0);
     expect(vi.mocked(query).mock.calls[1][1]).toEqual([CONEXION, IDS, true]);
     expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('al registrar una línea base nueva descarta la línea base cacheada de la conexión', async () => {
+    vi.mocked(query).mockResolvedValue({ rows: [] });
+    await obtenerLineaBase(CONEXION);
+    await obtenerLineaBase(CONEXION);
+    expect(query).toHaveBeenCalledTimes(1);
+
+    await obtenerCapasNuevas(CONEXION, IDS);
+    vi.mocked(query).mockClear();
+    await obtenerLineaBase(CONEXION);
+
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('después de la línea base, una capa recién vista se inserta fuera de línea base y sale como nueva', async () => {
