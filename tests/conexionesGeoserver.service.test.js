@@ -30,7 +30,7 @@ import { encryptGeoserverPassword } from '../src/utils/geoserverEncryption.js';
 import * as geoserver from '../src/modules/geovisores/geoserver.connector.js';
 import { urlApuntaARedPrivada } from '../src/utils/ssrfGuard.js';
 import {
-  getAll, getSeleccionables, getById, create, update, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
+  getAll, getSeleccionables, getById, create, update, actualizarCapasNuevasAuto, obtenerConexionParaConector, proxyWmsDeConexion, proxyLeyendaDeConexion,
 } from '../src/modules/geovisores/conexionesGeoserver.service.js';
 
 const FILA = {
@@ -52,7 +52,7 @@ describe('conexionesGeoserver.service → getSeleccionables()', () => {
     const filas = await getSeleccionables();
 
     const [sql] = query.mock.calls.at(-1);
-    expect(sql).toMatch(/SELECT id, nombre, tipo, activo FROM conexiones_geoserver/);
+    expect(sql).toMatch(/SELECT id, nombre, tipo, activo, capas_nuevas_auto FROM conexiones_geoserver/);
     expect(sql).not.toMatch(/url|usuario_lectura|password/i);
     expect(filas).toEqual([{ id: 'c1', nombre: 'GeoServer IIAP', tipo: 'propio', activo: true }]);
   });
@@ -190,14 +190,14 @@ describe('conexionesGeoserver.service → update()', () => {
 });
 
 describe('conexionesGeoserver.service → capas_nuevas_auto', () => {
-  it('getAll y getById la exponen; getSeleccionables no', async () => {
+  it('getAll, getById y getSeleccionables la exponen', async () => {
     query.mockResolvedValue({ rows: [] });
     await getAll();
     await getById('x').catch(() => {});
     await getSeleccionables();
     expect(query.mock.calls[0][0]).toMatch(/capas_nuevas_auto/);
     expect(query.mock.calls[1][0]).toMatch(/capas_nuevas_auto/);
-    expect(query.mock.calls[2][0]).not.toMatch(/capas_nuevas_auto/);
+    expect(query.mock.calls[2][0]).toMatch(/capas_nuevas_auto/);
   });
 
   it('obtenerConexionParaConector devuelve capasNuevasAuto', async () => {
@@ -205,6 +205,23 @@ describe('conexionesGeoserver.service → capas_nuevas_auto', () => {
     expect((await obtenerConexionParaConector('conexion-uuid-1')).capasNuevasAuto).toBe(true);
     query.mockResolvedValueOnce({ rows: [{ ...FILA, capas_nuevas_auto: false }] });
     expect((await obtenerConexionParaConector('conexion-uuid-1')).capasNuevasAuto).toBe(false);
+  });
+});
+
+describe('conexionesGeoserver.service → actualizarCapasNuevasAuto()', () => {
+  it('actualiza solo capas_nuevas_auto y devuelve valor anterior y nuevo sin credenciales', async () => {
+    query.mockResolvedValueOnce({ rows: [{ id: 'c1', nombre: 'GS', tipo: 'propio', activo: true, capas_nuevas_auto: false, capas_nuevas_auto_anterior: true }] });
+    const fila = await actualizarCapasNuevasAuto('c1', false);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/SET capas_nuevas_auto = \$1/);
+    expect(sql).not.toMatch(/url =|password|usuario_lectura =|nombre =/);
+    expect(params).toEqual([false, 'c1']);
+    expect(fila).toEqual({ id: 'c1', nombre: 'GS', tipo: 'propio', activo: true, capas_nuevas_auto: false, capas_nuevas_auto_anterior: true });
+  });
+
+  it('lanza 404 si la conexión no existe', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(actualizarCapasNuevasAuto('x', true)).rejects.toMatchObject({ status: 404 });
   });
 });
 
