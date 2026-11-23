@@ -1,0 +1,78 @@
+name: Diagnóstico del servidor 2 (temporal, solo lectura, salida cifrada)
+
+# Flujo TEMPORAL: se borra al terminar. Ejecuta comandos de solo lectura en el servidor y cifra TODA la salida con un
+# certificado público antes de imprimirla, porque los registros de este repositorio son públicos. Solo se ejecuta
+# para el dueño y únicamente cuando cambia este mismo archivo.
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - '.github/workflows/diagnostico-servidor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    name: Diagnóstico cifrado 2
+    if: github.actor == 'JanuarAsprilla'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ejecutar diagnóstico de solo lectura y cifrar la salida
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            t=$(mktemp)
+            cat > "$t" <<'CERT'
+            -----BEGIN CERTIFICATE-----
+            MIIDujCCAiICCQDg0PfMPPWP6jANBgkqhkiG9w0BAQsFADAfMR0wGwYDVQQDDBRk
+            aWFnbm9zdGljby10ZW1wb3JhbDAeFw0yNjExMjMxNzQ3MzZaFw0yNjExMjYxNzQ3
+            MzZaMB8xHTAbBgNVBAMMFGRpYWdub3N0aWNvLXRlbXBvcmFsMIIBojANBgkqhkiG
+            9w0BAQEFAAOCAY8AMIIBigKCAYEAzuh9OMevNNgcdw18fNmfsCcBOj01i66S+F80
+            MKk4yi8E0DMkGACMqU52LyosSOMTXbEo77lNDGlNSyW04K96WGGB9ma1AvJMBmek
+            FFJfb3j8d9No7Oj+HUZ3V6F/lcOJ9oypGXTFt07qQWHGOFlk08fYoJeZkoCQxMot
+            2An6MIOatgK+r7aAHriym8vroyItkef4q2DB+sVoJd0hKfotYa/jfdHKNn7vqVqg
+            ODF9RkWSuHj/Uk1ihtft9fIDyzfmVga/GmxfgX8ZbbV0STiRnnB6hNnjxDnrxow7
+            EaGZJ+G5iriGlofYpUXW4kpBrTC7UcK7qF3Z8/aRJ/hJr2ICj33Wh8aiGgmUtQ9/
+            2FXGNpe/fkrJ0dulyJ4tvlVnLZEglBvHpXUCY10ty34+BBVEeK4yiDfLibTtDxJV
+            OJ7tJ6Zlz7CJPLnGcr8RNgadLFXD6Rh62GRNBnVouQTd9dOA801z9poER4PjgbtE
+            g1YwLeAn9CqC8X1PUjuITZS6gvJ9AgMBAAEwDQYJKoZIhvcNAQELBQADggGBALkB
+            89krTlj5Lqz5xcBga6JS9zoyNZmxU9kBK5y8cP7ZRvjAX/3dTiLBoAU4x0r0ggFY
+            KpMCar/WKYwC5ufVG1W4jE0k+F82USuRqFcu04VHjwzyR9en/0JZChx23WIv0qi+
+            OWOQ0n230G8nGnaAUj/Q7KWLLIVnvsA9h+s+iHyGvdaH37LlehAuknpTUac+Ovom
+            UOjUbLPEztw4K6enlb6CQAus8XpJGmw8r5chVVADpWp662Zp2Dg6dTCrsRVRwPxq
+            JkQhXZubqnBoRv5QhHiMTSyUcseSwi3KRKV0RR+bAXc2mIIPymev1oEZnU/1gmJ7
+            zPDx1pBHhosYHARA3DqDxAbJlDQ0/4TNTJDClJgJIGDjKVvIoy76cVuD8O4j9Xh8
+            eICMS1He4a6FL5ZhBgB/xThkj2KwFXpiJZ5NU3qR+HCJKfYdcK97CCGDuWa+hem3
+            5bhiLmnNHKYAraWPRFI5yaadP2zHkPVNM+9heuJpLVrgySSk1i9Z3xwsSs7bHQ==
+            -----END CERTIFICATE-----
+            CERT
+            {
+              seccion() { printf '\n===== %s =====\n' "$1"; }
+              BD=$(docker ps --format '{{.Names}}' | grep -iE '^vigiiap_postgres$|postgres|postgis' | head -1)
+              psql_en() { docker exec -i "$BD" sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -At -F " | "'; }
+
+              seccion "Que contenedor publica 80 y 443"
+              docker ps --format '{{.Names}} {{.Ports}}' | grep -E '(:80->|:443->)'
+
+              seccion "vigiiap_nginx: servidores, TLS y proxys"
+              docker exec vigiiap_nginx sh -c 'grep -RhEv "^\s*#" /etc/nginx/nginx.conf /etc/nginx/conf.d 2>/dev/null | grep -E "server_name|listen|ssl_protocols|http2|proxy_pass|location |limit_req|limit_conn|gzip|expires|add_header" | head -70'
+
+              seccion "Conexion GeoServer de VIGIIAP"
+              echo "SELECT id, tipo, url FROM conexiones_geoserver;" | psql_en
+
+              seccion "Capas vistas por workspace (todas las que descubrio la plataforma)"
+              echo "SELECT split_part(capa_id,':',1) AS workspace, count(*) AS total, count(*) FILTER (WHERE es_linea_base) AS linea_base FROM capas_geoserver_vistas GROUP BY 1 ORDER BY 1;" | psql_en
+
+              seccion "Geovisores: workspaces y capas seleccionadas"
+              echo "SELECT slug, incluir_capas_nuevas, workspaces_geoserver, capas_seleccionadas FROM geovisores WHERE deleted_at IS NULL ORDER BY slug;" | psql_en
+
+              seccion "Todas las capas vistas"
+              echo "SELECT capa_id, es_linea_base, primera_vez_vista FROM capas_geoserver_vistas ORDER BY capa_id;" | psql_en
+            } 2>&1 | openssl smime -encrypt -aes256 -binary -outform PEM "$t"
+            rm -f "$t"
