@@ -13,12 +13,13 @@ export async function getAll() {
 }
 
 /**
- * Lo mínimo para ELEGIR una conexión al armar un geovisor: nunca URL, usuario ni credenciales.
+ * Lo mínimo para ELEGIR una conexión al armar un geovisor: nunca URL, usuario ni credenciales
+ * (capas_nuevas_auto es un booleano inocuo que el constructor muestra).
  * Quien tiene el módulo Geovisores pero no el de Conexiones GeoServer puede usar las conexiones
  * existentes sin poder verlas ni administrarlas.
  */
 export async function getSeleccionables() {
-  const { rows } = await query('SELECT id, nombre, tipo, activo FROM conexiones_geoserver ORDER BY nombre', []);
+  const { rows } = await query('SELECT id, nombre, tipo, activo, capas_nuevas_auto FROM conexiones_geoserver ORDER BY nombre', []);
   return rows;
 }
 
@@ -119,6 +120,19 @@ export async function update(id, data) {
   const { rows } = await query(
     `UPDATE conexiones_geoserver SET ${campos.join(', ')} WHERE id = $${indice} RETURNING ${COLUMNAS_PUBLICAS}`,
     valores,
+  );
+  if (!rows[0]) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });
+  return rows[0];
+}
+
+/** Cambia SOLO capas_nuevas_auto; devuelve el valor anterior para auditar, sin credenciales. */
+export async function actualizarCapasNuevasAuto(id, valor) {
+  const { rows } = await query(
+    `WITH antes AS (SELECT id, capas_nuevas_auto FROM conexiones_geoserver WHERE id = $2)
+     UPDATE conexiones_geoserver c SET capas_nuevas_auto = $1, actualizado_en = NOW()
+       FROM antes WHERE c.id = antes.id
+     RETURNING c.id, c.nombre, c.tipo, c.activo, c.capas_nuevas_auto, antes.capas_nuevas_auto AS capas_nuevas_auto_anterior`,
+    [valor, id],
   );
   if (!rows[0]) throw Object.assign(new Error('Conexión GeoServer no encontrada'), { status: 404 });
   return rows[0];
