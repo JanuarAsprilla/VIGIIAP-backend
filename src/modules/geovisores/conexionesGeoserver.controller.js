@@ -1,9 +1,10 @@
-import { createConexionGeoserverSchema, updateConexionGeoserverSchema } from './geovisores.schema.js';
+import { createConexionGeoserverSchema, updateConexionGeoserverSchema, capasNuevasAutoSchema } from './geovisores.schema.js';
 import * as conexionService from './conexionesGeoserver.service.js';
 import { listarWorkspacesDeConexion } from './geovisores.service.js';
 import { listarAtributos } from '../fichas/fichas.service.js';
 import { esGeometriaValida } from '../../utils/geometry.js';
 import { registrarAuditoria } from '../../utils/auditLog.js';
+import { diffCambios } from '../../utils/cambios.js';
 
 export async function index(req, res, next) {
   try {
@@ -45,13 +46,38 @@ export async function store(req, res, next) {
 export async function update(req, res, next) {
   try {
     const data = await updateConexionGeoserverSchema.parseAsync(req.body);
+    const tocaCapasNuevas = data.capasNuevasAuto !== undefined;
+    const antes = tocaCapasNuevas ? await conexionService.getById(req.params.id) : null;
     const conexion = await conexionService.update(req.params.id, data);
+    const cambios = tocaCapasNuevas
+      ? diffCambios({ capasNuevasAuto: antes.capas_nuevas_auto }, { capasNuevasAuto: conexion.capas_nuevas_auto })
+      : null;
     registrarAuditoria({
       accion: 'update_conexion_geoserver',
       modulo: 'geovisores',
       entidadId: conexion.id,
       // Nunca se registra la contraseña en el log de auditoría, ni siquiera cifrada.
       descripcion: `Conexión GeoServer actualizada: ${conexion.nombre}`,
+      cambios,
+      usuarioId: req.user.id,
+      usuarioEmail: req.user.email,
+      ip: req.ip,
+    });
+    res.json(conexion);
+  } catch (err) { next(err); }
+}
+
+/** PATCH /admin/conexiones-geoserver/:id/capas-nuevas — solo la opción de capas nuevas automáticas. */
+export async function actualizarCapasNuevas(req, res, next) {
+  try {
+    const { capasNuevasAuto } = capasNuevasAutoSchema.parse(req.body);
+    const { capas_nuevas_auto_anterior: anterior, ...conexion } = await conexionService.actualizarCapasNuevasAuto(req.params.id, capasNuevasAuto);
+    registrarAuditoria({
+      accion: 'update_conexion_geoserver',
+      modulo: 'geovisores',
+      entidadId: conexion.id,
+      descripcion: `Capas nuevas automáticas de la conexión GeoServer: ${conexion.nombre}`,
+      cambios: diffCambios({ capasNuevasAuto: anterior }, { capasNuevasAuto: conexion.capas_nuevas_auto }),
       usuarioId: req.user.id,
       usuarioEmail: req.user.email,
       ip: req.ip,
