@@ -8,11 +8,15 @@
  * terceros) sin credenciales -- Authorization solo se manda cuando la conexión
  * las tiene, este módulo no necesita saber si el tipo es propio o externo.
  */
+import { TextDecoder } from 'node:util';
 import { Agent } from 'undici';
 import { geometriaAWkt } from '../../utils/geometry.js';
 import { dnsLookupSeguro } from '../../utils/ssrfGuard.js';
 import logger from '../../utils/logger.js';
 import { validarCapaId } from './capaId.js';
+import {
+  parsearCapacidadesWms, parsearGrupoRest, derivarBaseOgc, derivarBaseRest, listaRest,
+} from './geoserverInventarioParseo.js';
 
 const MAX_REINTENTOS = 1;
 const INTERVALO_AVISO_CREDENCIALES_MS = 60_000;
@@ -423,6 +427,165 @@ export async function obtenerCapacidadesWcs(conexion) {
     const id = idCrudo.replace('__', ':');
     return [{ id, nombre: extraerTexto(bloque, 'Title') ?? id, tipo: 'raster', bbox: extraerBbox(bloque) }];
   });
+}
+
+// ─── Inventario (solo lectura): WMS GetCapabilities + API REST ───────────────────────────────────────────────────
+export const MAX_BYTES_INVENTARIO = 10 * 1024 * 1024;
+export const MAX_ESPACIOS = 500;
+export const MAX_GRUPOS = 2_000;
+export const MAX_ESTILOS = 5_000;
+const CONCURRENCIA_REST = 4;
+const ESTADOS_REST_TOLERADOS = [403, 404];
+
+const errorGeoserver = (mensaje, code, status = 502) => Object.assign(new Error(mensaje), { status, code });
+
+function exigirPlazo(venceEn) {
+  if (venceEn && Date.now() > venceEn) throw errorGeoserver('Se agotó el tiempo de la sincronización', 'INVENTARIO_TIEMPO_AGOTADO', 504);
+}
+
+/** Lee el cuerpo sin pasar de `maxBytes`: una respuesta desmedida se corta en vez de bufferizarse entera. */
+async function leerCuerpoAcotado(respuesta, maxBytes = MAX_BYTES_INVENTARIO) {
+  const demasiado = () => errorGeoserver('GeoServer devolvió una respuesta demasiado grande', 'INVENTARIO_DEMASIADO_GRANDE');
+  const declarado = Number(respuesta.headers?.get?.('content-length'));
+  if (Number.isFinite(declarado) && declarado > maxBytes) throw demasiado();
+  if (!respuesta.body?.getReader) {
+    const texto = await respuesta.text();
+    if (texto.length > maxBytes) throw demasiado();
+    return texto;
+  }
+  const lector = respuesta.body.getReader();
+  const decodificador = new TextDecoder();
+  let total = 0;
+  let texto = '';
+  for (;;) {
+    const { done, value } = await lector.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await lector.cancel().catch(() => {});
+      throw demasiado();
+    }
+    texto += decodificador.decode(value, { stream: true });
+  }
+  return texto + decodificador.decode();
+}
+
+/**
+ * WMS 1.3.0 GetCapabilities: capas con título, resumen, palabras clave, bbox, CRS y estilos, y los grupos de capas
+ * (capas con capas anidadas) con sus miembros en orden. La ruta se arma desde la base del servidor, no se duplica «/wms».
+ */
+export async function obtenerCapacidadesWms(conexion, { venceEn } = {}) {
+  exigirPlazo(venceEn);
+  const url = new URL(`${derivarBaseOgc(conexion.url)}/wms`);
+  url.searchParams.set('service', 'WMS');
+  url.searchParams.set('version', '1.3.0');
+  url.searchParams.set('request', 'GetCapabilities');
+
+  const respuesta = await solicitarConTimeout(conexion, url, 'text/xml, application/xml');
+  if (!respuesta.ok) throw errorGeoserver(`GeoServer respondió ${respuesta.status} al listar capacidades WMS`, 'GEOSERVER_NO_DISPONIBLE');
+  return parsearCapacidadesWms(await leerCuerpoAcotado(respuesta));
+}
+
+/**
+ * GET de la API REST. 401/403/404 en un recurso que no se tolera significa «no hay REST con estas credenciales»
+ * (code GEOSERVER_REST_NO_DISPONIBLE); en uno tolerado devuelve null.
+ */
+async function obtenerJsonRest(conexion, ruta, { venceEn, toleradas = [] } = {}) {
+  exigirPlazo(venceEn);
+  const respuesta = await solicitarConTimeout(conexion, new URL(`${derivarBaseRest(conexion.url)}${ruta}`));
+  if (toleradas.includes(respuesta.status)) return null;
+  if ([401, 403, 404].includes(respuesta.status)) {
+    throw errorGeoserver(`La API REST de GeoServer respondió ${respuesta.status}`, 'GEOSERVER_REST_NO_DISPONIBLE', respuesta.status);
+  }
+  if (!respuesta.ok) throw errorGeoserver(`GeoServer respondió ${respuesta.status} en la API REST`, 'GEOSERVER_NO_DISPONIBLE');
+  try {
+    return JSON.parse(await leerCuerpoAcotado(respuesta));
+  } catch (error) {
+    if (error.code) throw error;
+    throw errorGeoserver('La API REST de GeoServer devolvió JSON inválido', 'RESPUESTA_REST_INVALIDA');
+  }
+}
+
+async function mapearConLimite(elementos, funcion, limite = CONCURRENCIA_REST) {
+  const resultados = new Array(elementos.length);
+  let siguiente = 0;
+  const trabajador = async () => {
+    while (siguiente < elementos.length) {
+      const indice = siguiente;
+      siguiente += 1;
+      resultados[indice] = await funcion(elementos[indice]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limite, elementos.length) }, trabajador));
+  return resultados;
+}
+
+const codificar = encodeURIComponent;
+const acotar = (lista, maximo, que) => {
+  if (lista.length > maximo) throw errorGeoserver(`GeoServer publica más ${que} de los que admite el inventario`, 'INVENTARIO_DEMASIADO_GRANDE');
+  return lista;
+};
+
+/** El ámbito global y uno por espacio de trabajo: cada uno cuelga de una ruta base distinta de la REST. */
+const ambitosRest = (nombresEspacios) => [
+  { espacio: null, base: '' },
+  ...nombresEspacios.map((espacio) => ({ espacio, base: `/workspaces/${codificar(espacio)}` })),
+];
+
+/** Nombres de los espacios de trabajo según la REST. */
+async function nombresDeEspacios(conexion, opciones) {
+  const json = await obtenerJsonRest(conexion, '/workspaces.json', opciones);
+  return acotar(listaRest(json?.workspaces?.workspace).map((w) => w.name).filter(Boolean), MAX_ESPACIOS, 'espacios de trabajo');
+}
+
+/**
+ * Espacios de trabajo con su URI de espacio de nombres y, si el administrador los configuró, el título y el resumen de
+ * los ajustes del servicio WMS del espacio (los espacios no tienen título propio en GeoServer).
+ */
+export async function listarEspaciosRest(conexion, { venceEn } = {}) {
+  const nombres = await nombresDeEspacios(conexion, { venceEn });
+  const tolerar = { venceEn, toleradas: ESTADOS_REST_TOLERADOS };
+  return mapearConLimite(nombres, async (nombre) => {
+    const [ns, ajustes] = await Promise.all([
+      obtenerJsonRest(conexion, `/namespaces/${codificar(nombre)}.json`, tolerar),
+      obtenerJsonRest(conexion, `/services/wms/workspaces/${codificar(nombre)}/settings.json`, tolerar),
+    ]);
+    return {
+      nombre,
+      namespaceUri: ns?.namespace?.uri ?? null,
+      aislado: ns?.namespace?.isolated === true,
+      tituloServicio: ajustes?.wms?.title || null,
+      resumenServicio: ajustes?.wms?.abstrct || ajustes?.wms?.abstract || null,
+    };
+  });
+}
+
+/** Grupos globales y por espacio, con miembros ordenados y modo (detalle de cada grupo). */
+export async function listarGruposRest(conexion, { espacios, venceEn } = {}) {
+  const nombresEspacios = espacios ?? await nombresDeEspacios(conexion, { venceEn });
+  const tolerar = { venceEn, toleradas: ESTADOS_REST_TOLERADOS };
+  const ambitos = ambitosRest(nombresEspacios);
+  const listados = await mapearConLimite(ambitos, async ({ espacio, base }) => {
+    const json = await obtenerJsonRest(conexion, `${base}/layergroups.json`, espacio ? tolerar : { venceEn });
+    return listaRest(json?.layerGroups?.layerGroup).filter((g) => g.name).map((g) => ({ base, nombre: g.name }));
+  });
+  const grupos = acotar(listados.flat(), MAX_GRUPOS, 'grupos de capas');
+  const detalles = await mapearConLimite(grupos, async ({ base, nombre }) => (
+    parsearGrupoRest(await obtenerJsonRest(conexion, `${base}/layergroups/${codificar(nombre)}.json`, tolerar))
+  ));
+  return detalles.filter(Boolean);
+}
+
+/** Estilos globales y por espacio (solo nombre y espacio: el formato exigiría una petición por estilo). */
+export async function listarEstilosRest(conexion, { espacios, venceEn } = {}) {
+  const nombresEspacios = espacios ?? await nombresDeEspacios(conexion, { venceEn });
+  const tolerar = { venceEn, toleradas: ESTADOS_REST_TOLERADOS };
+  const ambitos = ambitosRest(nombresEspacios);
+  const listados = await mapearConLimite(ambitos, async ({ espacio, base }) => {
+    const json = await obtenerJsonRest(conexion, `${base}/styles.json`, espacio ? tolerar : { venceEn });
+    return listaRest(json?.styles?.style).filter((e) => e.name).map((e) => ({ nombre: e.name, espacio }));
+  });
+  return acotar(listados.flat(), MAX_ESTILOS, 'estilos');
 }
 
 /**
