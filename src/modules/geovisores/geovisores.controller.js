@@ -24,7 +24,7 @@ export async function show(req, res, next) {
 
 export async function catalogo(req, res, next) {
   try {
-    res.json({ temas: await geovisorService.obtenerCatalogoDeGeovisor(req.params.slug, req.user) });
+    res.json(await geovisorService.obtenerCatalogoCompletoDeGeovisor(req.params.slug, req.user));
   } catch (err) { next(err); }
 }
 

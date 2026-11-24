@@ -10,6 +10,9 @@ import logger from '../../utils/logger.js';
 import { adjuntarFichasAFeatures, obtenerConfig as obtenerConfigFichas, listarFeaturesConCompletitud } from '../fichas/fichas.service.js';
 import { esVistaAdmin } from '../../utils/vistaAdmin.js';
 import { validarCapaId } from './capaId.js';
+import {
+  obtenerInventarioParaCatalogo, enriquecerCapa, capasDesdeInventario, resolverGruposVisibles, EDAD_MAXIMA_INVENTARIO_MS,
+} from './inventarioCatalogo.js';
 
 // Comunidades étnicas / resguardos indígenas: fuera de TODO catálogo hasta que exista una decisión
 // institucional escrita al respecto -- se aplica encima de cualquier `workspaces_geoserver` que un
@@ -381,33 +384,29 @@ export async function remove(id) {
 }
 
 /**
- * Catálogo de capas de UN geovisor: descubre en vivo contra su conexión GeoServer y filtra con
- * la misma regla que capaPermitidaEnGeovisor (capas_seleccionadas, o en su defecto
- * workspaces_geoserver, más la exclusión de seguridad fija), agrupa por tema.
- * Espejo de catalogoCapas.ts de producto6, adaptado a "un geovisor entre varios" en vez de "la
- * única instalación".
+ * Descubre las capas de la conexión en vivo. Si GeoServer no responde y hay un inventario sincronizado reciente, sirve
+ * ese (desactualizado: true) en vez de dejar el visor sin catálogo; sin inventario reciente propaga el error de siempre.
  */
-export async function obtenerCatalogoDeGeovisor(slug, user) {
-  const geovisor = await getBySlug(slug, user);
-  const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
+async function descubrirCapas(geovisor, conexion) {
+  const enVivo = await Promise.all([geoserver.obtenerCapacidadesWfs(conexion), geoserver.obtenerCapacidadesWcs(conexion)])
+    .then(([vectoriales, raster]) => ({ capas: [...vectoriales, ...raster] }), (error) => ({ error }));
+  if (enVivo.capas) {
+    // Se registran TODAS las capas de la conexión (no solo las de este geovisor): la línea base de
+    // "qué ya existía" es por conexión, y varios geovisores comparten la misma.
+    const nuevas = await obtenerCapasNuevas(geovisor.conexionGeoserverId, enVivo.capas.map((capa) => capa.id));
+    return { descubiertas: enVivo.capas, nuevas, desactualizado: false };
+  }
+  if (enVivo.error.code === 'GEOSERVER_NO_DISPONIBLE') {
+    const inventario = await obtenerInventarioParaCatalogo(geovisor.conexionGeoserverId);
+    if (inventario && Date.now() - inventario.terminadaEn <= EDAD_MAXIMA_INVENTARIO_MS) {
+      logger.warn(`[geovisores] GeoServer no responde: el catálogo de ${geovisor.slug} sale del inventario guardado`);
+      return { descubiertas: capasDesdeInventario(inventario), nuevas: new Set(), desactualizado: true };
+    }
+  }
+  throw enVivo.error;
+}
 
-  const [vectoriales, raster, restricciones] = await Promise.all([
-    geoserver.obtenerCapacidadesWfs(conexion),
-    geoserver.obtenerCapacidadesWcs(conexion),
-    obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad),
-  ]);
-
-  const descubiertas = [...vectoriales, ...raster];
-  // Se registran TODAS las capas de la conexión (no solo las de este geovisor): la línea base de
-  // "qué ya existía" es por conexión, y varios geovisores comparten la misma.
-  const nuevas = await obtenerCapasNuevas(geovisor.conexionGeoserverId, descubiertas.map((capa) => capa.id));
-  // Después de registrar: así una conexión recién descubierta ya cuenta con su línea base.
-  const lineaBase = await lineaBaseParaCapasNuevas(geovisor, conexion);
-
-  const capas = descubiertas
-    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id, restricciones, lineaBase))
-    .map((capa) => ({ ...capa, nueva: nuevas.has(capa.id), tema: temaDesdeWorkspace(workspaceDeCapa(capa.id)).id }));
-
+function agruparPorTema(capas, inventario) {
   const temasPorId = new Map();
   for (const capa of capas) {
     const existente = temasPorId.get(capa.tema);
@@ -415,10 +414,50 @@ export async function obtenerCatalogoDeGeovisor(slug, user) {
       existente.capas.push(capa);
       continue;
     }
-    const { nombre } = temaDesdeWorkspace(workspaceDeCapa(capa.id));
+    const workspace = workspaceDeCapa(capa.id);
+    const nombre = inventario?.titulosEspacio.get(workspace) ?? temaDesdeWorkspace(workspace).nombre;
     temasPorId.set(capa.tema, { id: capa.tema, nombre, capas: [capa] });
   }
   return [...temasPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+/**
+ * Catálogo de UN geovisor: descubre en vivo contra su conexión GeoServer y filtra con la misma regla que
+ * capaPermitidaEnGeovisor (capas_seleccionadas, o en su defecto workspaces_geoserver, más la exclusión de seguridad
+ * fija). Devuelve `temas` (misma forma de siempre; cada capa suma, si el inventario sincronizado las tiene, titulo,
+ * resumen, palabrasClave y estiloDefecto) y `grupos` de capas, que solo incluyen los que tienen TODAS sus capas permitidas.
+ * Espejo de catalogoCapas.ts de producto6, adaptado a "un geovisor entre varios" en vez de "la única instalación".
+ */
+export async function obtenerCatalogoCompletoDeGeovisor(slug, user) {
+  const geovisor = await getBySlug(slug, user);
+  const conexion = await obtenerConexionParaConector(geovisor.conexionGeoserverId);
+
+  const [{ descubiertas, nuevas, desactualizado }, restricciones] = await Promise.all([
+    descubrirCapas(geovisor, conexion),
+    obtenerRestriccionesDeHermanos(geovisor.conexionGeoserverId, geovisor.id, geovisor.visibilidad),
+  ]);
+  // Después de registrar: así una conexión recién descubierta ya cuenta con su línea base.
+  const lineaBase = await lineaBaseParaCapasNuevas(geovisor, conexion);
+  const inventario = await obtenerInventarioParaCatalogo(geovisor.conexionGeoserverId);
+
+  const capas = descubiertas
+    .filter((capa) => capaPermitidaEnGeovisor(geovisor, capa.id, restricciones, lineaBase))
+    .map((capa) => enriquecerCapa({ ...capa, nueva: nuevas.has(capa.id), tema: temaDesdeWorkspace(workspaceDeCapa(capa.id)).id }, inventario));
+
+  const grupos = inventario
+    ? resolverGruposVisibles({
+      grupos: inventario.grupos,
+      capasPermitidas: capas,
+      espaciosExcluidos: WORKSPACES_SIEMPRE_EXCLUIDOS,
+      temaDeEspacio: (espacio) => temaDesdeWorkspace(espacio).id,
+    })
+    : [];
+  return { temas: agruparPorTema(capas, inventario), grupos, ...(desactualizado ? { desactualizado: true } : {}) };
+}
+
+/** Solo los temas del catálogo (la forma anterior de la respuesta). */
+export async function obtenerCatalogoDeGeovisor(slug, user) {
+  return (await obtenerCatalogoCompletoDeGeovisor(slug, user)).temas;
 }
 
 /**
