@@ -11,6 +11,7 @@ import { loadWeeklyReportState, startWeeklyReportScheduler, stopWeeklyReportSche
 import { startRateLimitAutoScaler, stopRateLimitAutoScaler } from './src/utils/rateLimitAutoScaler.js';
 import { startOutboxCorreos, stopOutboxCorreos } from './src/utils/correosPendientes.js';
 import { enviarDirecto } from './src/utils/mailer.js';
+import { iniciarSincronizacionInventario, detenerSincronizacionInventario } from './src/modules/geovisores/inventarioGeoserver.planificador.js';
 import { detenerDegradacion } from './src/middlewares/degradacion.js';
 import { marcarApagando } from './src/utils/salud.js';
 import { vaciarColaAnalitica } from './src/modules/analitica/analitica.service.js';
@@ -153,6 +154,7 @@ async function start() {
   startRateLimitAutoScaler();
   startRetencionAuditoria();
   startOutboxCorreos(enviarDirecto);
+  iniciarSincronizacionInventario();
 
   // Purgar refresh tokens expirados o revocados hace más de 60 días para evitar crecimiento ilimitado de la tabla
   const { query } = await import('./src/config/database.js');
@@ -177,6 +179,7 @@ async function start() {
     stopRateLimitAutoScaler();
     stopRetencionAuditoria();
     stopOutboxCorreos();
+    detenerSincronizacionInventario();
     stopSincronizacionRevocados();
     detenerDegradacion();
     server.close(async () => {
