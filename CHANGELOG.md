@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.12.0...v1.13.0) (2026-11-24)
+
+
+### Features
+
+* **geovisores:** sincronización completa del inventario de GeoServer ([#379](https://github.com/JanuarAsprilla/VIGIIAP-backend/issues/379)) ([5d36703](https://github.com/JanuarAsprilla/VIGIIAP-backend/commit/5d36703d762c27c8fcfacc45094bf24614b8da0d))
+
 ## [1.12.0](https://github.com/JanuarAsprilla/VIGIIAP-backend/compare/v1.11.1...v1.12.0) (2026-11-23)
 
 

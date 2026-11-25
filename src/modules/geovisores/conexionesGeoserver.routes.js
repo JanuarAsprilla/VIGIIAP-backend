@@ -5,7 +5,8 @@ import {
 import { authenticate, authorize, requireSuperAdmin } from '../../middlewares/auth.js';
 import { requireModulo } from '../../middlewares/requireModulo.js';
 import { csrfProtection } from '../../middlewares/csrf.js';
-import { tileRateLimiter, adminRateLimiter } from '../../middlewares/rateLimiter.js';
+import { tileRateLimiter, adminRateLimiter, sincronizacionGeoserverRateLimiter } from '../../middlewares/rateLimiter.js';
+import { sincronizar, inventario } from './inventarioGeoserver.controller.js';
 
 const router = Router();
 
@@ -27,6 +28,10 @@ router.get('/:id/workspaces', authenticate, authorize('admin_sig'), requireModul
 router.get('/:id/wms', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), tileRateLimiter, wmsPreview);
 router.get('/:id/leyenda/:capaId', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), tileRateLimiter, leyendaPreview);
 router.get('/:id/capas/:capaId/atributos', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), atributosCapa);
+
+// Inventario sincronizado de GeoServer (espacios, capas, grupos y estilos): lectura con 'ver', sincronizar con 'editar'.
+router.get('/:id/inventario', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'ver'), inventario);
+router.post('/:id/sincronizar', authenticate, authorize('admin_sig'), requireModulo('geovisores', 'editar'), csrfProtection, sincronizacionGeoserverRateLimiter, sincronizar);
 
 router.post('/', authenticate, requireSuperAdmin, csrfProtection, store);
 router.patch('/:id', authenticate, requireSuperAdmin, csrfProtection, update);

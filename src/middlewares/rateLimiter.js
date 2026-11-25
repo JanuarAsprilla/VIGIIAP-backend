@@ -243,6 +243,19 @@ export const tileRateLimiter = limitador('tiles', {
   message: { error: 'Demasiadas peticiones de mapa. Intenta de nuevo en un momento.' },
 });
 
+/**
+ * Sincronización a demanda del inventario de GeoServer: una por minuto por conexión (cada una dispara decenas de
+ * peticiones al GeoServer), sin importar quién la pida.
+ */
+export const sincronizacionGeoserverRateLimiter = limitador('geoserver_sync', {
+  windowMs: 60 * 1000,
+  max: 1,
+  keyGenerator: (req) => `geoserver-sync:${req.params.id}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Esta conexión se sincronizó hace instantes. Espera un minuto antes de volver a sincronizarla.' },
+});
+
 /** Recuperación de contraseña: máximo 3 solicitudes por hora por email. */
 export const passwordResetLimiter = limitador('recuperar_password', {
   windowMs: 60 * 60 * 1000,
