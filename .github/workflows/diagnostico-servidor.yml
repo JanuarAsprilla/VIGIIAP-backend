@@ -1,0 +1,109 @@
+name: Diagnóstico del servidor 4 (temporal, solo lectura, salida cifrada)
+
+# Flujo TEMPORAL: se borra al terminar. Ejecuta comandos de solo lectura en el servidor y cifra TODA la salida con un
+# certificado público antes de imprimirla, porque los registros de este repositorio son públicos. Solo se ejecuta
+# para el dueño y únicamente cuando cambia este mismo archivo.
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - '.github/workflows/diagnostico-servidor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    name: Diagnóstico cifrado 4
+    if: github.actor == 'JanuarAsprilla'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Revisar el inventario de GeoServer y cifrar la salida
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            t=$(mktemp)
+            cat > "$t" <<'CERT'
+            -----BEGIN CERTIFICATE-----
+            MIIDujCCAiICCQC0gxYuH7SZSzANBgkqhkiG9w0BAQsFADAfMR0wGwYDVQQDDBRk
+            aWFnbm9zdGljby10ZW1wb3JhbDAeFw0yNjExMjYxNTEwMDRaFw0yNjExMjkxNTEw
+            MDRaMB8xHTAbBgNVBAMMFGRpYWdub3N0aWNvLXRlbXBvcmFsMIIBojANBgkqhkiG
+            9w0BAQEFAAOCAY8AMIIBigKCAYEA2/3zlhNPX3gQ7x9NK6brkMxbg99wbmyKuG98
+            yR0ivCV66X3CkmYmjZ90r0gmys0GGzJwWPXUDT7ymYVKvw9mPBANyP0iHo0urfTt
+            wZuVFVQhgeSR5IQaNsIPrXQ7GoUmIqKLeecf3SnRk/9PMUR5RbeLq5OEvS4/eNQ/
+            HbgRDs3XD3Du8WYTI+U5/W4tkze59Ow5LhlUQxmQft2ZzJJE7YoW5a0O6SqfHLyv
+            esuiSuaMLiz92i7dWdE4xGTJX9OSqPmBnNOwIJUPAdbHY4DOrI4rPbPFvFtqUvah
+            2AlTvI0+lZ4E4V7gTfiqxqd0zINxpGLVumdls1d1+qimNCGt77W7ncCfk9RmEMeQ
+            vlPFIhboFt36WqgmkwAh/xiYvB8k6tU2v8cwe/43j+zWmnyZ/xxVymq3oEZcLjnA
+            15lRUa0PkmogvpEGVBam6AxfFHO/uzBZmjkmHwps3Im5XDHsFM9IfM9Ggx/iNLYf
+            y2XFYLhuHSJrn/k/B8qzYCrWqCoTAgMBAAEwDQYJKoZIhvcNAQELBQADggGBAFBW
+            xyHHWVhnaMwEboFJKnJu1a0f3vIupTKv0+rxkB7kwtElLx/2l/JkbxCkmwo59YcS
+            gqPsjuONnHr4SqHfV/yxbKcqBbFo91nNf3mEI1qiDvuc41cAF9KQlK/LZAL8T234
+            l7ptdLWR0kZjlyubnZEhBBXKmUYuBtblFWUSXUjqsLOnAX7aUPcG+kYD73XLe0M0
+            ww2+RL6tvsJPjND4s6WgiKITsmU6AYZW+1aNu85X+RFtHgqk+tHjwu2KakNlFA4i
+            n96lzjqM4w7FNaIMjS4rgDML0k3EbeorRWQgCWAk4v8SvIicdbp9+4db+pBIkFfN
+            ywfaaN8CA07UNTVr89cOXcj1xRGhAFouMp33EpWbeU5FZMNWHmPI3tMB2mX3NKDv
+            8NF9aySU932cKoYffxttTQJHHrYqBkkAdX43Rz0nUa1tRSXsT0Ip9zWTtGzSUNCP
+            wZwyIUfEcuCUccZ4h711lZnEXvXqPubMviG422f8H2/SVJo8awfcK4coVaFiGA==
+            -----END CERTIFICATE-----
+            CERT
+            {
+              seccion() { printf '\n===== %s =====\n' "$1"; }
+              BD=vigiiap_postgres
+              psql_en() { docker exec -i "$BD" sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -At -F " | "'; }
+
+              seccion "Hora del servidor (UTC) y memoria"
+              date -u; free -h | head -2; docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' vigiiap_backend vigiiap_postgres
+
+              seccion "Conexion de GeoServer: campos NO secretos"
+              echo "SELECT jsonb_object_agg(e.k, e.v)::text FROM conexiones_geoserver c, jsonb_each(to_jsonb(c)) AS e(k,v) WHERE e.k !~* '(pass|clave|secret|cifr|token|key)' GROUP BY c.id;" | psql_en
+
+              seccion "Ultimas sincronizaciones del inventario"
+              echo "SELECT iniciada_en, terminada_en, estado, fuente, origen, resumen::text, left(coalesce(error,''), 220) FROM geoserver_sincronizaciones ORDER BY iniciada_en DESC LIMIT 8;" | psql_en
+
+              seccion "Conteos del inventario (vigentes | eliminados)"
+              echo "SELECT 'espacios', count(*) FILTER (WHERE eliminado_en IS NULL), count(*) FILTER (WHERE eliminado_en IS NOT NULL) FROM geoserver_inventario_espacios UNION ALL SELECT 'capas', count(*) FILTER (WHERE eliminado_en IS NULL), count(*) FILTER (WHERE eliminado_en IS NOT NULL) FROM geoserver_inventario_capas UNION ALL SELECT 'grupos', count(*) FILTER (WHERE eliminado_en IS NULL), count(*) FILTER (WHERE eliminado_en IS NOT NULL) FROM geoserver_inventario_grupos UNION ALL SELECT 'estilos', count(*) FILTER (WHERE eliminado_en IS NULL), count(*) FILTER (WHERE eliminado_en IS NOT NULL) FROM geoserver_inventario_estilos;" | psql_en
+
+              seccion "Espacios de trabajo del inventario"
+              echo "SELECT nombre, coalesce(titulo_servicio,'-'), coalesce(namespace_uri,'-'), eliminado_en IS NOT NULL AS eliminado FROM geoserver_inventario_espacios ORDER BY nombre;" | psql_en
+
+              seccion "Grupos de capas del inventario"
+              echo "SELECT grupo_id, coalesce(titulo,'-'), coalesce(modo,'-'), jsonb_array_length(coalesce(miembros,'[]'::jsonb)) AS miembros, eliminado_en IS NOT NULL AS eliminado FROM geoserver_inventario_grupos ORDER BY grupo_id;" | psql_en
+
+              seccion "Capas con resumen o palabras clave en el inventario"
+              echo "SELECT count(*) FILTER (WHERE coalesce(resumen,'') <> '') AS con_resumen, count(*) FILTER (WHERE coalesce(array_length(palabras_clave,1),0) > 0) AS con_palabras, count(*) AS total FROM geoserver_inventario_capas WHERE eliminado_en IS NULL;" | psql_en
+
+              seccion "Capas descubiertas recientemente (ultimas 15)"
+              echo "SELECT primera_vez_vista, capa_id, es_linea_base FROM capas_geoserver_vistas ORDER BY primera_vez_vista DESC LIMIT 15;" | psql_en
+
+              seccion "Prueba desde el backend: REST y OGC con las credenciales de la conexion"
+              docker exec -i vigiiap_backend node --input-type=module <<'JS'
+            import { obtenerConexionParaConector } from '/app/src/modules/geovisores/conexionesGeoserver.service.js';
+            import * as gs from '/app/src/modules/geovisores/geoserver.connector.js';
+            import { query } from '/app/src/config/database.js';
+            const { rows } = await query('SELECT id FROM conexiones_geoserver');
+            for (const { id } of rows) {
+              const c = await obtenerConexionParaConector(id);
+              console.log('conexion', id, '| usuario:', c.usuarioLectura, '| largo de la clave:', String(c.passwordDescifrada ?? '').length);
+              const prueba = async (nombre, fn) => {
+                try { const r = await fn(); console.log(' ', nombre + ':', Array.isArray(r) ? r.length + ' elementos' : (typeof r === 'object' ? JSON.stringify(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Array.isArray(v) ? v.length : v]))).slice(0, 200) : r)); }
+                catch (e) { console.log(' ', nombre + ': ERROR', e.status ?? '', e.message); }
+              };
+              await prueba('credenciales (WFS GetCapabilities, estado HTTP)', () => gs.probarCredenciales(c));
+              await prueba('REST espacios', () => gs.listarEspaciosRest(c));
+              await prueba('REST grupos', () => gs.listarGruposRest(c));
+              await prueba('REST estilos', () => gs.listarEstilosRest(c));
+              await prueba('WMS capacidades', () => gs.obtenerCapacidadesWms(c));
+            }
+            process.exit(0);
+            JS
+
+              seccion "Registros del backend sobre el inventario y GeoServer (ultimas 24 h)"
+              docker logs --since 24h vigiiap_backend 2>&1 | grep -iE 'inventario|geoserver' | tail -20 | cut -c1-240
+            } 2>&1 | openssl smime -encrypt -aes256 -binary -outform PEM "$t"
+            rm -f "$t"
